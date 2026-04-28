@@ -1,0 +1,111 @@
+"use client";
+
+import { useState } from "react";
+import type { MessageRole } from "@/lib/types";
+
+interface MessageBubbleProps {
+  role: MessageRole;
+  content: string;
+  timestamp?: string;
+  isStreaming?: boolean;
+}
+
+function formatTimestamp(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+export default function MessageBubble({
+  role,
+  content,
+  timestamp,
+  isStreaming = false,
+}: MessageBubbleProps) {
+  const [showTimestamp, setShowTimestamp] = useState(false);
+  const isUser = role === "user";
+
+  return (
+    <div
+      style={{
+        ...styles.wrapper,
+        justifyContent: isUser ? "flex-end" : "flex-start",
+      }}
+      onMouseEnter={() => setShowTimestamp(true)}
+      onMouseLeave={() => setShowTimestamp(false)}
+    >
+      <div style={styles.messageGroup}>
+        <div
+          style={{
+            ...styles.bubble,
+            ...(isUser ? styles.userBubble : styles.assistantBubble),
+          }}
+        >
+          <span style={styles.content}>{content}</span>
+          {isStreaming && <span style={styles.cursor} aria-hidden="true" />}
+        </div>
+        {timestamp && showTimestamp && (
+          <div
+            style={{
+              ...styles.timestamp,
+              textAlign: isUser ? "right" : "left",
+            }}
+          >
+            {formatTimestamp(timestamp)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  wrapper: {
+    display: "flex",
+    padding: "2px 16px",
+  },
+  messageGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "3px",
+    maxWidth: "78%",
+  },
+  bubble: {
+    padding: "10px 14px",
+    borderRadius: "var(--radius-lg)",
+    fontSize: "0.9375rem",
+    lineHeight: "1.55",
+    wordBreak: "break-word",
+    whiteSpace: "pre-wrap",
+  },
+  userBubble: {
+    backgroundColor: "var(--accent)",
+    color: "#ffffff",
+    borderBottomRightRadius: "4px",
+  },
+  assistantBubble: {
+    backgroundColor: "var(--bg-secondary)",
+    color: "var(--text-primary)",
+    borderBottomLeftRadius: "4px",
+    border: "1px solid var(--border)",
+  },
+  content: {
+    display: "inline",
+  },
+  cursor: {
+    display: "inline-block",
+    width: "2px",
+    height: "1em",
+    backgroundColor: "currentColor",
+    marginLeft: "1px",
+    verticalAlign: "text-bottom",
+    animation: "blink 1s step-end infinite",
+  },
+  timestamp: {
+    fontSize: "0.6875rem",
+    color: "var(--text-tertiary)",
+    padding: "0 2px",
+  },
+};

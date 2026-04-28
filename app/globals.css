@@ -175,3 +175,46 @@ a {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ============================================================
+   MOBILE LAYOUT
+   Desktop sidebar is visible; mobile uses drawer instead.
+   ============================================================ */
+
+/* Desktop sidebar — visible by default */
+@media (min-width: 769px) {
+  .mobile-only {
+    display: none !important;
+  }
+}
+
+/* Mobile: hide the desktop sidebar, show mobile-only elements */
+@media (max-width: 768px) {
+  /* Hide desktop sidebar shell */
+  [data-sidebar-desktop] {
+    display: none !important;
+  }
+
+  /* Show hamburger / back buttons */
+  .mobile-only {
+    display: flex !important;
+  }
+}
+
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* ============================================================
+   FOCUS RINGS
+   ============================================================ */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
