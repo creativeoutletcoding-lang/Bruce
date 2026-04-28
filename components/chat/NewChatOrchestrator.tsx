@@ -90,10 +90,10 @@ export default function NewChatOrchestrator({
         )
       );
 
-      // For non-incognito, refresh the sidebar then navigate
+      // For non-incognito, navigate then refresh sidebar once settled
       if (!incognito && newChatId) {
-        refreshChats();
         router.replace(`/chat/${newChatId}`);
+        setTimeout(() => refreshChats(), 100);
       }
     } catch (err) {
       console.error("[NewChatOrchestrator] Send error:", err);

@@ -32,12 +32,16 @@ interface ChatShellProps {
 export default function ChatShell({ user, children }: ChatShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [incognito, setIncognito] = useState(false);
-  const refreshRef = useRef<() => void>(() => {});
+  const refreshCallbacks = useRef<Set<() => void>>(new Set());
 
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-  const registerRefresh = useCallback((fn: () => void) => { refreshRef.current = fn; }, []);
-  const refreshChats = useCallback(() => { refreshRef.current(); }, []);
+  const registerRefresh = useCallback((fn: () => void) => {
+    refreshCallbacks.current.add(fn);
+  }, []);
+  const refreshChats = useCallback(() => {
+    refreshCallbacks.current.forEach((fn) => fn());
+  }, []);
 
   return (
     <ChatContext.Provider value={{ openDrawer, incognito, setIncognito, refreshChats, registerRefresh }}>
