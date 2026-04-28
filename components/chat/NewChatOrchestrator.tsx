@@ -93,9 +93,7 @@ export default function NewChatOrchestrator({
       // For non-incognito: refresh sidebar while still on /chat, then navigate
       if (!incognito && newChatId) {
         refreshChats();
-        console.log("[NewChatOrchestrator] navigating to", `/chat/${newChatId}`);
         router.push(`/chat/${newChatId}`);
-        console.log("[NewChatOrchestrator] router.push called");
       }
     } catch (err) {
       console.error("[NewChatOrchestrator] Send error:", err);

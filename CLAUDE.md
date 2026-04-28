@@ -188,6 +188,41 @@ const supabase = createServiceRoleClient();
 
 ---
 
+## Phase 2 — Implementation Notes
+
+Phase 2 is complete and deployed to bruce.app. This section records decisions made and issues resolved during the build so future sessions don't relitigate them.
+
+### What was built
+
+- **Welcome screen** — time-of-day greeting, 2×2 suggestion cards, input below. Suggestion cards populate the input; view stays on welcome screen until the user sends.
+- **Streaming chat** — `POST /api/chat` streams tokens via `ReadableStream`. Client reads with `getReader()`, appends tokens to the message as they arrive. No spinner before first token.
+- **Chat persistence** — chat row created on first message, not before. User message and Bruce's message inserted server-side via service role. `last_message_at` updated after Bruce's message lands.
+- **Sidebar** — desktop persistent, mobile slide-out drawer. Real-time subscription on `chats` + `messages` tables. Highlights active chat with accent left border.
+- **Memory** — 8 core memories seeded in `auth/callback` on first login. `lib/anthropic/index.ts` assembles core (max 20) + active (max 15, ordered by relevance) into a 500-word-ceiling block prepended to every system prompt. Memory generation fires on chat unmount via `keepalive` fetch to `/api/memory/generate`.
+- **Incognito mode** — `filter: saturate(0.15)` on the chat container. Messages in local state only. Memory generation skipped.
+- **Settings** — placeholder page at `/settings`.
+
+### Key decisions
+
+**Supabase anon key format** — The new `sb_publishable_` format does not work with `@supabase/ssr`. The key in `.env.local` must be the legacy JWT format. If you rotate credentials, request the legacy format from the Supabase dashboard or the JWT will be rejected during session exchange.
+
+**Sidebar refresh — dual approach** — Supabase Realtime `postgres_changes` INSERT events race against RLS row visibility: the event can fire before the new row is readable by the subscriber's JWT. Using realtime alone for new chat creation was unreliable. Fix: `ChatShell` holds a `Set` of `loadChats` callbacks (one per Sidebar instance — desktop and mobile) via `refreshChats` / `registerRefresh` in `ChatContext`. `NewChatOrchestrator` calls `refreshChats()` immediately after `X-Chat-Id` is confirmed in the response headers (guaranteeing the row is committed), then calls `router.push`. Realtime subscription is kept for updates to existing chats, which it handles reliably.
+
+**`router.push` not `router.replace`** — When navigating from `/chat` to `/chat/[id]` after new chat creation, `router.replace` can silently no-op in Next.js App Router when the layout is already mounted. `router.push` creates a proper forward navigation entry and reliably triggers the children-slot swap.
+
+**ChatShell renders two Sidebar instances** — desktop sidebar and mobile drawer are both always mounted. Both register their `loadChats` via `registerRefresh`. Using a `Set` (not a single ref) ensures `refreshChats()` calls both. The Set is never cleared since both Sidebars stay mounted for the layout lifetime.
+
+**`refreshChats` fires before `router.push`** — ensures the sidebar reloads while still on `/chat` where both Sidebar instances are guaranteed mounted and registered, before navigation transitions the children slot.
+
+### Bugs fixed during Phase 2
+
+- **Input flash on welcome screen** — typing in the message input triggered `setStarted(true)`, switching the component's return branch mid-keystroke, unmounting the focused input, and dropping all but the first character typed. Fixed by removing the `started` state entirely. The branch condition is now `messages.length === 0` only — the welcome screen stays mounted until the user actually sends.
+- **Sidebar not updating on new chat** — Supabase Realtime INSERT events for new chat rows weren't reliably delivered due to RLS timing. Fixed with the direct `refreshChats` callback described above.
+- **React strict mode channel error** — `useEffect` double-invocation in development caused "cannot add callbacks after subscribe" errors on the Supabase realtime channel. Fixed by moving the client to component scope and checking `supabase.getChannels()` for an existing channel with the same topic before subscribing.
+- **Memory generation firing on every message** — `triggerMemoryGeneration` was in `useCallback` with `messages.length` as a dep. Each new message caused a new callback reference, triggering the effect cleanup (which called the old callback) on every render. Fixed by using `useRef` for messages/incognito and an empty-dep `useEffect` so cleanup only fires on true unmount.
+
+---
+
 ## Conventions
 
 - **No `any` types.** Use proper types from `lib/types.ts`.
