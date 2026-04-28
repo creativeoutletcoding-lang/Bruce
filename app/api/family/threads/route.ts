@@ -61,35 +61,48 @@ export async function POST(request: NextRequest) {
       code: error?.code ?? "(no code)",
       details: error?.details ?? "(no details)",
       hint: error?.hint ?? "(no hint)",
-      fullError: JSON.stringify(error),
     });
-    // DEBUG ONLY — returns full error to client so it surfaces in the UI
-    return Response.json(
-      {
-        error: "Failed to create thread",
-        debug: {
-          userId: user.id,
-          message: error?.message ?? null,
-          code: error?.code ?? null,
-          details: error?.details ?? null,
-          hint: error?.hint ?? null,
-        },
-      },
-      { status: 500 }
-    );
+    return new Response("Failed to create thread", { status: 500 });
   }
 
-  // Determine members: provided list + creator always included
-  let memberIds: string[] = body.memberIds?.length
-    ? body.memberIds
-    : await getAllActiveMemberIds(adminSupabase);
+  // Insert creator membership first, atomically. If this fails the thread is
+  // unusable — delete it and surface the error so we can diagnose.
+  const { error: creatorErr } = await adminSupabase
+    .from("chat_members")
+    .insert({ chat_id: thread.id, user_id: user.id });
 
-  // Ensure creator is always a member
-  if (!memberIds.includes(user.id)) memberIds = [user.id, ...memberIds];
+  if (creatorErr) {
+    console.error("[api/family/threads] Failed to add creator to chat_members", {
+      userId: user.id,
+      message: creatorErr.message,
+      code: creatorErr.code,
+      details: creatorErr.details,
+    });
+    await adminSupabase.from("chats").delete().eq("id", thread.id);
+    return new Response("Failed to create thread", { status: 500 });
+  }
 
-  await adminSupabase.from("chat_members").insert(
-    memberIds.map((userId) => ({ chat_id: thread.id, user_id: userId }))
-  );
+  // Batch insert remaining members (best-effort — creator is already in,
+  // so the thread is usable even if some other member IDs fail).
+  const otherMemberIds = (
+    body.memberIds?.length
+      ? body.memberIds
+      : await getAllActiveMemberIds(adminSupabase)
+  ).filter((id) => id !== user.id);
+
+  if (otherMemberIds.length > 0) {
+    const { error: membersErr } = await adminSupabase
+      .from("chat_members")
+      .insert(otherMemberIds.map((userId) => ({ chat_id: thread.id, user_id: userId })));
+
+    if (membersErr) {
+      console.error("[api/family/threads] Failed to add some members (non-fatal)", {
+        message: membersErr.message,
+        code: membersErr.code,
+        details: membersErr.details,
+      });
+    }
+  }
 
   return Response.json(thread, { status: 201 });
 }
