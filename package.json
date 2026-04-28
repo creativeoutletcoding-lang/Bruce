@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "seed:cps": "npx ts-node --project tsconfig.scripts.json scripts/seed-cps.ts",
+    "seed:cps:nana": "npx ts-node --project tsconfig.scripts.json scripts/seed-cps-nana.ts",
+    "cleanup:orphaned-projects": "npx ts-node --project tsconfig.scripts.json scripts/cleanup-orphaned-projects.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
