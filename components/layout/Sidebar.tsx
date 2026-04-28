@@ -35,6 +35,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [chats, setChats] = useState<ChatListItem[]>([]);
+  const supabase = createClient();
 
   const activeChatId = pathname.startsWith("/chat/")
     ? pathname.split("/chat/")[1]
@@ -73,7 +74,9 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   useEffect(() => {
     loadChats();
 
-    const supabase = createClient();
+    const existing = supabase.getChannels().find(c => c.topic === "realtime:chat-list");
+    if (existing) supabase.removeChannel(existing);
+
     const channel = supabase
       .channel("chat-list")
       .on(
