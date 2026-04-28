@@ -63,7 +63,20 @@ export async function POST(request: NextRequest) {
       hint: error?.hint ?? "(no hint)",
       fullError: JSON.stringify(error),
     });
-    return new Response("Failed to create thread", { status: 500 });
+    // DEBUG ONLY — returns full error to client so it surfaces in the UI
+    return Response.json(
+      {
+        error: "Failed to create thread",
+        debug: {
+          userId: user.id,
+          message: error?.message ?? null,
+          code: error?.code ?? null,
+          details: error?.details ?? null,
+          hint: error?.hint ?? null,
+        },
+      },
+      { status: 500 }
+    );
   }
 
   // Determine members: provided list + creator always included

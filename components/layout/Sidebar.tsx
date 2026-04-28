@@ -248,7 +248,19 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         router.push(`/family/threads/${thread.id}`);
         onNavigate();
       } else {
-        setThreadErrorMsg("Failed to create thread. Please try again.");
+        const body = await res.json().catch(() => ({})) as {
+          error?: string;
+          debug?: { userId?: string; message?: string; code?: string; details?: string; hint?: string };
+        };
+        const parts = [
+          body.error ?? "Failed to create thread",
+          body.debug?.code && `code=${body.debug.code}`,
+          body.debug?.message && `msg=${body.debug.message}`,
+          body.debug?.details && `details=${body.debug.details}`,
+          body.debug?.hint && `hint=${body.debug.hint}`,
+          body.debug?.userId && `uid=${body.debug.userId}`,
+        ].filter(Boolean);
+        setThreadErrorMsg(parts.join(" | "));
       }
     } catch {
       setThreadErrorMsg("Network error. Please try again.");
