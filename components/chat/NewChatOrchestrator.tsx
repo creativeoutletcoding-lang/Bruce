@@ -21,14 +21,12 @@ export default function NewChatOrchestrator({
   const router = useRouter();
   const { incognito } = useChatContext();
   const [input, setInput] = useState(initialInput);
-  const [started, setStarted] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function handleSuggestion(text: string) {
     setInput(text);
-    setStarted(true);
   }
 
   const handleSend = useCallback(async () => {
@@ -37,7 +35,6 @@ export default function NewChatOrchestrator({
 
     setInput("");
     setError(null);
-    setStarted(true);
 
     const userMsgId = `tmp-user-${Date.now()}`;
     const streamMsgId = `tmp-stream-${Date.now()}`;
@@ -106,14 +103,14 @@ export default function NewChatOrchestrator({
     }
   }, [input, isStreaming, incognito, router]);
 
-  // Show welcome screen until user starts typing or taps a suggestion
-  if (!started && messages.length === 0) {
+  // Show welcome screen until the user sends their first message
+  if (messages.length === 0) {
     return (
       <div style={styles.container}>
         <WelcomeScreen userName={userName} onSuggestion={handleSuggestion} />
         <MessageInput
           value={input}
-          onChange={(v) => { setInput(v); if (v) setStarted(true); }}
+          onChange={setInput}
           onSend={handleSend}
           disabled={isStreaming}
         />
