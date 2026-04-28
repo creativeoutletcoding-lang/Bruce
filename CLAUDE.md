@@ -180,7 +180,7 @@ const supabase = createServiceRoleClient();
 | Phase | Status | Scope |
 |-------|--------|-------|
 | 1 — Foundation | ✅ Complete | Supabase, schema, auth, Vercel, DigitalOcean, bruce.app |
-| 2 — Core Chat | 🔄 In progress | Private chat, streaming, history, memory, welcome screen, incognito |
+| 2 — Core Chat | ✅ Complete | Private chat, streaming, history, memory, welcome screen, incognito |
 | 3 — Projects | ⬜ Not started | Project UI, Drive integration, CPS goes live |
 | 4 — Household | ⬜ Not started | Remaining members, family chat, notifications |
 | 5 — Connectors + Admin | ⬜ Not started | QuickBooks, Petcare, Melio, Calendar, admin panel |
@@ -213,4 +213,4 @@ const supabase = createServiceRoleClient();
 
 *Updated by the planning chat before each Claude Code session.*
 
-**Current:** Phase 2 — Core Chat. Awaiting task brief from planning chat.
+**Current:** Phase 2 complete. Ready for Phase 3 — Projects.
