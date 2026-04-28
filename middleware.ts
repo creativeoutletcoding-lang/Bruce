@@ -22,6 +22,15 @@ export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    // @supabase/realtime-js's WebSocketFactory.getWebSocketConstructor() throws
+    // when it detects globalThis.EdgeRuntime (set by Next.js in Edge context).
+    // Providing a transport bypasses the factory call entirely. Middleware never
+    // subscribes to realtime channels so this is stored but never connected.
+    realtime: {
+      transport: (
+        typeof WebSocket !== "undefined" ? WebSocket : class {}
+      ) as unknown as typeof WebSocket,
+    },
     cookies: {
       getAll() {
         return request.cookies.getAll();
