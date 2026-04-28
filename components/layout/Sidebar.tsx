@@ -81,17 +81,12 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         { event: "*", schema: "public", table: "chats" },
         () => loadChats()
       )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        () => loadChats()
-      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [loadChats]);
+  }, []);
 
   function handleNewChat() {
     router.push("/chat");
