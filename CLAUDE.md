@@ -213,5 +213,4 @@ const supabase = createServiceRoleClient();
 
 *Updated by the planning chat before each Claude Code session.*
 
-**Current:** Phase 2 — Core Chat  
-See task brief provided in this session for specific instructions.
+**Current:** Phase 2 — Core Chat. Awaiting task brief from planning chat.
