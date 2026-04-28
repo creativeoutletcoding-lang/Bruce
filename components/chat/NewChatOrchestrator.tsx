@@ -19,7 +19,7 @@ export default function NewChatOrchestrator({
   initialInput = "",
 }: NewChatOrchestratorProps) {
   const router = useRouter();
-  const { incognito } = useChatContext();
+  const { incognito, refreshChats } = useChatContext();
   const [input, setInput] = useState(initialInput);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -90,8 +90,9 @@ export default function NewChatOrchestrator({
         )
       );
 
-      // For non-incognito, navigate to the persisted chat
+      // For non-incognito, refresh the sidebar then navigate
       if (!incognito && newChatId) {
+        refreshChats();
         router.replace(`/chat/${newChatId}`);
       }
     } catch (err) {

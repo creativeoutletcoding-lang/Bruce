@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useChatContext } from "@/components/layout/ChatShell";
 import type { User } from "@/lib/types";
 
 interface ChatListItem {
@@ -34,6 +35,7 @@ function formatRelativeTime(dateStr: string): string {
 export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const { registerRefresh } = useChatContext();
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const supabase = createClient();
 
@@ -72,6 +74,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   }, []);
 
   useEffect(() => {
+    registerRefresh(loadChats);
     loadChats();
 
     const existing = supabase.getChannels().find(c => c.topic === "realtime:chat-list");

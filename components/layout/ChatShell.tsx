@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useRef } from "react";
 import type { User } from "@/lib/types";
 import Sidebar from "./Sidebar";
 
@@ -8,12 +8,16 @@ interface ChatContextValue {
   openDrawer: () => void;
   incognito: boolean;
   setIncognito: (v: boolean) => void;
+  refreshChats: () => void;
+  registerRefresh: (fn: () => void) => void;
 }
 
 export const ChatContext = createContext<ChatContextValue>({
   openDrawer: () => {},
   incognito: false,
   setIncognito: () => {},
+  refreshChats: () => {},
+  registerRefresh: () => {},
 });
 
 export function useChatContext() {
@@ -28,12 +32,15 @@ interface ChatShellProps {
 export default function ChatShell({ user, children }: ChatShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [incognito, setIncognito] = useState(false);
+  const refreshRef = useRef<() => void>(() => {});
 
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const registerRefresh = useCallback((fn: () => void) => { refreshRef.current = fn; }, []);
+  const refreshChats = useCallback(() => { refreshRef.current(); }, []);
 
   return (
-    <ChatContext.Provider value={{ openDrawer, incognito, setIncognito }}>
+    <ChatContext.Provider value={{ openDrawer, incognito, setIncognito, refreshChats, registerRefresh }}>
       <div style={styles.shell}>
         {/* Desktop sidebar */}
         <div data-sidebar-desktop style={styles.sidebarDesktop}>
