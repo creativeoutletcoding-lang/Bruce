@@ -90,10 +90,12 @@ export default function NewChatOrchestrator({
         )
       );
 
-      // For non-incognito, navigate then refresh sidebar once settled
+      // For non-incognito: refresh sidebar while still on /chat, then navigate
       if (!incognito && newChatId) {
-        router.replace(`/chat/${newChatId}`);
-        setTimeout(() => refreshChats(), 100);
+        refreshChats();
+        console.log("[NewChatOrchestrator] navigating to", `/chat/${newChatId}`);
+        router.push(`/chat/${newChatId}`);
+        console.log("[NewChatOrchestrator] router.push called");
       }
     } catch (err) {
       console.error("[NewChatOrchestrator] Send error:", err);
@@ -102,7 +104,7 @@ export default function NewChatOrchestrator({
     } finally {
       setIsStreaming(false);
     }
-  }, [input, isStreaming, incognito, router]);
+  }, [input, isStreaming, incognito, router, refreshChats]);
 
   // Show welcome screen until the user sends their first message
   if (messages.length === 0) {
