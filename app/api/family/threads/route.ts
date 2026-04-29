@@ -33,7 +33,6 @@ export async function GET() {
     .from("chats")
     .select("id, title, last_message_at")
     .eq("type", "family_thread")
-    .is("deleted_at", null)
     .or(orFilter)
     .order("last_message_at", { ascending: false })
     .limit(30);

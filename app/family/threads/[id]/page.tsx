@@ -32,12 +32,12 @@ export default async function FamilyThreadPage({
   // Load thread — redirect if deleted or wrong type
   const { data: thread } = await adminSupabase
     .from("chats")
-    .select("id, title, deleted_at, owner_id")
+    .select("id, title, owner_id")
     .eq("id", id)
     .eq("type", "family_thread")
     .maybeSingle();
 
-  if (!thread || thread.deleted_at) redirect("/family");
+  if (!thread) redirect("/family");
 
   // Verify access: user is the owner OR has a chat_members row.
   // The owner check is the primary fallback — the creator always owns the
