@@ -212,13 +212,19 @@ const supabase = createServiceRoleClient();
 
 ---
 
-## Bruce's Group Chat Behavior (Three-Tier Rule)
+## Bruce's Group Chat Behavior
+
+**Trigger:** `/@bruce\b/i` (case-insensitive, word boundary) or natural-language address ("Bruce, can you…"). No engagement window — if nobody addresses Bruce, no Anthropic call is made.
+
+**Three-Tier Rule**
 
 | Stakes | Action |
 |--------|--------|
-| Low — add to list, log preference, note something | Act and confirm briefly |
-| Medium — update doc, modify project, schedule | Flag before acting |
-| High — connector writes, deletions, irreversible | Always ask explicitly |
+| Low — add to list, log preference, note something | Act silently or with a single word at most. No "Done.", "Got it.", "Added." — reactions (Phase 6) will handle acknowledgment. |
+| Medium — update doc, modify project, schedule | Flag before acting: "I can do X — want me to go ahead?" |
+| High — connector writes, deletions, irreversible | Always ask explicitly before acting. No exceptions. |
+
+**Tone rules:** No filler ("got it", "sure thing", "fingers crossed"). No self-doubt. No deflecting to specific household members. If the action speaks for itself, stop — no appended meta-commentary. Emotional messages: one or two sentences, warm and grounded, never therapist-mode.
 
 ---
 
@@ -229,8 +235,8 @@ const supabase = createServiceRoleClient();
 | 1 — Foundation | ✅ Complete | Supabase, schema, auth, Vercel, DigitalOcean, heybruce.app |
 | 2 — Core Chat | ✅ Complete | Private chat, streaming, history, memory, welcome screen, incognito |
 | 3 — Projects | ✅ Complete | Project UI, Drive integration, invite flow, CPS goes live |
-| 4 — Household | 🔄 In progress | Remaining members, family chat, notifications |
-| 5 — Connectors + Admin | ⬜ Not started | QuickBooks, Petcare, Melio, Calendar, admin panel |
+| 4 — Household | ✅ Complete | Family group chat, group threads, member avatars, Bruce behavior |
+| 5 — Connectors + Admin | 🔄 In progress | Push notifications, QuickBooks, Petcare, Melio, Calendar, admin panel |
 | 6 — Polish | ⬜ Not started | PWA, sharing, image gen, web search |
 
 ---
@@ -433,7 +439,7 @@ All deletes are soft-delete where possible (status field), hard delete for chats
 
 #### Key decisions
 
-**Bruce trigger logic (server-side, no toggle)** — No client-side pause state. `shouldBruceRespond()` in the API route checks if the current message directly addresses Bruce (@mention or natural-language "Bruce, ..."). If yes, responds. If not addressed directly, checks the last 4 user messages — if any addressed Bruce, he's in an engaged window and responds. Otherwise silent. Engagement resets naturally when 4 messages pass without a direct address.
+**Bruce trigger logic (server-side, hard gate)** — No client-side pause state, no engagement window. `shouldBruceRespond()` checks only the current message: `/@bruce\b/i` or natural-language address ("Bruce, ..."). If not directly addressed, no Anthropic call is made at all — Bruce is fully silent. The earlier 4-message engagement window was removed because it caused Bruce to respond to conversational messages not directed at him.
 
 **Family chat auto-creation (lazy)** — Rather than a seed script, the family chat is created on first visit to `/family` (server component, service role). All active members added to `chat_members` at creation. Subsequent visitors skip creation. New users added in auth/callback.
 
@@ -442,6 +448,25 @@ All deletes are soft-delete where possible (status field), hard delete for chats
 **Member color palette** — Jake: `#0F6E56` (accent), Laurianne: `#7C5CFC` (purple), Jocelynn: `#E8607A` (rose), Nana: `#D97706` (amber). Keyed by first name. Applied to sender name label and member bubble border.
 
 **Mobile bottom nav** — `position: fixed` at viewport bottom. Hidden on desktop via CSS `@media (max-width: 768px)`. Main content avoids overlap via `with-bottom-nav` CSS class (not inline style, so `!important` in the class overrides any inline padding). The nav disappears entirely when inside standalone chats, project chats, or family threads.
+
+### Task 2 Addendum — Member Avatars and Tone Refinement (complete)
+
+Additional work completed after the core family chat and threads build.
+
+- **Sidebar thread avatar stack** — Each thread row in the sidebar shows a compact avatar stack (18px circles, 1.5px border, -5px overlap, max 3 + "+N" overflow). `GET /api/family/threads` enhanced to batch-fetch member data for all threads in two queries (no N+1). Returns `members: [{id, name, avatar_url}][]` per thread.
+- **Topbar member avatar stack with sheet** — `FamilyThreadTopBar` shows a tappable avatar stack (22px circles, -7px overlap, max 3 + "+N") between the title and the three-dot menu. Tapping opens a member sheet overlay listing all thread members with their avatars and full names.
+- **Bruce tone and silence rules** — System prompt updated in `buildFamilyChatSystemPrompt()`: hard silence rule (no acknowledgment at all when not addressed), three-tier judgment with explicit low-stakes silence behavior, named filler ban list, no self-doubt, no name-deflecting, stop after action speaks for itself, emotional messages capped at 1-2 sentences.
+- **Removed: engagement window** — The 4-message engagement window was removed from `shouldBruceRespond()` in `app/api/family/chat/route.ts`. Bruce now only responds when the current message directly addresses him.
+- **Removed from scope: cross-context routing** — Planned feature for Bruce to route a request from family chat into a project was deferred indefinitely; too much complexity for unclear value.
+- **Deferred to Phase 6: message reactions** — iMessage-style reactions (👍 etc.) that would handle low-stakes acknowledgment were originally planned for Phase 4. Moved to Phase 6 Polish.
+
+#### Notable decisions
+
+**Notification model (decided, not yet built)** — @ mention in family chat or thread sends a push to mentioned member(s) once. Suppressed while the recipient has the app active in that thread. Resets after 30 minutes of inactivity. Implementation is Phase 5 work.
+
+**Commit discipline** — Never push without an explicit `git push` command. There was a 54-file gap discovered when assuming pushes happened automatically. Every session: verify what's on main before assuming deploy state.
+
+---
 
 ### Task 2 Addendum — Family Threads (complete)
 
@@ -463,4 +488,13 @@ Family threads are named sub-topic conversations inside the Family section.
 
 *Updated by the planning chat before each Claude Code session.*
 
-**Current:** Phase 4, Task 2 (Family Group Chat + Family Threads + membership model) complete. Ready for deploy. Remaining: Task 1 (member onboarding), Task 3 (push notifications).
+**Current:** Phase 5 — Connectors + Admin
+
+Phase 4 is complete and deployed. Build order for Phase 5:
+
+1. **Push notifications** — Firebase Cloud Messaging. @ mention in family chat/thread sends push to mentioned member. Suppress while recipient is active in that thread. Reset after 30 min inactivity.
+2. **QuickBooks connector** — Read-only. Pull P&L, invoice status, outstanding AR for CPS. Surface in a project context block.
+3. **Precise Petcare connector** — Read appointment/client data for CPS. Surface in project context.
+4. **Melio connector** — Bill pay status for CPS. Surface in project context.
+5. **Google Calendar connector** — Read family calendar events. Surface in chat context when relevant.
+6. **Admin panel** — Full invite management, user management, memory audit UI. Replaces the stub at `/admin/invites`.
