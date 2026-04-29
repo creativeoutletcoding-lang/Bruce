@@ -24,7 +24,7 @@ export async function GET() {
   const chatIds = (memberRows ?? []).map((r: { chat_id: string }) => r.chat_id);
   if (chatIds.length === 0) return Response.json([]);
 
-  const { data } = await adminSupabase
+  const { data: threads } = await adminSupabase
     .from("chats")
     .select("id, title, last_message_at")
     .eq("type", "family_thread")
@@ -32,7 +32,42 @@ export async function GET() {
     .order("last_message_at", { ascending: false })
     .limit(30);
 
-  return Response.json(data ?? []);
+  if (!threads || threads.length === 0) return Response.json([]);
+
+  // Batch-fetch members for all threads in two queries (not N+1)
+  const { data: threadMemberRows } = await adminSupabase
+    .from("chat_members")
+    .select("chat_id, user_id")
+    .in("chat_id", threads.map((t: { id: string }) => t.id));
+
+  const allMemberUserIds = [
+    ...new Set((threadMemberRows ?? []).map((m: { user_id: string }) => m.user_id)),
+  ];
+
+  const { data: userRows } = allMemberUserIds.length > 0
+    ? await adminSupabase
+        .from("users")
+        .select("id, name, avatar_url")
+        .in("id", allMemberUserIds)
+    : { data: [] };
+
+  const userMap: Record<string, { id: string; name: string; avatar_url: string | null }> = {};
+  (userRows ?? []).forEach((u: { id: string; name: string; avatar_url: string | null }) => {
+    userMap[u.id] = u;
+  });
+
+  const result = threads.map((thread: { id: string; title: string; last_message_at: string }) => ({
+    id: thread.id,
+    title: thread.title,
+    last_message_at: thread.last_message_at,
+    members: (threadMemberRows ?? [])
+      .filter((m: { chat_id: string }) => m.chat_id === thread.id)
+      .map((m: { user_id: string }) => userMap[m.user_id])
+      .filter(Boolean)
+      .slice(0, 4),
+  }));
+
+  return Response.json(result);
 }
 
 export async function POST(request: NextRequest) {

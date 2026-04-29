@@ -11,12 +11,9 @@ export const runtime = "nodejs";
 
 // ── Bruce engagement logic (server-side, hard gate) ──────────────────────────
 //
-// Bruce responds only when:
-//   1. The current message directly addresses him (@mention or "Bruce, …"), OR
-//   2. He responded within the last 4 messages (active conversation window)
-//
-// If neither condition is met, no Anthropic API call is made — this is a code
-// gate, not a system prompt instruction.
+// Bruce responds ONLY when the current message directly addresses him.
+// No engagement window — if nobody mentions Bruce, no Anthropic call is made.
+// @mention (case-insensitive) or natural-language address ("Bruce, …") triggers.
 
 function isDirectlyAddressed(message: string): boolean {
   return (
@@ -27,13 +24,8 @@ function isDirectlyAddressed(message: string): boolean {
   );
 }
 
-function shouldBruceRespond(
-  currentMessage: string,
-  recentMessages: Array<{ role: string }>
-): boolean {
-  if (isDirectlyAddressed(currentMessage)) return true;
-  // Engaged if Bruce responded within the last 4 messages (any role)
-  return recentMessages.slice(-4).some((m) => m.role === "assistant");
+function shouldBruceRespond(currentMessage: string): boolean {
+  return isDirectlyAddressed(currentMessage);
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -83,7 +75,7 @@ export async function POST(request: NextRequest) {
     sender_id: string | null;
   }>;
 
-  const willRespond = shouldBruceRespond(message, history);
+  const willRespond = shouldBruceRespond(message);
 
   // Save user message
   const { error: msgErr } = await adminSupabase.from("messages").insert({

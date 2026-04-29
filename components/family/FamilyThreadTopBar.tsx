@@ -22,11 +22,13 @@ export default function FamilyThreadTopBar({
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [memberSheetOpen, setMemberSheetOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   // Track current member IDs locally so newly added members disappear from the picker
   const [currentMemberIds, setCurrentMemberIds] = useState<string[]>(threadMemberIds);
 
+  const threadMembers = allMembers.filter((m) => currentMemberIds.includes(m.id));
   const addableMembers = allMembers.filter((m) => !currentMemberIds.includes(m.id));
 
   async function handleDelete() {
@@ -84,6 +86,79 @@ export default function FamilyThreadTopBar({
           <span style={styles.emoji}>💬</span>
           <h1 style={styles.title}>{threadName}</h1>
         </div>
+
+        {/* Member avatar stack — tap to open member list */}
+        {threadMembers.length > 0 && (
+          <button
+            onClick={() => setMemberSheetOpen(true)}
+            style={styles.avatarStackButton}
+            aria-label="View members"
+          >
+            {threadMembers.slice(0, 3).map((m, i) => (
+              <div
+                key={m.id}
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: "var(--radius-full)",
+                  border: "1.5px solid var(--bg-primary)",
+                  overflow: "hidden",
+                  marginLeft: i === 0 ? 0 : -7,
+                  zIndex: 3 - i,
+                  position: "relative",
+                  backgroundColor: "var(--accent)",
+                  flexShrink: 0,
+                }}
+              >
+                {m.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={m.avatar_url}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "0.5rem",
+                      fontWeight: "700",
+                      color: "#fff",
+                    }}
+                  >
+                    {m.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+            ))}
+            {threadMembers.length > 3 && (
+              <div
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: "var(--radius-full)",
+                  border: "1.5px solid var(--bg-primary)",
+                  backgroundColor: "var(--bg-secondary)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginLeft: -7,
+                  flexShrink: 0,
+                  fontSize: "0.5rem",
+                  fontWeight: "700",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                +{threadMembers.length - 3}
+              </div>
+            )}
+          </button>
+        )}
 
         {/* Menu button */}
         <button
@@ -205,6 +280,35 @@ export default function FamilyThreadTopBar({
         </div>
       )}
 
+      {/* Member sheet */}
+      {memberSheetOpen && (
+        <div style={styles.overlay} onClick={() => setMemberSheetOpen(false)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <p style={styles.modalTitle}>Members</p>
+            <div style={styles.memberList}>
+              {threadMembers.map((m) => (
+                <div key={m.id} style={styles.memberRow}>
+                  <div style={styles.memberAvatar}>
+                    {m.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={m.avatar_url} alt="" style={styles.avatarImg} referrerPolicy="no-referrer" />
+                    ) : (
+                      <span style={styles.avatarInitial}>{m.name.charAt(0)}</span>
+                    )}
+                  </div>
+                  <span style={styles.memberName}>{m.name}</span>
+                </div>
+              ))}
+            </div>
+            <div style={styles.modalActions}>
+              <button style={styles.cancelButton} onClick={() => setMemberSheetOpen(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete confirmation modal */}
       {deleteModalOpen && (
         <div style={styles.overlay}>
@@ -279,6 +383,15 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+  },
+  avatarStackButton: {
+    display: "flex",
+    alignItems: "center",
+    cursor: "pointer",
+    padding: "4px 6px",
+    borderRadius: "var(--radius-sm)",
+    flexShrink: 0,
+    transition: "opacity var(--transition)",
   },
   menuButton: {
     display: "flex",

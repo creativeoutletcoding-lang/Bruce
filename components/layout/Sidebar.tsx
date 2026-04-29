@@ -6,10 +6,17 @@ import { createClient } from "@/lib/supabase/client";
 import { useChatContext } from "@/components/layout/ChatShell";
 import type { User, ProjectListItem, UserSummary } from "@/lib/types";
 
+interface ThreadMemberSummary {
+  id: string;
+  name: string;
+  avatar_url: string | null;
+}
+
 interface FamilyThread {
   id: string;
   title: string;
   last_message_at: string;
+  members: ThreadMemberSummary[];
 }
 
 interface ChatListItem {
@@ -40,6 +47,78 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 const ICON_OPTIONS = ["📁", "💼", "🏠", "🐾", "💰", "📋"];
+
+function ThreadAvatarStack({ members }: { members: ThreadMemberSummary[] }) {
+  const shown = members.slice(0, 3);
+  const overflow = members.length - shown.length;
+  return (
+    <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+      {shown.map((m, i) => (
+        <div
+          key={m.id}
+          style={{
+            position: "relative",
+            width: 18,
+            height: 18,
+            borderRadius: "var(--radius-full)",
+            border: "1.5px solid var(--bg-sidebar)",
+            overflow: "hidden",
+            marginLeft: i === 0 ? 0 : -5,
+            zIndex: shown.length - i,
+            backgroundColor: "var(--accent)",
+            flexShrink: 0,
+          }}
+        >
+          {m.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={m.avatar_url}
+              alt=""
+              referrerPolicy="no-referrer"
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            />
+          ) : (
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "0.45rem",
+                fontWeight: "700",
+                color: "#fff",
+              }}
+            >
+              {m.name.charAt(0).toUpperCase()}
+            </div>
+          )}
+        </div>
+      ))}
+      {overflow > 0 && (
+        <div
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: "var(--radius-full)",
+            border: "1.5px solid var(--bg-sidebar)",
+            backgroundColor: "var(--bg-secondary)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginLeft: -5,
+            flexShrink: 0,
+            fontSize: "0.45rem",
+            fontWeight: "700",
+            color: "var(--text-secondary)",
+          }}
+        >
+          +{overflow}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const router = useRouter();
@@ -246,9 +325,8 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         setShowNewThreadModal(false);
         setNewThreadName("");
         // Optimistically add the thread so the sidebar is up to date before
-        // navigation. loadFamilyThreads() below syncs the full list in the
-        // background to pick up any server-side differences.
-        setFamilyThreads((prev) => [thread, ...prev]);
+        // navigation. members is empty until loadFamilyThreads() syncs.
+        setFamilyThreads((prev) => [{ ...thread, members: [] }, ...prev]);
         router.push(`/family/threads/${thread.id}`);
         onNavigate();
         loadFamilyThreads();
@@ -420,6 +498,9 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               >
                 <span style={styles.threadEmoji}>💬</span>
                 <span style={styles.threadName}>{thread.title}</span>
+                {thread.members.length > 0 && (
+                  <ThreadAvatarStack members={thread.members} />
+                )}
               </button>
             );
           })}
