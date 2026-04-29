@@ -32,13 +32,18 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/auth");
+  const isPublic =
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/join") ||
+    // Invite token validation — new users have no session when they hit /join
+    pathname.startsWith("/api/admin/invites/");
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isPublic) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (user && pathname === "/login") {
+  if (user && (pathname === "/login" || pathname === "/join")) {
     return NextResponse.redirect(new URL("/chat", request.url));
   }
 

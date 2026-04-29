@@ -1,5 +1,5 @@
 # Bruce — Phase 1 Setup Guide
-## Foundation: Supabase · Auth · Schema · Vercel · DigitalOcean · bruce.app
+## Foundation: Supabase · Auth · Schema · Vercel · DigitalOcean · heybruce.app
 
 Complete these steps in order. Each section has a clear stopping point.
 
@@ -129,27 +129,27 @@ Click Continue with Google — completes OAuth — redirects back to `/chat`.
 2. Import your GitHub `bruce` repo
 3. Framework preset: Next.js (auto-detected)
 4. Set environment variables — paste all vars from `.env.local`:
-   - Change `NEXT_PUBLIC_APP_URL` to `https://bruce.app`
+   - Change `NEXT_PUBLIC_APP_URL` to `https://heybruce.app`
 5. Deploy
 
 Vercel will auto-deploy every push to `main` from here on.
 
 **Add the Vercel callback URI to Google OAuth:**
 - Go back to Google Cloud → Credentials → your OAuth client
-- Add `https://bruce.app/auth/callback` to authorized redirect URIs
+- Add `https://heybruce.app/auth/callback` to authorized redirect URIs
 - Also update Supabase's Google provider redirect URI if needed
 
 ---
 
-## Step 6 — bruce.app Domain
+## Step 6 — heybruce.app Domain
 
-1. Go to wherever bruce.app is registered (or register it)
+1. Go to wherever heybruce.app is registered (or register it)
 2. In Vercel → your project → Settings → Domains
-3. Add `bruce.app`
+3. Add `heybruce.app`
 4. Vercel will give you DNS records — add them to your registrar
 5. SSL provisions automatically (~5 minutes)
 
-Test: open `https://bruce.app` — should work identically to local.
+Test: open `https://heybruce.app` — should work identically to local.
 
 ---
 
@@ -205,7 +205,7 @@ This server is ready for Phase 5 background jobs. Nothing runs on it yet.
 
 Run through this checklist:
 
-- [ ] `https://bruce.app` opens and redirects to login
+- [ ] `https://heybruce.app` opens and redirects to login
 - [ ] Google OAuth completes and creates a user row in Supabase
 - [ ] User row has `role = 'admin'` for Jake's email
 - [ ] Household seed record exists in the household table
@@ -221,7 +221,7 @@ Run through this checklist:
 - Supabase project with full schema and RLS enforced on every table
 - Google OAuth working — single sign-in button, no passwords
 - User creation on first login with correct role assignment
-- Auto-deploy pipeline: GitHub → Vercel → bruce.app
+- Auto-deploy pipeline: GitHub → Vercel → heybruce.app
 - DigitalOcean server provisioned for background jobs
 - PWA manifest and service worker hooks in place
 - All Bruce design tokens defined in globals.css

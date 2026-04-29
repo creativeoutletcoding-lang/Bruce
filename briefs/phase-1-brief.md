@@ -185,7 +185,7 @@ These require dashboard access Claude Code cannot have:
 4. Create .env.local with real values
 5. Connect GitHub repo to Vercel
 6. Add environment variables in Vercel dashboard
-7. Configure bruce.app domain in Vercel
+7. Configure heybruce.app domain in Vercel
 8. Provision DigitalOcean droplet
 
 The setup guide in PHASE-1-SETUP.md covers all of these step by step.

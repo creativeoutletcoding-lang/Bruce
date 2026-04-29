@@ -8,7 +8,7 @@ implementation decision. When in doubt, consult it.
 
 ## What Bruce Is
 
-Bruce is a private household AI for the Johnson family, living at bruce.app.
+Bruce is a private household AI for the Johnson family, living at heybruce.app.
 Not a product. Infrastructure. Built to feel like a trusted family presence.
 The closest reference is Claude.ai — same structure, extended with a shared
 household dimension.
@@ -44,7 +44,7 @@ Kids in shared memory context only (no accounts): Elliot (8), Henry (5), Violett
 | AI model | Anthropic API — claude-sonnet-4-6 |
 | Image gen | Replicate |
 | Web search | Perplexity API |
-| Domain | bruce.app |
+| Domain | heybruce.app |
 
 ---
 
@@ -62,25 +62,72 @@ bruce/
 │   │   └── callback/
 │   │       └── route.ts      # OAuth exchange + first-login user creation
 │   ├── chat/                 # Standalone chats (Phase 2)
+│   │   ├── layout.tsx        # Auth guard + ChatShell wrapper
+│   │   ├── page.tsx          # Welcome screen + new chat
+│   │   └── [id]/
+│   │       └── page.tsx      # Existing chat view
 │   ├── projects/             # Project workspace (Phase 3)
+│   │   ├── layout.tsx        # Auth guard + ChatShell wrapper
+│   │   └── [id]/
+│   │       ├── page.tsx      # Project home screen (server component)
+│   │       └── chat/
+│   │           └── [chatId]/
+│   │               └── page.tsx  # Project chat view
+│   ├── api/
+│   │   ├── chat/route.ts             # Standalone chat streaming
+│   │   ├── memory/generate/route.ts  # Memory generation on unmount
+│   │   ├── users/route.ts            # GET all active household members
+│   │   ├── admin/
+│   │   │   └── invites/
+│   │   │       ├── route.ts          # POST create invite token (admin only)
+│   │   │       └── [token]/
+│   │   │           └── route.ts      # GET validate token (public)
+│   │   └── projects/
+│   │       ├── route.ts              # GET list, POST create
+│   │       └── [id]/
+│   │           ├── route.ts          # GET detail, PATCH, DELETE
+│   │           ├── members/route.ts  # POST add, DELETE remove
+│   │           ├── chat/route.ts     # POST streaming project chat
+│   │           ├── instructions/
+│   │           │   └── update/route.ts  # POST living instructions update
+│   │           └── files/
+│   │               ├── route.ts      # GET list, POST attach, DELETE detach
+│   │               ├── browse/route.ts  # GET Drive files for project folder
+│   │               └── upload/route.ts  # POST create new file in Drive
+│   ├── join/
+│   │   └── page.tsx              # Public invite landing page
 │   ├── family/               # Family group chat (Phase 4)
-│   └── admin/                # Admin panel — Jake only (Phase 5)
+│   └── admin/
+│       └── invites/
+│           └── page.tsx          # Admin invite generator (stub — Phase 5 gets full panel)
 ├── components/
-│   ├── layout/               # Sidebar, MobileNav, TopBar
-│   ├── chat/                 # ChatWindow, MessageList, MessageInput, MessageBubble
+│   ├── layout/               # ChatShell, Sidebar (with projects + chats sections)
+│   ├── chat/                 # ChatWindow, MessageList, MessageInput, MessageBubble, TopBar
+│   ├── project/              # ProjectHome, ProjectChatWindow, ProjectTopBar
 │   └── ui/                   # Shared primitives
 ├── lib/
 │   ├── supabase/
 │   │   ├── client.ts         # Browser client (use client components)
 │   │   └── server.ts         # Server client + service role client
-│   ├── anthropic/            # API client, memory assembly, streaming
-│   ├── types.ts              # TypeScript types matching DB schema exactly
+│   ├── anthropic/            # buildSystemPrompt, buildProjectSystemPrompt, assembleMemoryBlock
+│   ├── google/
+│   │   └── drive.ts          # Drive client: ensureBruceFolders, listProjectFiles, getFileContent, uploadFile
+│   ├── types.ts              # TypeScript types matching DB schema + API response shapes
 │   └── utils/
 ├── public/
 │   ├── manifest.json         # PWA manifest
 │   └── sw.js                 # Service worker (Phase 6)
 ├── middleware.ts             # Auth protection + session refresh
 ├── schema.sql                # Complete Supabase schema (source of truth)
+├── migrations/
+│   ├── 003_google_tokens.sql # Adds 6 Google token/folder columns to users table
+│   └── 004_invite_rls.sql    # Adds public anon SELECT policy for invite token validation
+├── scripts/
+│   ├── seed-cps.ts           # One-time: creates CPS — Operations project, adds Jake as owner
+│   └── seed-cps-nana.ts      # One-time: adds Nana to CPS after she accepts invite
+├── docs/
+│   └── google-oauth-setup.md # Step-by-step Google Cloud Console + Supabase config
+├── tsconfig.scripts.json     # ts-node compatible tsconfig for seed scripts
 ├── CLAUDE.md                 # This file
 └── .env.example              # All required env vars documented
 ```
@@ -179,10 +226,10 @@ const supabase = createServiceRoleClient();
 
 | Phase | Status | Scope |
 |-------|--------|-------|
-| 1 — Foundation | ✅ Complete | Supabase, schema, auth, Vercel, DigitalOcean, bruce.app |
+| 1 — Foundation | ✅ Complete | Supabase, schema, auth, Vercel, DigitalOcean, heybruce.app |
 | 2 — Core Chat | ✅ Complete | Private chat, streaming, history, memory, welcome screen, incognito |
-| 3 — Projects | ⬜ Not started | Project UI, Drive integration, CPS goes live |
-| 4 — Household | ⬜ Not started | Remaining members, family chat, notifications |
+| 3 — Projects | ✅ Complete | Project UI, Drive integration, invite flow, CPS goes live |
+| 4 — Household | 🔄 In progress | Remaining members, family chat, notifications |
 | 5 — Connectors + Admin | ⬜ Not started | QuickBooks, Petcare, Melio, Calendar, admin panel |
 | 6 — Polish | ⬜ Not started | PWA, sharing, image gen, web search |
 
@@ -190,7 +237,7 @@ const supabase = createServiceRoleClient();
 
 ## Phase 2 — Implementation Notes
 
-Phase 2 is complete and deployed to bruce.app. This section records decisions made and issues resolved during the build so future sessions don't relitigate them.
+Phase 2 is complete and deployed to heybruce.app. This section records decisions made and issues resolved during the build so future sessions don't relitigate them.
 
 ### What was built
 
@@ -244,8 +291,176 @@ Phase 2 is complete and deployed to bruce.app. This section records decisions ma
 
 ---
 
+---
+
+## Phase 3 — Implementation Notes
+
+Phase 3 Task 1 (Project infrastructure and home screen) is complete. This section records decisions.
+
+### What was built
+
+- **API routes** — `GET/POST /api/projects`, `GET/PATCH/DELETE /api/projects/[id]`, `POST/DELETE /api/projects/[id]/members`, `POST /api/projects/[id]/chat` (streaming), `POST /api/projects/[id]/instructions/update`, `GET /api/users`
+- **Sidebar** — Projects section added above Chats. Each project shows icon + name + member pip indicators (accent color with opacity variants). "New project" button opens a modal with icon picker (6 emoji options) and name input. Active project highlighted with accent left border.
+- **Project home screen** — Single scrollable column at `/projects/[id]`. Panels: Header (icon + name + stacked member avatars), Instructions (editable textarea, auto-saves on blur, owner/admin only), Files (list with MIME icons + placeholder "Attach file"), Members (list with role badges + "Add member" modal for owners), Connectors (5 static "Not connected" placeholders), Chats (list + "New chat" button that creates a chat row directly via browser Supabase client).
+- **Project chat** — `/projects/[id]/chat/[chatId]`. Uses `ProjectChatWindow` (reuses `MessageList`, `MessageInput`) + `ProjectTopBar` (back → project home, project name). Calls `/api/projects/[id]/chat` streaming endpoint. Fires living instructions update on unmount.
+- **Living instructions** — On `ProjectChatWindow` unmount, sends keepalive POST to `/api/projects/[id]/instructions/update`. Route loads last 10 messages, asks Claude if instructions should change, writes only if text differs.
+- **Project system prompt** — `buildProjectSystemPrompt()` added to `lib/anthropic/index.ts`. Base identity + memory block (same 500-word ceiling) + project block (name, instructions, members, files) appended separately.
+- **Chat title generation** — Project chats use `generateChatTitle(message)` (synchronous substring, same as standalone chats) called before streaming begins. Title is saved to DB before the stream starts and sent as `X-Chat-Title` response header. *(Note: an earlier implementation used an async Anthropic call in the `finally` block — that was replaced because the title wasn't reliably saved before the user navigated back to project home.)*
+
+### Key decisions
+
+**Service role for user profile reads** — The `users` RLS policy (`id = auth.uid() OR is_admin()`) means non-admins can only see their own row. Two places require all household members: (1) `GET /api/users` for the member picker, (2) building the member list in `GET /api/projects/[id]` and the project chat system prompt. Both use the service role client purely for reading names/avatars — permission checks still use the authenticated client. Noted in each route with a comment.
+
+**`app/projects/layout.tsx` reuses `ChatShell`** — Same pattern as `app/chat/layout.tsx`. The projects layout wraps with `ChatShell`, which provides the sidebar + drawer + context. The Sidebar now renders a Projects section above Chats, with `activeProjectId` detection from the pathname.
+
+**Sidebar "sectionHeaderRow" layout** — The Projects section header uses a flex row with the section label and a "+" icon button, unlike the Chats section which uses a plain label. This matches the brief ("New project button at the top of the section").
+
+**"New chat" in project home creates chat row immediately** — Rather than navigating to a blank form, clicking "New chat" inserts a `chats` row with `project_id` set via the browser Supabase client (RLS allows: `owner_id = auth.uid()` and `is_project_member(project_id)`), then navigates to `/projects/[id]/chat/[chatId]`. The project chat page starts with an empty message list.
+
+**Connectors panel is static UI only** — All five connectors (Google Drive, Google Calendar, QuickBooks, Precise Petcare, Melio) render as "Not connected" grey badges. No state, no handlers. Phase 5 work.
+
+---
+
+## Phase 3 Task 2 — Google Drive Integration
+
+Phase 3 Task 2 (Google Drive integration and file attachment) is complete. This section records decisions.
+
+### What was built
+
+- **`lib/google/drive.ts`** — Full Drive client. `getValidToken` fetches stored Google token from DB, refreshes if within 5 min of expiry, saves updated token on refresh. `ensureBruceFolders` creates/finds the three Drive folder hierarchy (Bruce → Personal/Projects). `ensureProjectFolder` finds/creates a subfolder under Projects for a named project. `listProjectFiles`, `getFileContent` (exports Docs/Sheets as text, truncates at 2000 chars), `uploadFile` (multipart upload).
+- **`migrations/003_google_tokens.sql`** — Adds `google_access_token`, `google_refresh_token`, `google_token_expires_at`, `google_drive_root_id`, `google_drive_personal_id`, `google_drive_projects_id` columns to `users`.
+- **OAuth scope expansion** — `app/login/page.tsx` adds `queryParams: { access_type: "offline", prompt: "consent" }` to force Google to issue a refresh token on every login.
+- **`app/auth/callback/route.ts`** — Rewritten to extract `provider_token` + `provider_refresh_token` from session and store them in the `users` row via service role. Calls `ensureBruceFolders` fire-and-forget (non-blocking).
+- **File API routes** — `GET/POST/DELETE /api/projects/[id]/files`, `GET /api/projects/[id]/files/browse` (lists Drive folder), `POST /api/projects/[id]/files/upload` (creates new Drive file + DB record).
+- **File picker UI** — `ProjectHome` file section has "Attach file" button opening a modal with two tabs: "Browse Drive" (lists existing project folder contents, "Attach" button per file) and "Upload new" (name + content textarea + type selector: note/doc/sheet → "Create and attach"). Attached files show name linked to `drive_url` + "×" remove button.
+- **File content injection in project chat** — `/api/projects/[id]/chat` fetches content for each attached file via `getFileContent`, builds a block capped at 3000 chars total. Passed as `fileContentBlock` to `buildProjectSystemPrompt`, which appends it after the file name list.
+
+### Key decisions
+
+**Google OAuth requires `access_type: "offline"` + `prompt: "consent"`** — Without both, Google only returns a refresh token on the very first authorization. After that, the session only has an access token. With `prompt: "consent"`, Google re-issues a refresh token every login. This guarantees the user always has a functional long-lived token stored in the DB.
+
+**Token refresh threshold is 5 minutes** — `getValidToken` checks `google_token_expires_at - 5 minutes`. If the token will expire within 5 minutes, it proactively refreshes. This prevents race conditions where a token expires mid-request.
+
+**`listProjectFiles` uses `ensureProjectFolder`** — Rather than storing a Drive folder ID per project in the DB (extra column, migration), the project folder is derived by looking up the project name and calling `ensureProjectFolder`. This is slightly more expensive (2 Drive API calls) but keeps the schema simpler. If performance becomes an issue, add `google_drive_folder_id` to the `projects` table.
+
+**File content capped at 3000 chars across all files** — A per-file cap risks allocating the entire budget to one file. The 3000-char total cap ensures all files get a fair share of context, with a note appended when files are skipped. This is a conservative limit; adjust in the route if Anthropic context usage allows more.
+
+**Drive upload uses multipart/related** — The Drive v3 API multipart upload sends metadata + content in a single HTTP request. For text content, this is simpler than resumable uploads. The content is base64-encoded in the boundary body. Docs/Sheets are uploaded as plain text and converted by Drive automatically when targeting the `vnd.google-apps.*` MIME type.
+
+---
+
+## Phase 3 Task 3 — CPS Seed, Invite Flow, Phase Wrap
+
+Phase 3 Task 3 is complete. Phase 3 is fully complete.
+
+### What was built
+
+- **`scripts/seed-cps.ts`** — Creates the CPS — Operations project with icon 🐾 and WC instructions. Idempotent. Run with `npm run seed:cps` after Jake's first login.
+- **`scripts/seed-cps-nana.ts`** — Adds Nana to CPS as a member. Run with `npm run seed:cps:nana -- nana@email.com` after Nana accepts her invite.
+- **`tsconfig.scripts.json`** — ts-node compatible tsconfig (CJS module, Node resolution). Separate from main tsconfig which uses Next.js-specific settings incompatible with ts-node.
+- **Invite flow** — End-to-end. `POST /api/admin/invites` creates a 48-hour token (admin only). `GET /api/admin/invites/[token]` validates publicly (no auth needed for new users). `/join` page validates the token and triggers Google sign-in with the token embedded in the redirectTo URL. `auth/callback` extracts the token, validates it, marks it used, then creates the user row.
+- **Auth guard for new users** — Uninvited users who complete Google OAuth are redirected to `/join?error=unauthorized`. Admin email (Jake) bypasses invite check. All other first-time users require a valid token.
+- **`migrations/004_invite_rls.sql`** — Public anon SELECT policy so the `/join` page can validate tokens without a session.
+- **`app/admin/invites/page.tsx`** — Simple admin tool. Server component checks admin role and redirects non-admins. Renders `InviteAdminClient` with email input + generate button + copyable URL output.
+- **`middleware.ts` updated** — `/join` and `/api/admin/invites/` added to public (no-redirect) routes. Authenticated users visiting `/join` are redirected to `/chat`.
+- **`docs/google-oauth-setup.md`** — Step-by-step setup for Google Cloud Console (APIs to enable, scopes, credentials, redirect URIs) and Supabase dashboard (Google provider config).
+
+### Key decisions
+
+**`tsconfig.scripts.json` instead of `tsconfig.json`** — The main `tsconfig.json` uses `"moduleResolution": "bundler"` and `"module": "esnext"`, which ts-node cannot handle. A separate scripts tsconfig with `"module": "commonjs"` and `"moduleResolution": "node"` is required. Scripts don't use `@/` path aliases — they import from npm packages directly.
+
+**Invite token passed via `redirectTo` URL param, not OAuth state** — Supabase manages the OAuth `state` parameter internally for CSRF protection. The correct approach is to embed the invite token in the `redirectTo` URL as a query param (`/auth/callback?invite_token=abc`). Supabase preserves custom query params in the redirect, so the callback receives both `code` and `invite_token`.
+
+**Token is marked used before user row is created** — Prevents a race condition where two near-simultaneous requests with the same token both pass validation before either marks it used. Marking first means the second request gets a valid row check but the token is already used.
+
+**Admin email bypasses invite check** — Jake's first login (bootstrapping the system) happens before any invite tokens exist. ADMIN_EMAIL check skips the invite validation for the admin user only.
+
+**Core memories seeded only for admin** — Previous code seeded Jake's core memories for all new users. Updated to only seed for the admin (Jake). Other household members start with a blank memory slate that fills naturally through use.
+
+---
+
+## Phase 3 Task 4 — Routing Fix and Inline Chat Input
+
+Post-launch fixes and additions after the core Phase 3 deploy.
+
+### What was built
+
+- **Project chat routing fix** — Project chats were opening in the standalone `/chat/[id]` layout instead of the project layout. Fixed in two places: (1) `app/chat/[id]/page.tsx` now queries `project_id` and issues a server-side redirect to `/projects/[id]/chat/[chatId]` if set — this catches any direct URL access or stale link. (2) `Sidebar.tsx` `handleSelectChat` now routes to the project URL if `chat.project_id` is set; `loadChats` double-filters to exclude project chats from the standalone list (belt-and-suspenders against RLS timing).
+- **Inline chat input on project home** — Replaced the "New chat" button in the Chats panel header with a full-width textarea bar pinned to the bottom of the project home screen. Placeholder: "Start a conversation about [project name]…". On send: creates a chat row via the browser Supabase client, navigates to `/projects/[id]/chat/[chatId]?q=<message>`, and `ProjectChatWindow` auto-sends the message on mount via a `useEffect` with `initialSentRef` guard. URL is cleaned with `router.replace` immediately so refresh doesn't re-send.
+
+### Key decisions
+
+**Server-side redirect is the authoritative routing fix** — The `app/chat/[id]/page.tsx` redirect handles the case where a project chat ID lands at the wrong URL regardless of how it got there (direct link, stale bookmark, Sidebar bug). The Sidebar fix is belt-and-suspenders but not load-bearing.
+
+**`initialSentRef` prevents double-send in React Strict Mode** — `useEffect` runs twice in development under Strict Mode. The ref ensures `sendMessage(initialInput)` fires exactly once regardless.
+
+**`?q=` param over state or sessionStorage** — Passing the initial message as a URL search param keeps the handoff simple (no shared state, no storage), works across full page loads, and is cleaned from the URL before the user can copy or refresh it.
+
+---
+
+## Phase 6 — Polish Notes
+
+### Planned Additions
+
+**Delete functionality (user-facing)**
+
+- Delete individual standalone chats
+- Delete individual project chats
+- Archive/delete a project (owner only)
+- Clear all chats within a project
+
+All deletes are soft-delete where possible (status field), hard delete for chats and messages. Confirmation prompt required before any delete action.
+
+---
+
+---
+
+## Phase 4 — Implementation Notes
+
+### Task 2 — Family Group Chat (complete)
+
+#### What was built
+
+- **`migrations/005_family_group.sql`** — Expands `chats.type` CHECK constraint to include `'family_group'`. Adds a type-based RLS policy so all authenticated members can read the permanent family chat row.
+- **`app/api/family/chat/route.ts`** — POST streaming endpoint. Saves the user message, loads recent history, determines if Bruce should respond (server-side `shouldBruceRespond()`), streams Bruce's reply if yes. Returns `X-Bruce-Responded: false` and exits immediately when Bruce is passive and not directly addressed.
+- **`app/family/layout.tsx`** — Auth guard + ChatShell wrapper, same pattern as chat/projects layouts.
+- **`app/family/page.tsx`** — Server component. Auto-creates the family_group chat (with `ensureFamilyChat()`) if one doesn't exist, adds all active members to `chat_members`. Loads messages and members, passes to FamilyChatWindow with `topbar={<FamilyTopBar />}`.
+- **`components/family/FamilyTopBar.tsx`** — Top bar: mobile hamburger, centered "🏠 Family" title, invisible spacer for centering. No Bruce toggle.
+- **`components/family/FamilyChatWindow.tsx`** — Accepts `topbar: React.ReactNode` prop and optional `placeholder` prop. Features: member-attributed messages (sender name above each run, color-coded by member), typing dots → "Bruce is working on it…" working indicator, long press + right-click context menu with "Ask Bruce" and "Copy" actions, realtime subscription for other members' messages, auto-dedup of optimistic/streaming messages via DB reload after each send.
+- **Sidebar** — Family section: Family Chat button at top, thread list below, "New Thread" (+) button in the section header. Chats list excludes `family_group` and `family_thread` types. Realtime subscription triggers `loadFamilyThreads()` on chats table changes.
+- **ChatShell** — Added mobile bottom nav (Home, Projects, Family tabs). Nav hides when inside a specific standalone chat, project chat, or family thread (`/family/threads/[id]`). Fixed nav via `position: fixed`; main content avoids overlap via `with-bottom-nav` CSS class.
+- **`auth/callback`** — On every new user login, checks if a family_group chat exists and adds the user to `chat_members` if not already a member.
+
+#### Key decisions
+
+**Bruce trigger logic (server-side, no toggle)** — No client-side pause state. `shouldBruceRespond()` in the API route checks if the current message directly addresses Bruce (@mention or natural-language "Bruce, ..."). If yes, responds. If not addressed directly, checks the last 4 user messages — if any addressed Bruce, he's in an engaged window and responds. Otherwise silent. Engagement resets naturally when 4 messages pass without a direct address.
+
+**Family chat auto-creation (lazy)** — Rather than a seed script, the family chat is created on first visit to `/family` (server component, service role). All active members added to `chat_members` at creation. Subsequent visitors skip creation. New users added in auth/callback.
+
+**Realtime dedup strategy** — Sender's own messages are shown optimistically then DB-reloaded after API call completes (replacing temp IDs). Other members' messages arrive via realtime subscription and are appended immediately. Bruce streaming messages are handled in the streaming path, then replaced by DB reload. This avoids complex state sync.
+
+**Member color palette** — Jake: `#0F6E56` (accent), Laurianne: `#7C5CFC` (purple), Jocelynn: `#E8607A` (rose), Nana: `#D97706` (amber). Keyed by first name. Applied to sender name label and member bubble border.
+
+**Mobile bottom nav** — `position: fixed` at viewport bottom. Hidden on desktop via CSS `@media (max-width: 768px)`. Main content avoids overlap via `with-bottom-nav` CSS class (not inline style, so `!important` in the class overrides any inline padding). The nav disappears entirely when inside standalone chats, project chats, or family threads.
+
+### Task 2 Addendum — Family Threads (complete)
+
+Family threads are named sub-topic conversations inside the Family section.
+
+- **`migrations/006_family_threads.sql`** — Adds `'family_thread'` to `chats.type` CHECK. Adds `deleted_at TIMESTAMPTZ` column for soft delete. Type-based RLS policies for thread SELECT/messages SELECT/messages INSERT — no `chat_members` needed.
+- **`app/api/family/threads/route.ts`** — `GET` lists threads (type='family_thread', deleted_at IS NULL, ordered by recency). `POST` creates a new thread row.
+- **`app/api/family/threads/[id]/route.ts`** — `DELETE` soft-deletes by setting `deleted_at`, restricted to `type='family_thread'` for safety.
+- **`app/family/threads/[id]/page.tsx`** — Server component. Loads thread (redirect to /family if deleted or not found), loads members and messages, renders FamilyChatWindow with `topbar={<FamilyThreadTopBar />}`.
+- **`components/family/FamilyThreadTopBar.tsx`** — Back button → `/family`, thread name (truncated), three-dot menu with "Delete thread" item, confirmation modal.
+- **Thread RLS via chat_members** — Family threads use `chat_members` join for RLS (not type-based open access). Only members can see a thread's chats row and messages. Migration 007 replaces the type-based migration 006 policies with membership-gated policies.
+- **Thread creation with member picker** — New Thread modal in Sidebar fetches household members on open (lazy). All members selected by default; any can be deselected. `memberIds` array sent in POST; creator always added server-side. If no list provided, defaults to all active members.
+- **Add Member in thread topbar** — Three-dot menu in FamilyThreadTopBar has "Add member" item. Opens a modal listing household members not yet in the thread. One selection at a time, POST `/api/family/threads/[id]/members`. New member can immediately see the thread via updated RLS.
+- **Sidebar thread list** — Below the Family Chat button. Active thread highlighted with accent border. "+" button opens New Thread modal (name + member picker).
+
+---
+
 ## Active Task
 
 *Updated by the planning chat before each Claude Code session.*
 
-**Current:** Phase 2 complete. Ready for Phase 3 — Projects.
+**Current:** Phase 4, Task 2 (Family Group Chat + Family Threads + membership model) complete. Ready for deploy. Remaining: Task 1 (member onboarding), Task 3 (push notifications).

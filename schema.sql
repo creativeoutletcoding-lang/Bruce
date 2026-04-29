@@ -77,6 +77,12 @@ CREATE TABLE users (
                               CHECK (notification_sensitivity IN ('low', 'medium', 'high')),
   notification_preferences  JSONB NOT NULL DEFAULT '{}'::jsonb,
   fcm_token                 TEXT,           -- Firebase Cloud Messaging token
+  google_access_token       TEXT,           -- Google OAuth access token (Drive, Calendar)
+  google_refresh_token      TEXT,           -- Google OAuth refresh token (long-lived)
+  google_token_expires_at   TIMESTAMPTZ,    -- When the access token expires
+  google_drive_root_id      TEXT,           -- Drive folder: "Bruce" root
+  google_drive_personal_id  TEXT,           -- Drive folder: "Personal" under root
+  google_drive_projects_id  TEXT,           -- Drive folder: "Projects" under root
   deactivated_at            TIMESTAMPTZ,
   purge_at                  TIMESTAMPTZ,    -- 30 days after deactivation
   created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -163,9 +169,12 @@ CREATE TABLE chats (
   owner_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   project_id      UUID REFERENCES projects(id) ON DELETE CASCADE,  -- NULL for standalone
   type            TEXT NOT NULL DEFAULT 'private'
-                    CHECK (type IN ('private', 'group', 'family', 'incognito')),
+                    CHECK (type IN ('private', 'group', 'family', 'family_group', 'family_thread', 'incognito')),
+                    -- family_group: the one permanent household group chat
+                    -- family_thread: named sub-topics, soft-deleted via deleted_at
   title           TEXT,                          -- auto-generated or user-set
   is_incognito    BOOLEAN NOT NULL DEFAULT FALSE,
+  deleted_at      TIMESTAMPTZ,                   -- soft delete for family_thread rows
   last_message_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()

@@ -19,12 +19,17 @@ export default async function ChatIdPage({ params }: Props) {
   // Verify the chat exists and belongs to this user (RLS enforces ownership)
   const { data: chat } = await supabase
     .from("chats")
-    .select("id, title, type")
+    .select("id, title, type, project_id")
     .eq("id", id)
     .neq("type", "incognito")
     .single();
 
   if (!chat) notFound();
+
+  // Project chats belong at /projects/[id]/chat/[chatId] — redirect if needed
+  if (chat.project_id) {
+    redirect(`/projects/${chat.project_id}/chat/${id}`);
+  }
 
   // Load messages
   const { data: messages } = await supabase

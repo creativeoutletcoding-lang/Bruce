@@ -12,7 +12,7 @@ export type UserStatus = "active" | "suspended" | "deactivated";
 export type NotificationSensitivity = "low" | "medium" | "high";
 export type ProjectStatus = "active" | "archived";
 export type ProjectMemberRole = "owner" | "member";
-export type ChatType = "private" | "group" | "family" | "incognito";
+export type ChatType = "private" | "group" | "family" | "family_group" | "family_thread" | "incognito";
 export type MessageRole = "user" | "assistant" | "system";
 export type MemoryTier = "core" | "active" | "archive";
 export type PendingMemoryStatus = "pending" | "approved" | "rejected";
@@ -72,6 +72,14 @@ export interface User {
   fcm_token: string | null;
   deactivated_at: string | null;
   purge_at: string | null;
+  // Google OAuth tokens (stored server-side only)
+  google_access_token: string | null;
+  google_refresh_token: string | null;
+  google_token_expires_at: string | null;
+  // Cached Bruce Drive folder IDs
+  google_drive_root_id: string | null;
+  google_drive_personal_id: string | null;
+  google_drive_projects_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -186,4 +194,63 @@ export interface MemoryBudget {
   coreMemories: Memory[];
   activeMemories: Memory[];
   totalWordCount: number;
+}
+
+// ------------------------------------------------------------
+// Project API response types (shape API responses, not DB rows)
+// ------------------------------------------------------------
+
+export interface ProjectListItem {
+  id: string;
+  name: string;
+  icon: string;
+  status: ProjectStatus;
+  member_count: number;
+  last_chat_date: string | null;
+  created_at: string;
+}
+
+export interface ProjectMemberDetail {
+  id: string;
+  name: string;
+  avatar_url: string | null;
+  role: ProjectMemberRole;
+}
+
+export interface ProjectDetail extends Project {
+  members: ProjectMemberDetail[];
+  files: File[];
+}
+
+export interface UserSummary {
+  id: string;
+  name: string;
+  avatar_url: string | null;
+  role: UserRole;
+}
+
+export interface ChatPreview {
+  id: string;
+  title: string | null;
+  type: ChatType;
+  last_message_at: string;
+  last_message_content: string | null;
+}
+
+// ------------------------------------------------------------
+// Google Drive types
+// ------------------------------------------------------------
+
+export interface BruceFolderIds {
+  rootId: string;
+  personalId: string;
+  projectsId: string;
+}
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  webViewLink: string;
+  modifiedTime: string;
 }

@@ -10,12 +10,31 @@ export async function GET() {
 
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  // RLS family_thread_chat_select policy filters to threads the user is a member of
-  const { data } = await supabase
+  // Use service role to bypass RLS. Filter to threads where the user is the
+  // owner OR has a chat_members row. Checking owner_id first ensures a newly
+  // created thread is visible even if the chat_members insert hasn't propagated
+  // yet (Supabase pooler can have a brief lag between the two writes).
+  const adminSupabase = createServiceRoleClient();
+
+  const { data: memberRows } = await adminSupabase
+    .from("chat_members")
+    .select("chat_id")
+    .eq("user_id", user.id);
+
+  const memberChatIds = (memberRows ?? []).map((r: { chat_id: string }) => r.chat_id);
+
+  // Build an OR filter that always includes threads the user owns.
+  const orFilter =
+    memberChatIds.length > 0
+      ? `owner_id.eq.${user.id},id.in.(${memberChatIds.join(",")})`
+      : `owner_id.eq.${user.id}`;
+
+  const { data } = await adminSupabase
     .from("chats")
     .select("id, title, last_message_at")
     .eq("type", "family_thread")
     .is("deleted_at", null)
+    .or(orFilter)
     .order("last_message_at", { ascending: false })
     .limit(30);
 
@@ -51,7 +70,7 @@ export async function POST(request: NextRequest) {
       title: name,
       last_message_at: new Date().toISOString(),
     })
-    .select("id, title")
+    .select("id, title, last_message_at")
     .single();
 
   if (error || !thread) {
@@ -66,7 +85,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Insert creator membership first, atomically. If this fails the thread is
-  // unusable — delete it and surface the error so we can diagnose.
+  // unusable — delete it and surface the error.
   const { error: creatorErr } = await adminSupabase
     .from("chat_members")
     .insert({ chat_id: thread.id, user_id: user.id });
@@ -74,16 +93,15 @@ export async function POST(request: NextRequest) {
   if (creatorErr) {
     console.error("[api/family/threads] Failed to add creator to chat_members", {
       userId: user.id,
+      chatId: thread.id,
       message: creatorErr.message,
       code: creatorErr.code,
-      details: creatorErr.details,
     });
     await adminSupabase.from("chats").delete().eq("id", thread.id);
     return new Response("Failed to create thread", { status: 500 });
   }
 
-  // Batch insert remaining members (best-effort — creator is already in,
-  // so the thread is usable even if some other member IDs fail).
+  // Batch insert remaining members.
   const otherMemberIds = (
     body.memberIds?.length
       ? body.memberIds
@@ -96,11 +114,12 @@ export async function POST(request: NextRequest) {
       .insert(otherMemberIds.map((userId) => ({ chat_id: thread.id, user_id: userId })));
 
     if (membersErr) {
-      console.error("[api/family/threads] Failed to add some members (non-fatal)", {
+      console.error("[api/family/threads] Failed to add other members", {
+        chatId: thread.id,
         message: membersErr.message,
         code: membersErr.code,
-        details: membersErr.details,
       });
+      return new Response("Failed to create thread", { status: 500 });
     }
   }
 

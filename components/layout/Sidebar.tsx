@@ -82,6 +82,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       .is("project_id", null)
       .neq("type", "incognito")
       .neq("type", "family_group")
+      .neq("type", "family_thread")
       .order("last_message_at", { ascending: false });
 
     if (!data) return;
@@ -117,7 +118,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   }, []);
 
   const loadFamilyThreads = useCallback(async () => {
-    const res = await fetch("/api/family/threads");
+    const res = await fetch("/api/family/threads", { cache: "no-store" });
     if (res.ok) {
       const data: FamilyThread[] = await res.json();
       setFamilyThreads(data);
@@ -244,11 +245,15 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         const thread: FamilyThread = await res.json();
         setShowNewThreadModal(false);
         setNewThreadName("");
-        await loadFamilyThreads();
+        // Optimistically add the thread so the sidebar is up to date before
+        // navigation. loadFamilyThreads() below syncs the full list in the
+        // background to pick up any server-side differences.
+        setFamilyThreads((prev) => [thread, ...prev]);
         router.push(`/family/threads/${thread.id}`);
         onNavigate();
+        loadFamilyThreads();
       } else {
-        setThreadErrorMsg("Failed to create thread. Please try again.");
+        setThreadErrorMsg("Failed to create group chat. Please try again.");
       }
     } catch {
       setThreadErrorMsg("Network error. Please try again.");
@@ -381,8 +386,8 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             <button
               onClick={openNewThreadModal}
               style={styles.sectionAddButton}
-              aria-label="New thread"
-              title="New thread"
+              aria-label="New group chat"
+              title="New group chat"
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                 <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -477,7 +482,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         >
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
-              <span style={styles.modalTitle}>New thread</span>
+              <span style={styles.modalTitle}>New group chat</span>
               <button
                 style={styles.modalClose}
                 onClick={() => { setShowNewThreadModal(false); setNewThreadName(""); setThreadErrorMsg(""); }}
@@ -488,7 +493,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             <div style={styles.modalBody}>
               <input
                 type="text"
-                placeholder="Thread name"
+                placeholder="Group chat name"
                 value={newThreadName}
                 onChange={(e) => setNewThreadName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleCreateThread(); }}
@@ -540,7 +545,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     : {}),
                 }}
               >
-                {isCreatingThread ? "Creating…" : "Create thread"}
+                {isCreatingThread ? "Creating…" : "Create group chat"}
               </button>
             </div>
           </div>

@@ -1,19 +1,69 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-function LoginContent() {
+type PageState =
+  | { status: "loading" }
+  | { status: "valid"; email: string | null }
+  | { status: "invalid"; reason: string }
+  | { status: "signing_in" };
+
+function JoinContent() {
   const searchParams = useSearchParams();
+  const token = searchParams.get("token");
   const error = searchParams.get("error");
 
-  async function handleGoogleSignIn() {
+  const [state, setState] = useState<PageState>({ status: "loading" });
+
+  useEffect(() => {
+    if (error === "unauthorized") {
+      setState({ status: "invalid", reason: "This invite link is required to create an account." });
+      return;
+    }
+    if (error === "invalid_token") {
+      setState({ status: "invalid", reason: "This invite link is invalid or has expired." });
+      return;
+    }
+    if (error === "auth") {
+      setState({ status: "invalid", reason: "Sign-in failed. Please try the link again." });
+      return;
+    }
+
+    if (!token) {
+      setState({ status: "invalid", reason: "No invite token found. Ask for a new invite link." });
+      return;
+    }
+
+    fetch(`/api/admin/invites/${token}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          const msg =
+            (body as { error?: string }).error === "Invite already used"
+              ? "This invite link has already been used."
+              : "This invite link is invalid or has expired.";
+          setState({ status: "invalid", reason: msg });
+          return;
+        }
+        const data = await res.json() as { email: string | null };
+        setState({ status: "valid", email: data.email });
+      })
+      .catch(() => {
+        setState({ status: "invalid", reason: "Unable to validate invite. Please try again." });
+      });
+  }, [token, error]);
+
+  async function handleSignIn() {
+    if (!token) return;
+    setState({ status: "signing_in" });
     const supabase = createClient();
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        // Embed the invite token in the redirectTo URL so the callback can read it
+        redirectTo: `${window.location.origin}/auth/callback?invite_token=${encodeURIComponent(token)}`,
         scopes: [
           "https://www.googleapis.com/auth/drive.file",
           "https://www.googleapis.com/auth/documents",
@@ -21,8 +71,6 @@ function LoginContent() {
           "https://www.googleapis.com/auth/presentations",
           "https://www.googleapis.com/auth/calendar",
         ].join(" "),
-        // access_type=offline gets a refresh token; prompt=consent forces Google
-        // to re-issue a refresh token even for returning users
         queryParams: {
           access_type: "offline",
           prompt: "consent",
@@ -39,27 +87,48 @@ function LoginContent() {
           <p style={styles.subtitle}>Johnson Household</p>
         </div>
 
-        {error && (
+        {state.status === "loading" && (
+          <p style={styles.message}>Validating invite…</p>
+        )}
+
+        {state.status === "invalid" && (
           <div style={styles.errorBanner} role="alert">
-            Sign-in failed. Please try again.
+            {state.reason}
           </div>
         )}
 
-        <button onClick={handleGoogleSignIn} style={styles.googleButton}>
-          <GoogleIcon />
-          <span>Continue with Google</span>
-        </button>
+        {state.status === "valid" && (
+          <>
+            <div style={styles.inviteBanner}>
+              <p style={styles.inviteText}>
+                {state.email
+                  ? `You've been invited to join Bruce — ${state.email}`
+                  : "You've been invited to join Bruce."}
+              </p>
+            </div>
+            <button
+              onClick={handleSignIn}
+              style={styles.googleButton}
+              disabled={false}
+            >
+              <GoogleIcon />
+              <span>Continue with Google</span>
+            </button>
+          </>
+        )}
 
-        <p style={styles.inviteNote}>Invitation required</p>
+        {state.status === "signing_in" && (
+          <p style={styles.message}>Redirecting to Google…</p>
+        )}
       </div>
     </div>
   );
 }
 
-export default function LoginPage() {
+export default function JoinPage() {
   return (
     <Suspense>
-      <LoginContent />
+      <JoinContent />
     </Suspense>
   );
 }
@@ -132,15 +201,33 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-secondary)",
     fontWeight: "400",
   },
+  message: {
+    fontSize: "0.9375rem",
+    color: "var(--text-secondary)",
+    textAlign: "center",
+  },
   errorBanner: {
     width: "100%",
-    padding: "10px 14px",
+    padding: "12px 16px",
     backgroundColor: "#fef2f2",
     border: "1px solid #fecaca",
     borderRadius: "var(--radius-sm)",
     color: "#dc2626",
     fontSize: "0.875rem",
     textAlign: "center",
+    lineHeight: "1.5",
+  },
+  inviteBanner: {
+    width: "100%",
+    padding: "12px 16px",
+    backgroundColor: "var(--bg-secondary)",
+    borderRadius: "var(--radius-sm)",
+    textAlign: "center",
+  },
+  inviteText: {
+    fontSize: "0.9375rem",
+    color: "var(--text-primary)",
+    lineHeight: "1.5",
   },
   googleButton: {
     width: "100%",
@@ -157,9 +244,5 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: "500",
     transition: "background-color var(--transition), border-color var(--transition)",
     cursor: "pointer",
-  },
-  inviteNote: {
-    fontSize: "0.8125rem",
-    color: "var(--text-tertiary)",
   },
 };

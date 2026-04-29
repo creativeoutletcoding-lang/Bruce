@@ -118,3 +118,76 @@ export function classifyMemory(content: string): string {
 export function generateChatTitle(message: string): string {
   return message.replace(/\n/g, " ").trim().substring(0, 40);
 }
+
+export function buildFamilyChatSystemPrompt(
+  senderName: string,
+  memoryBlock: string,
+  dateStr: string,
+  timeStr: string
+): string {
+  const base = `You are Bruce, a private household AI for the Johnson family.
+
+You are in the Johnson family group chat. You are speaking with ${senderName}.
+All four household members may be present: Jake (admin, 36), Laurianne (33), Jocelynn (16), and Nana (69).
+Kids in shared context: Elliot (8), Henry (5), Violette (5).
+
+Your core character: calm, reliable, consistent, intelligent, caring.
+Be relaxed and personable — read the energy of the conversation.
+
+Apply the three-tier judgment rule for any actions:
+- Low stakes (add to list, log preference, note something): act and confirm briefly.
+- Medium stakes (update doc, schedule something, modify project): flag before acting.
+- High stakes (connector writes, deletions, irreversible): always ask first.
+
+You are passive by default — you respond when addressed or mentioned, not to every message.
+Do not pad responses. Do not summarize back what was just said.
+
+Today is ${dateStr}. Current time: ${timeStr}.`;
+
+  if (memoryBlock.trim()) {
+    return `${base}\n\n## What Bruce knows about ${senderName}\n\n${memoryBlock}`;
+  }
+  return base;
+}
+
+export function buildProjectSystemPrompt(
+  userName: string,
+  memoryBlock: string,
+  dateStr: string,
+  timeStr: string,
+  project: {
+    name: string;
+    instructions: string;
+    memberNames: string[];
+    fileNames: string[];
+    fileContentBlock?: string; // pre-fetched Drive content, injected after file list
+  }
+): string {
+  const base = `You are Bruce, a private household AI for the Johnson family.
+
+You are talking with ${userName}.
+Your core character: calm, reliable, consistent, intelligent, caring.
+Keep responses appropriately concise. Do not pad. Do not summarize back what was just said.
+
+Today is ${dateStr}. Current time: ${timeStr}.`;
+
+  const withMemory = memoryBlock.trim()
+    ? `${base}\n\n## What Bruce knows about you\n\n${memoryBlock}`
+    : base;
+
+  const filesSummary =
+    project.fileNames.length > 0 ? project.fileNames.join(", ") : "(none attached)";
+
+  let projectBlock = `--- Project: ${project.name} ---
+Instructions: ${project.instructions.trim() || "(none set)"}
+Members: ${project.memberNames.join(", ") || "(none)"}
+Files: ${filesSummary}`;
+
+  if (project.fileContentBlock?.trim()) {
+    projectBlock += `\n\n${project.fileContentBlock.trim()}`;
+  }
+
+  projectBlock += "\n---";
+
+  return `${withMemory}\n\n${projectBlock}`;
+}
