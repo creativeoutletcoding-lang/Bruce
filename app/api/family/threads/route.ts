@@ -10,10 +10,10 @@ export async function GET() {
 
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  // Use service role to bypass RLS. Filter to threads where the user is the
-  // owner OR has a chat_members row. Checking owner_id first ensures a newly
-  // created thread is visible even if the chat_members insert hasn't propagated
-  // yet (Supabase pooler can have a brief lag between the two writes).
+  // Use service role to bypass RLS, then filter to threads where the
+  // authenticated user has a chat_members row. The anon client's RLS policy on
+  // chat_members is self-referential and blocks newly-created rows before the
+  // policy's own EXISTS subquery can see them.
   const adminSupabase = createServiceRoleClient();
 
   const { data: memberRows } = await adminSupabase
@@ -21,28 +21,16 @@ export async function GET() {
     .select("chat_id")
     .eq("user_id", user.id);
 
-  const memberChatIds = (memberRows ?? []).map((r: { chat_id: string }) => r.chat_id);
+  const chatIds = (memberRows ?? []).map((r: { chat_id: string }) => r.chat_id);
+  if (chatIds.length === 0) return Response.json([]);
 
-  // Build an OR filter that always includes threads the user owns.
-  const orFilter =
-    memberChatIds.length > 0
-      ? `owner_id.eq.${user.id},id.in.(${memberChatIds.join(",")})`
-      : `owner_id.eq.${user.id}`;
-
-  const { data, error } = await adminSupabase
+  const { data } = await adminSupabase
     .from("chats")
     .select("id, title, last_message_at")
     .eq("type", "family_thread")
-    .or(orFilter)
+    .in("id", chatIds)
     .order("last_message_at", { ascending: false })
     .limit(30);
-
-  console.log("[GET /api/family/threads] user.id:", user.id);
-  console.log("[GET /api/family/threads] memberChatIds:", memberChatIds);
-  console.log("[GET /api/family/threads] orFilter:", orFilter);
-  console.log("[GET /api/family/threads] result count:", data?.length ?? 0);
-  console.log("[GET /api/family/threads] error:", error ?? null);
-  console.log("[GET /api/family/threads] data:", JSON.stringify(data ?? []));
 
   return Response.json(data ?? []);
 }

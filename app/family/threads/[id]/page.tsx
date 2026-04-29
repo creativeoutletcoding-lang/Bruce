@@ -29,32 +29,25 @@ export default async function FamilyThreadPage({
 
   const adminSupabase = createServiceRoleClient();
 
-  // Load thread — redirect if deleted or wrong type
+  // Load thread — redirect if wrong type or not found
   const { data: thread } = await adminSupabase
     .from("chats")
-    .select("id, title, owner_id")
+    .select("id, title")
     .eq("id", id)
     .eq("type", "family_thread")
     .maybeSingle();
 
   if (!thread) redirect("/family");
 
-  // Verify access: user is the owner OR has a chat_members row.
-  // The owner check is the primary fallback — the creator always owns the
-  // thread, so they should have access even if the chat_members insert hasn't
-  // fully propagated yet (e.g., brief Supabase pooler lag).
-  const isOwner = thread.owner_id === authUser.id;
+  // Verify the current user is a member of this thread
+  const { data: memberRow } = await adminSupabase
+    .from("chat_members")
+    .select("user_id")
+    .eq("chat_id", id)
+    .eq("user_id", authUser.id)
+    .maybeSingle();
 
-  if (!isOwner) {
-    const { data: memberRow } = await adminSupabase
-      .from("chat_members")
-      .select("user_id")
-      .eq("chat_id", id)
-      .eq("user_id", authUser.id)
-      .maybeSingle();
-
-    if (!memberRow) redirect("/family");
-  }
+  if (!memberRow) redirect("/family");
 
   // Load all active household members
   const { data: allMembersRaw } = await adminSupabase
