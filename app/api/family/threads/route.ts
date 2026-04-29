@@ -29,7 +29,7 @@ export async function GET() {
       ? `owner_id.eq.${user.id},id.in.(${memberChatIds.join(",")})`
       : `owner_id.eq.${user.id}`;
 
-  const { data } = await adminSupabase
+  const { data, error } = await adminSupabase
     .from("chats")
     .select("id, title, last_message_at")
     .eq("type", "family_thread")
@@ -37,6 +37,13 @@ export async function GET() {
     .or(orFilter)
     .order("last_message_at", { ascending: false })
     .limit(30);
+
+  console.log("[GET /api/family/threads] user.id:", user.id);
+  console.log("[GET /api/family/threads] memberChatIds:", memberChatIds);
+  console.log("[GET /api/family/threads] orFilter:", orFilter);
+  console.log("[GET /api/family/threads] result count:", data?.length ?? 0);
+  console.log("[GET /api/family/threads] error:", error ?? null);
+  console.log("[GET /api/family/threads] data:", JSON.stringify(data ?? []));
 
   return Response.json(data ?? []);
 }
