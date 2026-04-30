@@ -97,9 +97,11 @@ export async function POST(request: NextRequest) {
     .eq("id", chatId)
     .then();
 
-  // Fire @ mention notifications fire-and-forget (don't block the response)
-  extractMentionedUserIds(message, user.id).then((mentionedIds) => {
-    for (const recipientId of mentionedIds) {
+  // Await mention notifications before returning — fire-and-forget is killed by
+  // Vercel when the response is sent before the promise resolves.
+  const mentionedIds = await extractMentionedUserIds(message, user.id);
+  await Promise.all(
+    mentionedIds.map((recipientId) =>
       notifyUser({
         userId: recipientId,
         senderId: user.id,
@@ -108,9 +110,9 @@ export async function POST(request: NextRequest) {
         type: "mention",
         url: "https://heybruce.app/family",
         suppressIfActiveInChatId: chatId,
-      });
-    }
-  });
+      })
+    )
+  );
 
   if (!willRespond) {
     return new Response(null, {

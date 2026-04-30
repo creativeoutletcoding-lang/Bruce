@@ -153,7 +153,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Notify other members that they've been added to a new thread, fire-and-forget
   const creatorName = (await adminSupabase
     .from("users")
     .select("name")
@@ -161,17 +160,19 @@ export async function POST(request: NextRequest) {
     .single()
     .then((r) => r.data?.name)) ?? "Someone";
 
-  for (const recipientId of otherMemberIds) {
-    notifyUser({
-      userId: recipientId,
-      senderId: user.id,
-      title: `New thread: ${name}`,
-      body: `${creatorName} added you to "${name}"`,
-      type: "thread_added",
-      url: `https://heybruce.app/family/threads/${thread.id}`,
-      suppressIfActiveInChatId: thread.id,
-    });
-  }
+  await Promise.all(
+    otherMemberIds.map((recipientId) =>
+      notifyUser({
+        userId: recipientId,
+        senderId: user.id,
+        title: `New thread: ${name}`,
+        body: `${creatorName} added you to "${name}"`,
+        type: "thread_added",
+        url: `https://heybruce.app/family/threads/${thread.id}`,
+        suppressIfActiveInChatId: thread.id,
+      })
+    )
+  );
 
   return Response.json(thread, { status: 201 });
 }

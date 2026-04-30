@@ -60,7 +60,6 @@ export async function POST(
     return new Response("Failed to add member", { status: 500 });
   }
 
-  // Notify the new member, fire-and-forget
   const adderName = (await adminSupabase
     .from("users")
     .select("name")
@@ -70,7 +69,7 @@ export async function POST(
 
   const threadTitle = (thread as { id: string; title: string }).title ?? "a thread";
 
-  notifyUser({
+  await notifyUser({
     userId: body.userId,
     senderId: user.id,
     title: `Added to thread: ${threadTitle}`,
