@@ -134,7 +134,7 @@ function UnreadDot({ count }: { count: number }) {
         width: 14,
         height: 6,
         borderRadius: 3,
-        backgroundColor: "var(--accent)",
+        backgroundColor: "#ffffff",
         flexShrink: 0,
       }}
     />
@@ -533,7 +533,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                   ...(isActive ? styles.threadItemActive : {}),
                 }}
               >
-                <span style={styles.threadEmoji}>💬</span>
                 <span style={styles.threadName}>{thread.title}</span>
                 {thread.members.length > 0 && (
                   <ThreadAvatarStack members={thread.members} />
