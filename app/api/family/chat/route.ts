@@ -6,11 +6,6 @@ import {
   buildFamilyChatSystemPrompt,
 } from "@/lib/anthropic";
 import { notifyUser } from "@/lib/notifications";
-import { CALENDAR_SYSTEM_BLOCK } from "@/lib/google/calendarTools";
-
-type WithMCP = Anthropic.Messages.MessageStreamParams & {
-  mcp_servers: Array<{ type: "url"; url: string; name: string }>;
-};
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -171,51 +166,46 @@ export async function POST(request: NextRequest) {
     hour12: true,
   });
 
-  const systemPrompt =
-    buildFamilyChatSystemPrompt(senderName, memoryBlock, dateStr, timeStr) +
-    CALENDAR_SYSTEM_BLOCK;
+  const systemPrompt = buildFamilyChatSystemPrompt(
+    senderName,
+    memoryBlock,
+    dateStr,
+    timeStr
+  );
 
-  const anthropicMessages: Anthropic.Messages.MessageParam[] = [
+  const anthropicMessages: Array<{ role: "user" | "assistant"; content: string }> = [
     ...history
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
       })),
-    { role: "user" as const, content: message },
+    { role: "user", content: message },
   ];
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  let fullResponse = "";
 
   const readableStream = new ReadableStream({
     async start(controller) {
-      const encoder = new TextEncoder();
-      let fullResponse = "";
-
       try {
-        const stream = anthropic.messages.stream(
-          {
-            model: "claude-sonnet-4-6",
-            max_tokens: 2048,
-            system: systemPrompt,
-            messages: anthropicMessages,
-            mcp_servers: [
-              {
-                type: "url",
-                url: "https://calendarmcp.googleapis.com/mcp/v1",
-                name: "google-calendar",
-              },
-            ],
-          } as WithMCP,
-          { headers: { "anthropic-beta": "mcp-client-2025-04-04" } }
-        );
-
-        stream.on("text", (text) => {
-          fullResponse += text;
-          controller.enqueue(encoder.encode(text));
+        const stream = anthropic.messages.stream({
+          model: "claude-sonnet-4-6",
+          max_tokens: 2048,
+          system: systemPrompt,
+          messages: anthropicMessages,
         });
 
-        await stream.finalMessage();
+        for await (const event of stream) {
+          if (
+            event.type === "content_block_delta" &&
+            event.delta.type === "text_delta"
+          ) {
+            const text = event.delta.text;
+            fullResponse += text;
+            controller.enqueue(new TextEncoder().encode(text));
+          }
+        }
         controller.close();
       } catch (err) {
         console.error("[api/family/chat] Stream error:", err);
