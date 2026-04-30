@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { notifyUser } from "@/lib/notifications";
 import { NextRequest } from "next/server";
 
 // POST /api/family/threads/[id]/members — add a user to a thread
@@ -41,7 +42,7 @@ export async function POST(
   // Verify thread exists and is a family_thread
   const { data: thread } = await adminSupabase
     .from("chats")
-    .select("id")
+    .select("id, title")
     .eq("id", id)
     .eq("type", "family_thread")
     .is("deleted_at", null)
@@ -58,6 +59,26 @@ export async function POST(
     console.error("[api/family/threads/[id]/members] Add member failed:", error);
     return new Response("Failed to add member", { status: 500 });
   }
+
+  // Notify the new member, fire-and-forget
+  const adderName = (await adminSupabase
+    .from("users")
+    .select("name")
+    .eq("id", user.id)
+    .single()
+    .then((r) => r.data?.name)) ?? "Someone";
+
+  const threadTitle = (thread as { id: string; title: string }).title ?? "a thread";
+
+  notifyUser({
+    userId: body.userId,
+    senderId: user.id,
+    title: `Added to thread: ${threadTitle}`,
+    body: `${adderName} added you to "${threadTitle}"`,
+    type: "thread_added",
+    url: `https://heybruce.app/family/threads/${id}`,
+    suppressIfActiveInChatId: id,
+  });
 
   return new Response(null, { status: 204 });
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useRef } from "react";
+import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
+import { requestAndGetToken } from "@/lib/firebase/client";
 import { usePathname, useRouter } from "next/navigation";
 import type { User } from "@/lib/types";
 import Sidebar from "./Sidebar";
@@ -50,6 +51,18 @@ export default function ChatShell({ user, children }: ChatShellProps) {
   }, []);
   const refreshChats = useCallback(() => {
     refreshCallbacks.current.forEach((fn) => fn());
+  }, []);
+
+  // Request notification permission and register FCM token once on mount.
+  useEffect(() => {
+    requestAndGetToken().then((token) => {
+      if (!token) return;
+      fetch("/api/notifications/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      }).catch(() => {});
+    });
   }, []);
 
   return (

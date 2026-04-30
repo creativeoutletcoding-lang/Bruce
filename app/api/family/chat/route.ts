@@ -5,6 +5,7 @@ import {
   assembleMemoryBlock,
   buildFamilyChatSystemPrompt,
 } from "@/lib/anthropic";
+import { notifyUser, extractMentionedUserIds } from "@/lib/notifications";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -95,6 +96,21 @@ export async function POST(request: NextRequest) {
     .update({ last_message_at: new Date().toISOString() })
     .eq("id", chatId)
     .then();
+
+  // Fire @ mention notifications fire-and-forget (don't block the response)
+  extractMentionedUserIds(message, user.id).then((mentionedIds) => {
+    for (const recipientId of mentionedIds) {
+      notifyUser({
+        userId: recipientId,
+        senderId: user.id,
+        title: `${senderName} mentioned you`,
+        body: message.length > 120 ? message.slice(0, 120) + "…" : message,
+        type: "mention",
+        url: "https://heybruce.app/family",
+        suppressIfActiveInChatId: chatId,
+      });
+    }
+  });
 
   if (!willRespond) {
     return new Response(null, {

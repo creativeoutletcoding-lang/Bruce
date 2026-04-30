@@ -77,6 +77,22 @@ export default function FamilyChatWindow({
   const isStreamingRef = useRef(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Presence heartbeat — tells the server this chat is open so it can suppress
+  // push notifications while the user is actively viewing the conversation.
+  useEffect(() => {
+    const beat = () => {
+      fetch("/api/notifications/presence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId }),
+        keepalive: true,
+      }).catch(() => {});
+    };
+    beat();
+    const interval = setInterval(beat, 30_000);
+    return () => clearInterval(interval);
+  }, [chatId]);
+
   // Member map for enriching realtime messages
   const memberMap = useRef<Record<string, { name: string; avatar_url: string | null }>>({});
   useEffect(() => {
