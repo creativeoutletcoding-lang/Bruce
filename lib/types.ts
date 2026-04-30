@@ -256,3 +256,17 @@ export interface DriveFile {
   webViewLink: string;
   modifiedTime: string;
 }
+
+// ------------------------------------------------------------
+// Google Calendar types
+// ------------------------------------------------------------
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string; // ISO dateTime or YYYY-MM-DD for all-day
+  end: string;
+  description: string;
+  guests: string[]; // display names or emails from attendees list
+  htmlLink: string;
+}
