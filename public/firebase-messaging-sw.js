@@ -34,12 +34,15 @@ messaging.onBackgroundMessage(async (payload) => {
 
   if ("setAppBadge" in self.navigator) {
     try {
-      const shown = await self.registration.getNotifications();
-      console.log("[SW] setAppBadge — shown notifications count:", shown.length);
-      await self.navigator.setAppBadge(shown.length || 1);
-    } catch (err) {
-      console.error("[SW] setAppBadge failed:", err);
-    }
+      // Drive the badge from DB unread count rather than tray (shown notification)
+      // count. This ensures clearAppBadge() on app open is the sole thing clearing
+      // the badge — dismissing or accumulating tray banners has no effect.
+      const res = await fetch("/api/notifications/unread", { credentials: "include" });
+      if (res.ok) {
+        const { count } = await res.json();
+        await self.navigator.setAppBadge(count || 0);
+      }
+    } catch {}
   }
 });
 

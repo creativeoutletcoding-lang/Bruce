@@ -231,7 +231,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     if (res.ok) {
       const data: { familyGroup: FamilyGroupInfo | null; threads: FamilyThread[] } =
         await res.json();
-      console.log("[Sidebar] loadFamilyThreads — familyGroup:", data.familyGroup, "threads unreadCounts:", data.threads.map(t => ({ id: t.id, title: t.title, unreadCount: t.unreadCount })));
       setFamilyGroup(data.familyGroup);
       setFamilyThreads(data.threads);
     }
