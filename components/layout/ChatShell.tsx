@@ -65,6 +65,13 @@ export default function ChatShell({ user, children }: ChatShellProps) {
     });
   }, []);
 
+  // Clear app badge whenever the user opens Bruce.
+  useEffect(() => {
+    if ("clearAppBadge" in navigator) {
+      navigator.clearAppBadge().catch(() => {});
+    }
+  }, []);
+
   return (
     <ChatContext.Provider value={{ openDrawer, incognito, setIncognito, refreshChats, registerRefresh }}>
       <div style={styles.shell}>

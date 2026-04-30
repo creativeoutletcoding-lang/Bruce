@@ -15,20 +15,27 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-messaging.onBackgroundMessage((payload) => {
+messaging.onBackgroundMessage(async (payload) => {
   const title = payload.notification?.title ?? "Bruce";
   const body = payload.notification?.body ?? "";
   const data = payload.data ?? {};
 
   // Use the notification DB row ID as the tag so duplicate FCM deliveries
   // of the same push coalesce into one banner instead of appearing twice.
-  self.registration.showNotification(title, {
+  await self.registration.showNotification(title, {
     body,
     icon: "/icons/icon-192.png",
     badge: "/icons/icon-192.png",
     data,
     tag: data.notificationId ?? data.chatId ?? "bruce",
   });
+
+  if ("setAppBadge" in self.navigator) {
+    try {
+      const shown = await self.registration.getNotifications();
+      await self.navigator.setAppBadge(shown.length || 1);
+    } catch {}
+  }
 });
 
 self.addEventListener("notificationclick", (event) => {
