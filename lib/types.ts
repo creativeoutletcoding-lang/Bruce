@@ -263,10 +263,11 @@ export interface DriveFile {
 
 export interface CalendarEvent {
   id: string;
+  calendarId: string; // which sub-calendar this event lives on — pass back to update/delete
   title: string;
   start: string; // ISO dateTime or YYYY-MM-DD for all-day
   end: string;
   description: string;
-  guests: string[]; // display names or emails from attendees list
+  guests: string[]; // sub-calendar IDs of assigned members (attendees + organizer)
   htmlLink: string;
 }

@@ -4,19 +4,28 @@
 // Uses a single shared service account (johnson2016family@gmail.com)
 // via a stored refresh token — NOT per-member OAuth.
 // All functions are server-side only.
+//
+// Skylight profile assignment:
+//   Each household member has a sub-calendar under johnson2016family@gmail.com.
+//   The sub-calendar ID doubles as an attendee "email" in the Google Calendar API.
+//   To assign an event to one person: create on their sub-calendar.
+//   To assign to multiple: create on the first person's sub-calendar,
+//   add remaining sub-calendar IDs as attendees. Skylight surfaces the
+//   event under every profile that is organizer or attendee.
 // ============================================================
 
 import type { CalendarEvent } from "@/lib/types";
-import { resolveGuestEmails } from "@/lib/google/household-members";
+import {
+  HOUSEHOLD_CALENDAR_IDS,
+  allCalendarIds,
+  resolveCalendarIds,
+} from "@/lib/google/household-members";
 
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
 // ============================================================
-// Token management — exchanges the long-lived refresh token for
-// a short-lived access token on each request. No caching needed
-// because Vercel Fluid Compute reuses instances, but the token
-// overhead is negligible (~100ms) vs the risk of stale state.
+// Token management
 // ============================================================
 
 async function getCalendarAccessToken(): Promise<string> {
@@ -41,17 +50,55 @@ async function getCalendarAccessToken(): Promise<string> {
     throw new Error(`Calendar token refresh failed: ${res.status} — ${err}`);
   }
 
-  const data = (await res.json()) as { access_token: string; expires_in: number };
+  const data = (await res.json()) as { access_token: string };
   return data.access_token;
-}
-
-function calendarId(): string {
-  return process.env.FAMILY_CALENDAR_ID ?? "primary";
 }
 
 // ============================================================
 // Read
+// Queries every member's sub-calendar in parallel and deduplicates
+// by event ID so shared events (organizer + attendee copies) appear once.
+// Each returned event carries its source calendarId so update/delete
+// can target the right calendar without a search.
 // ============================================================
+
+type RawEvent = {
+  id: string;
+  summary?: string;
+  description?: string;
+  start: { dateTime?: string; date?: string };
+  end: { dateTime?: string; date?: string };
+  attendees?: Array<{ email: string; displayName?: string }>;
+  organizer?: { email: string };
+  htmlLink?: string;
+};
+
+async function fetchCalendarEvents(
+  token: string,
+  cid: string,
+  maxResults: number,
+  daysAhead: number
+): Promise<CalendarEvent[]> {
+  const now = new Date().toISOString();
+  const future = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000).toISOString();
+
+  const url = new URL(`${CALENDAR_API}/calendars/${encodeURIComponent(cid)}/events`);
+  url.searchParams.set("timeMin", now);
+  url.searchParams.set("timeMax", future);
+  url.searchParams.set("maxResults", String(maxResults));
+  url.searchParams.set("orderBy", "startTime");
+  url.searchParams.set("singleEvents", "true");
+  url.searchParams.set("fields", "items(id,summary,description,start,end,attendees,organizer,htmlLink)");
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) return []; // silently skip calendars that 404 or 403
+
+  const data = (await res.json()) as { items?: RawEvent[] };
+  return (data.items ?? []).map((item) => parseRawEvent(item, cid));
+}
 
 export async function getUpcomingEvents(
   maxResults = 10,
@@ -59,75 +106,65 @@ export async function getUpcomingEvents(
 ): Promise<CalendarEvent[]> {
   const token = await getCalendarAccessToken();
 
-  const now = new Date().toISOString();
-  const future = new Date(
-    Date.now() + daysAhead * 24 * 60 * 60 * 1000
-  ).toISOString();
+  // Query all per-person sub-calendars plus the primary/family calendar.
+  const primary = process.env.FAMILY_CALENDAR_ID ?? "primary";
+  const calIds = [...new Set([primary, ...allCalendarIds()])];
 
-  const url = new URL(
-    `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId())}/events`
-  );
-  url.searchParams.set("timeMin", now);
-  url.searchParams.set("timeMax", future);
-  url.searchParams.set("maxResults", String(maxResults));
-  url.searchParams.set("orderBy", "startTime");
-  url.searchParams.set("singleEvents", "true");
-  url.searchParams.set(
-    "fields",
-    "items(id,summary,description,start,end,attendees,htmlLink)"
+  const results = await Promise.allSettled(
+    calIds.map((cid) => fetchCalendarEvents(token, cid, maxResults, daysAhead))
   );
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  // Merge, deduplicate by event ID (same event shows on organizer's and
+  // each attendee's calendar — keep the first occurrence which is the
+  // organizer's copy and carries the correct calendarId).
+  const seen = new Set<string>();
+  const events: CalendarEvent[] = [];
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Calendar events fetch failed: ${res.status} — ${err}`);
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      for (const ev of result.value) {
+        if (!seen.has(ev.id)) {
+          seen.add(ev.id);
+          events.push(ev);
+        }
+      }
+    }
   }
 
-  const data = (await res.json()) as {
-    items?: Array<{
-      id: string;
-      summary?: string;
-      description?: string;
-      start: { dateTime?: string; date?: string };
-      end: { dateTime?: string; date?: string };
-      attendees?: Array<{ email: string; displayName?: string }>;
-      htmlLink?: string;
-    }>;
-  };
-
-  return (data.items ?? []).map((item) => ({
-    id: item.id,
-    title: item.summary ?? "(no title)",
-    start: item.start?.dateTime ?? item.start?.date ?? "",
-    end: item.end?.dateTime ?? item.end?.date ?? "",
-    description: item.description ?? "",
-    guests: (item.attendees ?? []).map((a) => a.displayName ?? a.email),
-    htmlLink: item.htmlLink ?? "",
-  }));
+  events.sort((a, b) => a.start.localeCompare(b.start));
+  return events.slice(0, maxResults);
 }
 
 // ============================================================
-// Write — create / update / delete
-// These are gated behind Bruce's confirmation rule (medium stakes).
-// Bruce always asks before calling any of these tools.
+// Write
+// Bruce's confirmation rule (medium stakes) is enforced by the
+// system prompt — these functions are only called after the user
+// explicitly says yes.
 // ============================================================
 
 export interface CreateEventParams {
   title: string;
-  date: string; // YYYY-MM-DD
-  time?: string; // HH:MM 24-hour; omit for all-day
-  duration_minutes?: number; // default 60 for timed events
+  date: string;           // YYYY-MM-DD
+  time?: string;          // HH:MM 24-hour; omit for all-day
+  duration_minutes?: number;
   description?: string;
-  guest_names?: string[]; // household member names → resolved to emails
+  guest_names?: string[]; // household member names resolved to sub-calendar IDs
 }
 
-export async function createCalendarEvent(
-  params: CreateEventParams
-): Promise<CalendarEvent> {
+export async function createCalendarEvent(params: CreateEventParams): Promise<CalendarEvent> {
   const token = await getCalendarAccessToken();
+
+  const memberIds = params.guest_names?.length
+    ? resolveCalendarIds(params.guest_names)
+    : [];
+
+  // Event organizer calendar: first named member's sub-calendar, or primary if unspecified.
+  const targetCalId = memberIds.length > 0
+    ? memberIds[0]
+    : (process.env.FAMILY_CALENDAR_ID ?? "primary");
+
+  // Remaining members become attendees (their sub-calendar IDs act as email addresses).
+  const attendeeIds = memberIds.slice(1);
 
   let startObj: Record<string, string>;
   let endObj: Record<string, string>;
@@ -136,22 +173,13 @@ export async function createCalendarEvent(
     const startDt = new Date(`${params.date}T${params.time}:00`);
     const duration = (params.duration_minutes ?? 60) * 60 * 1000;
     const endDt = new Date(startDt.getTime() + duration);
-    // Use local dateTime strings so Google interprets them in the
-    // calendar's configured timezone rather than forcing UTC.
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const fmt = (d: Date) =>
-      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
     const tz = process.env.FAMILY_CALENDAR_TIMEZONE ?? "America/Chicago";
-    startObj = { dateTime: fmt(startDt), timeZone: tz };
-    endObj = { dateTime: fmt(endDt), timeZone: tz };
+    startObj = { dateTime: fmtLocalDt(startDt), timeZone: tz };
+    endObj   = { dateTime: fmtLocalDt(endDt),   timeZone: tz };
   } else {
     startObj = { date: params.date };
-    endObj = { date: params.date };
+    endObj   = { date: params.date };
   }
-
-  const guestEmails = params.guest_names?.length
-    ? resolveGuestEmails(params.guest_names)
-    : [];
 
   const body: Record<string, unknown> = {
     summary: params.title,
@@ -159,12 +187,12 @@ export async function createCalendarEvent(
     end: endObj,
   };
   if (params.description) body.description = params.description;
-  if (guestEmails.length) {
-    body.attendees = guestEmails.map((email) => ({ email }));
+  if (attendeeIds.length > 0) {
+    body.attendees = attendeeIds.map((id) => ({ email: id }));
   }
 
   const res = await fetch(
-    `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId())}/events`,
+    `${CALENDAR_API}/calendars/${encodeURIComponent(targetCalId)}/events`,
     {
       method: "POST",
       headers: {
@@ -180,16 +208,17 @@ export async function createCalendarEvent(
     throw new Error(`Calendar create failed: ${res.status} — ${err}`);
   }
 
-  return parseEventResponse(await res.json());
+  return parseRawEvent(await res.json() as RawEvent, targetCalId);
 }
 
 export interface UpdateEventParams {
+  calendar_id: string;    // from get_upcoming_events — which sub-calendar holds the event
   title?: string;
   date?: string;
   time?: string;
   duration_minutes?: number;
   description?: string;
-  guest_names?: string[]; // replaces entire guest list when provided
+  guest_names?: string[]; // when provided, replaces the full attendee list
 }
 
 export async function updateCalendarEvent(
@@ -197,29 +226,28 @@ export async function updateCalendarEvent(
   params: UpdateEventParams
 ): Promise<CalendarEvent> {
   const token = await getCalendarAccessToken();
-  const cid = calendarId();
+  const cid = params.calendar_id;
 
-  // Fetch current event to patch on top of
+  // Fetch current event so we can compute defaults for unchanged fields.
   const getRes = await fetch(
     `${CALENDAR_API}/calendars/${encodeURIComponent(cid)}/events/${encodeURIComponent(eventId)}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!getRes.ok) {
-    throw new Error(`Event ${eventId} not found (${getRes.status})`);
+    throw new Error(`Event ${eventId} not found on calendar ${cid} (${getRes.status})`);
   }
-  const existing = (await getRes.json()) as {
+  const existing = (await getRes.json()) as RawEvent & {
     start: { dateTime?: string; date?: string };
-    end: { dateTime?: string; date?: string };
+    end:   { dateTime?: string; date?: string };
   };
 
   const patch: Record<string, unknown> = {};
-  if (params.title !== undefined) patch.summary = params.title;
+  if (params.title       !== undefined) patch.summary     = params.title;
   if (params.description !== undefined) patch.description = params.description;
 
   if (params.date || params.time || params.duration_minutes) {
-    const date =
-      params.date ??
-      (existing.start.dateTime?.substring(0, 10) ?? existing.start.date ?? "");
+    const date = params.date
+      ?? (existing.start.dateTime?.substring(0, 10) ?? existing.start.date ?? "");
     const existingTime = existing.start.dateTime
       ? existing.start.dateTime.substring(11, 16)
       : null;
@@ -238,21 +266,20 @@ export async function updateCalendarEvent(
         durationMs = 60 * 60 * 1000;
       }
       const endDt = new Date(startDt.getTime() + durationMs);
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const fmt = (d: Date) =>
-        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
       const tz = process.env.FAMILY_CALENDAR_TIMEZONE ?? "America/Chicago";
-      patch.start = { dateTime: fmt(startDt), timeZone: tz };
-      patch.end = { dateTime: fmt(endDt), timeZone: tz };
+      patch.start = { dateTime: fmtLocalDt(startDt), timeZone: tz };
+      patch.end   = { dateTime: fmtLocalDt(endDt),   timeZone: tz };
     } else {
       patch.start = { date };
-      patch.end = { date };
+      patch.end   = { date };
     }
   }
 
   if (params.guest_names !== undefined) {
-    const emails = resolveGuestEmails(params.guest_names);
-    patch.attendees = emails.map((email) => ({ email }));
+    // Rebuild attendee list: members after the first (the organizer calendar is unchanged).
+    const memberIds = resolveCalendarIds(params.guest_names);
+    const attendeeIds = memberIds.filter((id) => id !== cid);
+    patch.attendees = attendeeIds.map((id) => ({ email: id }));
   }
 
   const res = await fetch(
@@ -272,22 +299,24 @@ export async function updateCalendarEvent(
     throw new Error(`Calendar update failed: ${res.status} — ${err}`);
   }
 
-  return parseEventResponse(await res.json());
+  return parseRawEvent(await res.json() as RawEvent, cid);
 }
 
-export async function deleteCalendarEvent(eventId: string): Promise<void> {
+export async function deleteCalendarEvent(
+  eventId: string,
+  calId: string
+): Promise<void> {
   const token = await getCalendarAccessToken();
-  const cid = calendarId();
 
   const res = await fetch(
-    `${CALENDAR_API}/calendars/${encodeURIComponent(cid)}/events/${encodeURIComponent(eventId)}`,
+    `${CALENDAR_API}/calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(eventId)}`,
     {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     }
   );
 
-  // 404 means already deleted — treat as success
+  // 404 = already deleted — treat as success.
   if (!res.ok && res.status !== 404) {
     const err = await res.text();
     throw new Error(`Calendar delete failed: ${res.status} — ${err}`);
@@ -298,17 +327,32 @@ export async function deleteCalendarEvent(eventId: string): Promise<void> {
 // Helpers
 // ============================================================
 
-function parseEventResponse(event: Record<string, unknown>): CalendarEvent {
-  const attendees = (event.attendees as Array<{ email: string; displayName?: string }>) ?? [];
-  const start = event.start as { dateTime?: string; date?: string };
-  const end = event.end as { dateTime?: string; date?: string };
+function fmtLocalDt(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:00`;
+}
+
+// Reverse-lookup: given a sub-calendar ID, return the member name (for display).
+function calIdToName(id: string): string | undefined {
+  return Object.entries(HOUSEHOLD_CALENDAR_IDS).find(([, v]) => v === id)?.[0];
+}
+
+function parseRawEvent(item: RawEvent, sourceCid: string): CalendarEvent {
+  const attendeeIds = (item.attendees ?? []).map((a) => a.email);
+  // Collect all assigned members: organizer (sourceCid) + attendees.
+  const allAssigned = [...new Set([sourceCid, ...attendeeIds])];
+  const guestNames = allAssigned
+    .map((id) => calIdToName(id) ?? id)
+    .filter(Boolean);
+
   return {
-    id: event.id as string,
-    title: (event.summary as string) ?? "",
-    start: start?.dateTime ?? start?.date ?? "",
-    end: end?.dateTime ?? end?.date ?? "",
-    description: (event.description as string) ?? "",
-    guests: attendees.map((a) => a.displayName ?? a.email),
-    htmlLink: (event.htmlLink as string) ?? "",
+    id: item.id,
+    calendarId: sourceCid,
+    title: item.summary ?? "(no title)",
+    start: item.start?.dateTime ?? item.start?.date ?? "",
+    end:   item.end?.dateTime   ?? item.end?.date   ?? "",
+    description: item.description ?? "",
+    guests: guestNames,
+    htmlLink: item.htmlLink ?? "",
   };
 }
