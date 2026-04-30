@@ -16,8 +16,10 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage(async (payload) => {
-  const title = payload.notification?.title ?? "Bruce";
-  const body = payload.notification?.body ?? "";
+  // title and body come from payload.data (data-only message — no notification
+  // field on the FCM send, so the OS never auto-displays on iOS via APNs).
+  const title = payload.data?.title ?? "Bruce";
+  const body = payload.data?.body ?? "";
   const data = payload.data ?? {};
 
   // Use the notification DB row ID as the tag so duplicate FCM deliveries

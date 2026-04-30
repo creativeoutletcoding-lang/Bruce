@@ -36,16 +36,16 @@ export async function sendPushNotification({
 }): Promise<void> {
   const messaging = getMessaging(getAdminApp());
 
+  // Data-only message: no top-level notification field.
+  // On iOS, a notification+data FCM payload converts to an APNs alert, which
+  // the OS displays automatically — and then the SW's onBackgroundMessage also
+  // fires and calls showNotification, producing two banners. Omitting the
+  // notification field prevents APNs auto-display; the SW is the sole
+  // display path on every platform.
   await messaging.send({
     token: fcmToken,
-    notification: { title, body },
-    data: data ?? {},
+    data: { title, body, ...(data ?? {}) },
     webpush: {
-      notification: {
-        icon: "/icons/icon-192.png",
-        badge: "/icons/icon-192.png",
-        requireInteraction: false,
-      },
       fcmOptions: {
         link: data?.url ?? "https://heybruce.app/family",
       },
