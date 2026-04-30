@@ -126,13 +126,14 @@ function ThreadAvatarStack({ members }: { members: ThreadMemberSummary[] }) {
   );
 }
 
-function UnreadDot() {
+function UnreadDot({ count }: { count: number }) {
+  if (count <= 0) return null;
   return (
     <div
       style={{
-        width: 6,
+        width: 14,
         height: 6,
-        borderRadius: 2,
+        borderRadius: 3,
         backgroundColor: "var(--accent)",
         flexShrink: 0,
       }}
@@ -518,7 +519,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               <span style={styles.familyMeta}>Jake, Laurianne, Jocelynn, Nana</span>
             </div>
             {!isFamilyActive && (familyGroup?.unreadCount ?? 0) > 0 && (
-              <UnreadDot />
+              <UnreadDot count={familyGroup!.unreadCount} />
             )}
           </button>
           {familyThreads.map((thread) => {
@@ -538,7 +539,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                   <ThreadAvatarStack members={thread.members} />
                 )}
                 {!isActive && thread.unreadCount > 0 && (
-                  <UnreadDot />
+                  <UnreadDot count={thread.unreadCount} />
                 )}
               </button>
             );

@@ -5,7 +5,7 @@ import {
   assembleMemoryBlock,
   buildFamilyChatSystemPrompt,
 } from "@/lib/anthropic";
-import { notifyUser, extractMentionedUserIds } from "@/lib/notifications";
+import { notifyUser } from "@/lib/notifications";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -97,18 +97,34 @@ export async function POST(request: NextRequest) {
     .eq("id", chatId)
     .then();
 
-  // Await mention notifications before returning — fire-and-forget is killed by
-  // Vercel when the response is sent before the promise resolves.
-  const mentionedIds = await extractMentionedUserIds(message, user.id);
+  // Notify all chat members who are not the sender. Presence suppression is
+  // applied per-recipient inside notifyUser — no push if they have the chat open.
+  // Awaited before returning so Vercel doesn't kill the promise on response flush.
+  const [{ data: chatRow }, { data: memberRows }] = await Promise.all([
+    adminSupabase.from("chats").select("type").eq("id", chatId).single(),
+    adminSupabase.from("chat_members").select("user_id").eq("chat_id", chatId),
+  ]);
+
+  const notifUrl =
+    (chatRow as { type: string } | null)?.type === "family_thread"
+      ? `https://heybruce.app/family/threads/${chatId}`
+      : "https://heybruce.app/family";
+
+  const recipientIds = ((memberRows ?? []) as { user_id: string }[])
+    .map((r) => r.user_id)
+    .filter((id) => id !== user.id);
+
+  const truncatedBody = message.length > 120 ? message.slice(0, 120) + "…" : message;
+
   await Promise.all(
-    mentionedIds.map((recipientId) =>
+    recipientIds.map((recipientId) =>
       notifyUser({
         userId: recipientId,
         senderId: user.id,
-        title: `${senderName} mentioned you`,
-        body: message.length > 120 ? message.slice(0, 120) + "…" : message,
-        type: "mention",
-        url: "https://heybruce.app/family",
+        title: senderName,
+        body: truncatedBody,
+        type: "message",
+        url: notifUrl,
         suppressIfActiveInChatId: chatId,
       })
     )
