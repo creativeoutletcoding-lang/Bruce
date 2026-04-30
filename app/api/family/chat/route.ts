@@ -114,6 +114,8 @@ export async function POST(request: NextRequest) {
     .map((r) => r.user_id)
     .filter((id) => id !== user.id);
 
+  console.log("[api/family/chat] notify — chatId:", chatId, "type:", (chatRow as { type: string } | null)?.type, "memberRows:", memberRows?.length ?? 0, "recipientIds:", recipientIds.length, recipientIds);
+
   const truncatedBody = message.length > 120 ? message.slice(0, 120) + "…" : message;
 
   await Promise.all(

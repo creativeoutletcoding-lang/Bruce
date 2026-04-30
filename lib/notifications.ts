@@ -46,11 +46,17 @@ export async function notifyUser({
     .eq("id", userId)
     .single();
 
-  if (!userRow?.fcm_token) return;
+  if (!userRow?.fcm_token) {
+    console.log("[notifications] skip userId:", userId, "— no FCM token");
+    return;
+  }
 
   if (suppressIfActiveInChatId) {
     const active = await isActiveInChat(userId, suppressIfActiveInChatId);
-    if (active) return;
+    if (active) {
+      console.log("[notifications] skip userId:", userId, "— presence active in chatId:", suppressIfActiveInChatId);
+      return;
+    }
   }
 
   // Insert the notification row first to get a stable ID. That ID becomes the
