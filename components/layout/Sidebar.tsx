@@ -167,6 +167,16 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const sidebarTouchStartY = useRef<number>(-1);
   const [sidebarPullDistance, setSidebarPullDistance] = useState(0);
   const [sidebarIsRefreshing, setSidebarIsRefreshing] = useState(false);
+  const [projectsExpanded, setProjectsExpanded] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const v = localStorage.getItem("bruce_sidebar_projects");
+    return v === null ? true : v === "true";
+  });
+  const [chatsExpanded, setChatsExpanded] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const v = localStorage.getItem("bruce_sidebar_chats");
+    return v === null ? true : v === "true";
+  });
 
   const activeChatId = pathname.startsWith("/chat/")
     ? pathname.split("/chat/")[1]
@@ -380,6 +390,22 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
+  function toggleProjects() {
+    setProjectsExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("bruce_sidebar_projects", String(next));
+      return next;
+    });
+  }
+
+  function toggleChats() {
+    setChatsExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("bruce_sidebar_chats", String(next));
+      return next;
+    });
+  }
+
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -456,21 +482,34 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         >
         {/* Projects section */}
         <div style={styles.section}>
-          <div style={styles.sectionHeaderRow}>
+          <div
+            style={{ ...styles.sectionHeaderRow, cursor: "pointer" }}
+            onClick={toggleProjects}
+            role="button"
+            aria-expanded={projectsExpanded}
+          >
             <span style={styles.sectionLabel}>Projects</span>
-            <button
-              onClick={() => setShowNewProjectModal(true)}
-              style={styles.sectionAddButton}
-              aria-label="New project"
-              title="New project"
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <svg
+                width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                style={{ transform: projectsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0 }}
+              >
+                <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-            </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowNewProjectModal(true); }}
+                style={styles.sectionAddButton}
+                aria-label="New project"
+                title="New project"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
           </div>
 
-          {projects.length === 0 ? (
+          {projectsExpanded && (projects.length === 0 ? (
             <p style={styles.emptyState}>No projects yet</p>
           ) : (
             projects.map((project) => {
@@ -500,13 +539,26 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                 </button>
               );
             })
-          )}
+          ))}
         </div>
 
         {/* Chats section */}
         <div style={styles.section}>
-          <div style={styles.sectionLabel}>Chats</div>
-          {chats.length === 0 ? (
+          <div
+            style={{ ...styles.sectionHeaderRow, cursor: "pointer" }}
+            onClick={toggleChats}
+            role="button"
+            aria-expanded={chatsExpanded}
+          >
+            <span style={styles.sectionLabel}>Chats</span>
+            <svg
+              width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+              style={{ transform: chatsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0 }}
+            >
+              <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          {chatsExpanded && (chats.length === 0 ? (
             <p style={styles.emptyState}>No conversations yet</p>
           ) : (
             chats.map((chat) => {
@@ -538,7 +590,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                 </button>
               );
             })
-          )}
+          ))}
         </div>
 
         {/* Family section — permanent group chat + threads */}
@@ -856,7 +908,6 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: "uppercase",
     letterSpacing: "0.06em",
     color: "var(--text-tertiary)",
-    padding: "4px 8px 6px",
   },
   sectionAddButton: {
     display: "flex",
