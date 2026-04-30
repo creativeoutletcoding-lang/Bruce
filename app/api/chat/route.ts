@@ -6,6 +6,11 @@ import {
   buildSystemPrompt,
   generateChatTitle,
 } from "@/lib/anthropic";
+import {
+  CALENDAR_TOOLS,
+  CALENDAR_SYSTEM_BLOCK,
+  executeCalendarTool,
+} from "@/lib/google/calendarTools";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -39,7 +44,6 @@ export async function POST(request: NextRequest) {
     user.id
   );
 
-  // Update last_accessed on loaded memory records (background)
   if (loadedIds.length > 0) {
     supabase
       .from("memory")
@@ -72,7 +76,8 @@ export async function POST(request: NextRequest) {
     minute: "2-digit",
     hour12: true,
   });
-  const systemPrompt = buildSystemPrompt(memoryBlock, dateStr, timeStr);
+  const systemPrompt =
+    buildSystemPrompt(memoryBlock, dateStr, timeStr) + CALENDAR_SYSTEM_BLOCK;
 
   const adminSupabase = createServiceRoleClient();
   let currentChatId = chatId;
@@ -100,7 +105,6 @@ export async function POST(request: NextRequest) {
       currentChatId = newChat.id;
     }
 
-    // Insert user message
     const { error: msgError } = await adminSupabase.from("messages").insert({
       chat_id: currentChatId,
       sender_id: user.id,
@@ -113,20 +117,17 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Build Anthropic messages array
-  const anthropicMessages: Array<{ role: "user" | "assistant"; content: string }> = [
+  const anthropicMessages: Anthropic.Messages.MessageParam[] = [
     ...history
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
       })),
-    { role: "user", content: message },
+    { role: "user" as const, content: message },
   ];
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-  let fullResponse = "";
 
   const responseHeaders: Record<string, string> = {
     "Content-Type": "text/plain; charset=utf-8",
@@ -138,23 +139,59 @@ export async function POST(request: NextRequest) {
 
   const readableStream = new ReadableStream({
     async start(controller) {
-      try {
-        const stream = anthropic.messages.stream({
-          model: "claude-sonnet-4-6",
-          max_tokens: 2048,
-          system: systemPrompt,
-          messages: anthropicMessages,
-        });
+      const encoder = new TextEncoder();
+      let fullResponse = "";
 
-        for await (const event of stream) {
-          if (
-            event.type === "content_block_delta" &&
-            event.delta.type === "text_delta"
-          ) {
-            const text = event.delta.text;
+      try {
+        let currentMessages = [...anthropicMessages];
+
+        while (true) {
+          const stream = anthropic.messages.stream({
+            model: "claude-sonnet-4-6",
+            max_tokens: 2048,
+            system: systemPrompt,
+            messages: currentMessages,
+            tools: CALENDAR_TOOLS,
+          });
+
+          stream.on("text", (text) => {
             fullResponse += text;
-            controller.enqueue(new TextEncoder().encode(text));
-          }
+            controller.enqueue(encoder.encode(text));
+          });
+
+          const finalMsg = await stream.finalMessage();
+
+          if (finalMsg.stop_reason !== "tool_use") break;
+
+          const toolCalls = finalMsg.content.filter(
+            (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
+          );
+          if (toolCalls.length === 0) break;
+
+          const toolResults = await Promise.all(
+            toolCalls.map(async (tc) => {
+              let result: string;
+              try {
+                result = await executeCalendarTool(
+                  tc.name,
+                  tc.input as Record<string, unknown>
+                );
+              } catch (err) {
+                result = `Error: ${err instanceof Error ? err.message : String(err)}`;
+              }
+              return {
+                type: "tool_result" as const,
+                tool_use_id: tc.id,
+                content: result,
+              };
+            })
+          );
+
+          currentMessages = [
+            ...currentMessages,
+            { role: "assistant" as const, content: finalMsg.content },
+            { role: "user" as const, content: toolResults },
+          ];
         }
 
         controller.close();

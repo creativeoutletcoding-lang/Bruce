@@ -6,6 +6,11 @@ import {
   buildFamilyChatSystemPrompt,
 } from "@/lib/anthropic";
 import { notifyUser } from "@/lib/notifications";
+import {
+  CALENDAR_TOOLS,
+  CALENDAR_SYSTEM_BLOCK,
+  executeCalendarTool,
+} from "@/lib/google/calendarTools";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -97,9 +102,6 @@ export async function POST(request: NextRequest) {
     .eq("id", chatId)
     .then();
 
-  // Notify all chat members who are not the sender. Presence suppression is
-  // applied per-recipient inside notifyUser — no push if they have the chat open.
-  // Awaited before returning so Vercel doesn't kill the promise on response flush.
   const [{ data: chatRow }, { data: memberRows }] = await Promise.all([
     adminSupabase.from("chats").select("type").eq("id", chatId).single(),
     adminSupabase.from("chat_members").select("user_id").eq("chat_id", chatId),
@@ -166,46 +168,79 @@ export async function POST(request: NextRequest) {
     hour12: true,
   });
 
-  const systemPrompt = buildFamilyChatSystemPrompt(
-    senderName,
-    memoryBlock,
-    dateStr,
-    timeStr
-  );
+  const systemPrompt =
+    buildFamilyChatSystemPrompt(senderName, memoryBlock, dateStr, timeStr) +
+    CALENDAR_SYSTEM_BLOCK;
 
-  const anthropicMessages: Array<{ role: "user" | "assistant"; content: string }> = [
+  const anthropicMessages: Anthropic.Messages.MessageParam[] = [
     ...history
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
       })),
-    { role: "user", content: message },
+    { role: "user" as const, content: message },
   ];
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  let fullResponse = "";
 
   const readableStream = new ReadableStream({
     async start(controller) {
-      try {
-        const stream = anthropic.messages.stream({
-          model: "claude-sonnet-4-6",
-          max_tokens: 2048,
-          system: systemPrompt,
-          messages: anthropicMessages,
-        });
+      const encoder = new TextEncoder();
+      let fullResponse = "";
 
-        for await (const event of stream) {
-          if (
-            event.type === "content_block_delta" &&
-            event.delta.type === "text_delta"
-          ) {
-            const text = event.delta.text;
+      try {
+        let currentMessages = [...anthropicMessages];
+
+        while (true) {
+          const stream = anthropic.messages.stream({
+            model: "claude-sonnet-4-6",
+            max_tokens: 2048,
+            system: systemPrompt,
+            messages: currentMessages,
+            tools: CALENDAR_TOOLS,
+          });
+
+          stream.on("text", (text) => {
             fullResponse += text;
-            controller.enqueue(new TextEncoder().encode(text));
-          }
+            controller.enqueue(encoder.encode(text));
+          });
+
+          const finalMsg = await stream.finalMessage();
+
+          if (finalMsg.stop_reason !== "tool_use") break;
+
+          const toolCalls = finalMsg.content.filter(
+            (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
+          );
+          if (toolCalls.length === 0) break;
+
+          const toolResults = await Promise.all(
+            toolCalls.map(async (tc) => {
+              let result: string;
+              try {
+                result = await executeCalendarTool(
+                  tc.name,
+                  tc.input as Record<string, unknown>
+                );
+              } catch (err) {
+                result = `Error: ${err instanceof Error ? err.message : String(err)}`;
+              }
+              return {
+                type: "tool_result" as const,
+                tool_use_id: tc.id,
+                content: result,
+              };
+            })
+          );
+
+          currentMessages = [
+            ...currentMessages,
+            { role: "assistant" as const, content: finalMsg.content },
+            { role: "user" as const, content: toolResults },
+          ];
         }
+
         controller.close();
       } catch (err) {
         console.error("[api/family/chat] Stream error:", err);
