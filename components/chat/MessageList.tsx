@@ -53,18 +53,20 @@ export default function MessageList({ messages }: MessageListProps) {
         onScroll={handleScroll}
         style={styles.container}
       >
-        <div style={styles.spacer} />
-        {messages.map((msg) => (
-          <MessageBubble
-            key={msg.id}
-            role={msg.role}
-            content={msg.content}
-            timestamp={msg.created_at}
-            isStreaming={msg.isStreaming}
-          />
-        ))}
-        <div style={styles.bottomPad} />
-        <div ref={endRef} />
+        <div style={styles.inner}>
+          <div style={styles.spacer} />
+          {messages.map((msg) => (
+            <MessageBubble
+              key={msg.id}
+              role={msg.role}
+              content={msg.content}
+              timestamp={msg.created_at}
+              isStreaming={msg.isStreaming}
+            />
+          ))}
+          <div style={styles.bottomPad} />
+          <div ref={endRef} />
+        </div>
       </div>
 
       {showScrollButton && (
@@ -102,6 +104,14 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: "auto",
     display: "flex",
     flexDirection: "column",
+  },
+  inner: {
+    width: "100%",
+    maxWidth: 780,
+    margin: "0 auto",
+    display: "flex",
+    flexDirection: "column",
+    flex: 1,
   },
   spacer: {
     flex: 1,

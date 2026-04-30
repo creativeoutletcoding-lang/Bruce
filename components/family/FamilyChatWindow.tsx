@@ -364,6 +364,7 @@ export default function FamilyChatWindow({
       {/* Message list */}
       <div style={styles.listWrapper}>
         <div ref={containerRef} onScroll={handleScroll} style={styles.listScroll}>
+          <div style={styles.inner}>
           <div style={styles.spacer} />
 
           {messages.map((msg, i) => {
@@ -434,6 +435,7 @@ export default function FamilyChatWindow({
 
           <div style={styles.bottomPad} />
           <div ref={endRef} />
+          </div>
         </div>
 
         {showScrollButton && (
@@ -497,6 +499,7 @@ const styles: Record<string, React.CSSProperties> = {
   container: { display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", position: "relative" },
   listWrapper: { flex: 1, position: "relative", overflow: "hidden" },
   listScroll: { height: "100%", overflowY: "auto", display: "flex", flexDirection: "column" },
+  inner: { width: "100%", maxWidth: 780, margin: "0 auto", display: "flex", flexDirection: "column", flex: 1 },
   spacer: { flex: 1 },
   bottomPad: { height: "8px" },
   messageRow: { display: "flex", padding: "0 14px" },

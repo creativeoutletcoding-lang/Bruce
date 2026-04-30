@@ -109,6 +109,9 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-lg)",
     padding: "8px 8px 8px 14px",
     transition: "border-color var(--transition)",
+    width: "100%",
+    maxWidth: 780,
+    margin: "0 auto",
   },
   textarea: {
     flex: 1,
