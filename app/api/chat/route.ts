@@ -6,11 +6,11 @@ import {
   buildSystemPrompt,
   generateChatTitle,
 } from "@/lib/anthropic";
-import {
-  CALENDAR_TOOLS,
-  CALENDAR_SYSTEM_BLOCK,
-  executeCalendarTool,
-} from "@/lib/google/calendarTools";
+import { CALENDAR_SYSTEM_BLOCK } from "@/lib/google/calendarTools";
+
+type WithMCP = Anthropic.Messages.MessageStreamParams & {
+  mcp_servers: Array<{ type: "url"; url: string; name: string }>;
+};
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -143,61 +143,29 @@ export async function POST(request: NextRequest) {
       let fullResponse = "";
 
       try {
-        let currentMessages = [...anthropicMessages];
-
-        // Agentic loop: run until the model stops requesting tool calls.
-        // For calendar reads, this is typically one tool call + one final response.
-        // Write tool calls only happen after explicit user confirmation (enforced
-        // by the system prompt), so the loop rarely runs more than two iterations.
-        while (true) {
-          const stream = anthropic.messages.stream({
+        const stream = anthropic.messages.stream(
+          {
             model: "claude-sonnet-4-6",
             max_tokens: 2048,
             system: systemPrompt,
-            messages: currentMessages,
-            tools: CALENDAR_TOOLS,
-          });
+            messages: anthropicMessages,
+            mcp_servers: [
+              {
+                type: "url",
+                url: "https://calendarmcp.googleapis.com/mcp/v1",
+                name: "google-calendar",
+              },
+            ],
+          } as WithMCP,
+          { headers: { "anthropic-beta": "mcp-client-2025-04-04" } }
+        );
 
-          stream.on("text", (text) => {
-            fullResponse += text;
-            controller.enqueue(encoder.encode(text));
-          });
+        stream.on("text", (text) => {
+          fullResponse += text;
+          controller.enqueue(encoder.encode(text));
+        });
 
-          const finalMsg = await stream.finalMessage();
-
-          if (finalMsg.stop_reason !== "tool_use") break;
-
-          const toolCalls = finalMsg.content.filter(
-            (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
-          );
-          if (toolCalls.length === 0) break;
-
-          const toolResults = await Promise.all(
-            toolCalls.map(async (tc) => {
-              let result: string;
-              try {
-                result = await executeCalendarTool(
-                  tc.name,
-                  tc.input as Record<string, unknown>
-                );
-              } catch (err) {
-                result = `Error: ${err instanceof Error ? err.message : String(err)}`;
-              }
-              return {
-                type: "tool_result" as const,
-                tool_use_id: tc.id,
-                content: result,
-              };
-            })
-          );
-
-          currentMessages = [
-            ...currentMessages,
-            { role: "assistant" as const, content: finalMsg.content },
-            { role: "user" as const, content: toolResults },
-          ];
-        }
-
+        await stream.finalMessage();
         controller.close();
       } catch (err) {
         console.error("[api/chat] Stream error:", {
