@@ -173,7 +173,7 @@ export async function createCalendarEvent(params: CreateEventParams): Promise<Ca
     const startDt  = new Date(`${params.date}T${params.time}:00`);
     const duration = (params.duration_minutes ?? 60) * 60 * 1000;
     const endDt    = new Date(startDt.getTime() + duration);
-    const tz       = process.env.FAMILY_CALENDAR_TIMEZONE ?? "America/Chicago";
+    const tz       = process.env.FAMILY_CALENDAR_TIMEZONE ?? "America/New_York";
     startObj = { dateTime: fmtLocalDt(startDt), timeZone: tz };
     endObj   = { dateTime: fmtLocalDt(endDt),   timeZone: tz };
   } else {
@@ -261,7 +261,7 @@ export async function updateCalendarEvent(
         durationMs = 60 * 60 * 1000;
       }
       const endDt = new Date(startDt.getTime() + durationMs);
-      const tz    = process.env.FAMILY_CALENDAR_TIMEZONE ?? "America/Chicago";
+      const tz    = process.env.FAMILY_CALENDAR_TIMEZONE ?? "America/New_York";
       patch.start = { dateTime: fmtLocalDt(startDt), timeZone: tz };
       patch.end   = { dateTime: fmtLocalDt(endDt),   timeZone: tz };
     } else {
