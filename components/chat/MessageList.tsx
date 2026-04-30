@@ -14,13 +14,40 @@ export interface ChatMessage {
 
 interface MessageListProps {
   messages: ChatMessage[];
+  onRefresh?: () => void | Promise<void>;
 }
 
-export default function MessageList({ messages }: MessageListProps) {
+export default function MessageList({ messages, onRefresh }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const userScrolledUp = useRef(false);
+  const touchStartY = useRef<number>(-1);
+  const [refreshState, setRefreshState] = useState<"idle" | "pulling" | "refreshing">("idle");
+
+  function handleTouchStart(e: React.TouchEvent<HTMLDivElement>) {
+    if ((containerRef.current?.scrollTop ?? 1) === 0) {
+      touchStartY.current = e.touches[0].clientY;
+    }
+  }
+
+  function handleTouchMove(e: React.TouchEvent<HTMLDivElement>) {
+    if (touchStartY.current < 0 || !onRefresh) return;
+    const dy = e.touches[0].clientY - touchStartY.current;
+    setRefreshState(dy >= 56 ? "pulling" : "idle");
+  }
+
+  async function handleTouchEnd() {
+    if (refreshState === "pulling" && onRefresh) {
+      touchStartY.current = -1;
+      setRefreshState("refreshing");
+      await onRefresh();
+      setRefreshState("idle");
+    } else {
+      setRefreshState("idle");
+      touchStartY.current = -1;
+    }
+  }
 
   function scrollToBottom(behavior: ScrollBehavior = "smooth") {
     endRef.current?.scrollIntoView({ behavior });
@@ -51,9 +78,17 @@ export default function MessageList({ messages }: MessageListProps) {
       <div
         ref={containerRef}
         onScroll={handleScroll}
+        onTouchStart={onRefresh ? handleTouchStart : undefined}
+        onTouchMove={onRefresh ? handleTouchMove : undefined}
+        onTouchEnd={onRefresh ? handleTouchEnd : undefined}
         style={styles.container}
       >
         <div style={styles.inner}>
+          {refreshState !== "idle" && (
+            <div style={styles.refreshIndicator}>
+              {refreshState === "refreshing" ? "Refreshing…" : "Release to refresh"}
+            </div>
+          )}
           <div style={styles.spacer} />
           {messages.map((msg) => (
             <MessageBubble
@@ -118,6 +153,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   bottomPad: {
     height: "8px",
+  },
+  refreshIndicator: {
+    textAlign: "center",
+    padding: "10px",
+    fontSize: "0.75rem",
+    color: "var(--text-tertiary)",
+    flexShrink: 0,
   },
   scrollButton: {
     position: "absolute",
