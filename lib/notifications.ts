@@ -53,22 +53,24 @@ export async function notifyUser({
     if (active) return;
   }
 
+  // Insert the notification row first to get a stable ID. That ID becomes the
+  // FCM notification tag so duplicate deliveries from FCM coalesce into one
+  // displayed notification rather than appearing twice.
+  const { data: notifRow } = await adminSupabase
+    .from("notifications")
+    .insert({ user_id: userId, type, content: body, metadata: metadata ?? {} })
+    .select("id")
+    .single();
+
   const data: Record<string, string> = { url };
   if (suppressIfActiveInChatId) data.chatId = suppressIfActiveInChatId;
+  if (notifRow?.id) data.notificationId = notifRow.id;
 
   try {
     await sendPushNotification({ fcmToken: userRow.fcm_token, title, body, data });
   } catch (err) {
     console.error("[notifications] sendPushNotification failed for user", userId, err);
-    return;
   }
-
-  await adminSupabase.from("notifications").insert({
-    user_id: userId,
-    type,
-    content: body,
-    metadata: metadata ?? {},
-  });
 }
 
 // Parses @Name mentions from a message and returns matching user IDs.

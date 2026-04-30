@@ -20,13 +20,14 @@ messaging.onBackgroundMessage((payload) => {
   const body = payload.notification?.body ?? "";
   const data = payload.data ?? {};
 
+  // Use the notification DB row ID as the tag so duplicate FCM deliveries
+  // of the same push coalesce into one banner instead of appearing twice.
   self.registration.showNotification(title, {
     body,
     icon: "/icons/icon-192.png",
     badge: "/icons/icon-192.png",
     data,
-    tag: data.chatId ?? "bruce",
-    renotify: true,
+    tag: data.notificationId ?? data.chatId ?? "bruce",
   });
 });
 
