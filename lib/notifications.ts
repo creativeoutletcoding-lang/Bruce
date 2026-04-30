@@ -4,7 +4,7 @@ import { sendPushNotification } from "@/lib/firebase/server";
 // Returns true if the user has a presence heartbeat for chatId within 30 min.
 async function isActiveInChat(userId: string, chatId: string): Promise<boolean> {
   const adminSupabase = createServiceRoleClient();
-  const threshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const threshold = new Date(Date.now() - 2 * 60 * 1000).toISOString();
   const { data } = await adminSupabase
     .from("user_presence")
     .select("updated_at")
