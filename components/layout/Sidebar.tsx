@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useChatContext } from "@/components/layout/ChatShell";
@@ -161,6 +161,9 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [householdMembers, setHouseholdMembers] = useState<UserSummary[]>([]);
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
   const supabase = createClient();
+  const contentRef = useRef<HTMLDivElement>(null);
+  const sidebarTouchStartY = useRef<number>(-1);
+  const [sidebarRefreshState, setSidebarRefreshState] = useState<"idle" | "pulling" | "refreshing">("idle");
 
   const activeChatId = pathname.startsWith("/chat/")
     ? pathname.split("/chat/")[1]
@@ -380,6 +383,30 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     router.push("/login");
   }
 
+  function handleSidebarTouchStart(e: React.TouchEvent<HTMLDivElement>) {
+    if ((contentRef.current?.scrollTop ?? 1) === 0) {
+      sidebarTouchStartY.current = e.touches[0].clientY;
+    }
+  }
+
+  function handleSidebarTouchMove(e: React.TouchEvent<HTMLDivElement>) {
+    if (sidebarTouchStartY.current < 0) return;
+    const dy = e.touches[0].clientY - sidebarTouchStartY.current;
+    setSidebarRefreshState(dy >= 56 ? "pulling" : "idle");
+  }
+
+  async function handleSidebarTouchEnd() {
+    if (sidebarRefreshState === "pulling") {
+      sidebarTouchStartY.current = -1;
+      setSidebarRefreshState("refreshing");
+      await Promise.all([loadChats(), loadProjects(), loadFamilyThreads()]);
+      setSidebarRefreshState("idle");
+    } else {
+      setSidebarRefreshState("idle");
+      sidebarTouchStartY.current = -1;
+    }
+  }
+
   // Member pip colors based on accent with opacity
   function getMemberPipColor(index: number): string {
     const opacities = [1, 0.7, 0.45, 0.25];
@@ -401,9 +428,30 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           </svg>
           New chat
         </button>
+        <button
+          onClick={() => { loadChats(); loadProjects(); loadFamilyThreads(); }}
+          style={styles.sidebarRefreshButton}
+          aria-label="Refresh"
+          title="Refresh"
+        >
+          <svg width="14" height="14" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+            <path d="M13 2v4h-4M2 13v-4h4M2.5 9a5.5 5.5 0 0 0 10 1.5M12.5 6A5.5 5.5 0 0 0 2.5 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
       </div>
 
-      <div style={styles.content}>
+      <div
+        ref={contentRef}
+        onTouchStart={handleSidebarTouchStart}
+        onTouchMove={handleSidebarTouchMove}
+        onTouchEnd={handleSidebarTouchEnd}
+        style={styles.content}
+      >
+        {sidebarRefreshState !== "idle" && (
+          <div style={styles.sidebarRefreshIndicator}>
+            {sidebarRefreshState === "refreshing" ? "Refreshing…" : "Release to refresh"}
+          </div>
+        )}
         {/* Projects section */}
         <div style={styles.section}>
           <div style={styles.sectionHeaderRow}>
@@ -514,10 +562,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             }}
           >
             <span style={styles.familyEmoji}>🏠</span>
-            <div style={styles.familyInfo}>
-              <span style={styles.familyName}>Family Chat</span>
-              <span style={styles.familyMeta}>Jake, Laurianne, Jocelynn, Nana</span>
-            </div>
+            <span style={styles.familyName}>Family Chat</span>
             {!isFamilyActive && (familyGroup?.unreadCount ?? 0) > 0 && (
               <UnreadDot count={familyGroup!.unreadCount} />
             )}
@@ -748,9 +793,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "12px",
     borderBottom: "1px solid var(--border)",
     flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
   },
   newChatButton: {
-    width: "100%",
+    flex: 1,
     display: "flex",
     alignItems: "center",
     gap: "8px",
@@ -762,6 +810,26 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: "500",
     cursor: "pointer",
     transition: "opacity var(--transition)",
+  },
+  sidebarRefreshButton: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "32px",
+    height: "32px",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--text-tertiary)",
+    cursor: "pointer",
+    flexShrink: 0,
+    transition: "color var(--transition)",
+    border: "1px solid var(--border)",
+  },
+  sidebarRefreshIndicator: {
+    textAlign: "center" as const,
+    padding: "8px",
+    fontSize: "0.75rem",
+    color: "var(--text-tertiary)",
+    flexShrink: 0,
   },
   content: {
     flex: 1,
@@ -924,26 +992,14 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1,
     flexShrink: 0,
   },
-  familyInfo: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "1px",
-    flex: 1,
-    minWidth: 0,
-  },
   familyName: {
     fontSize: "0.875rem",
     fontWeight: "500",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
-  },
-  familyMeta: {
-    fontSize: "0.6875rem",
-    color: "var(--text-tertiary)",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
+    flex: 1,
+    minWidth: 0,
   },
   threadItem: {
     width: "100%",

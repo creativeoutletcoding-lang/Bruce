@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { useChatContext } from "@/components/layout/ChatShell";
 import TopBar from "./TopBar";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import type { ChatMessage } from "./MessageList";
-import type { Message } from "@/lib/types";
+import type { Message, MessageRole } from "@/lib/types";
 
 interface ChatWindowProps {
   chatId: string;
@@ -35,6 +36,27 @@ export default function ChatWindow({
   const memoryFiredRef = useRef(false);
   const messagesRef = useRef(messages);
   const incognitoRef = useRef(incognito);
+
+  const loadMessages = useCallback(async () => {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("messages")
+      .select("id, role, content, created_at")
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: true })
+      .limit(100);
+    if (!data) return;
+    setMessages(
+      (data as Array<{ id: string; role: string; content: string; created_at: string }>).map(
+        (m) => ({
+          id: m.id,
+          role: m.role as MessageRole,
+          content: m.content,
+          created_at: m.created_at,
+        })
+      )
+    );
+  }, [chatId]);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { incognitoRef.current = incognito; }, [incognito]);
@@ -162,7 +184,7 @@ export default function ChatWindow({
         ...(incognito ? styles.incognitoFilter : {}),
       }}
     >
-      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} />
+      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} onRefresh={loadMessages} />
 
       {incognito && (
         <div style={styles.incognitoNotice}>
@@ -170,7 +192,7 @@ export default function ChatWindow({
         </div>
       )}
 
-      <MessageList messages={messages} />
+      <MessageList messages={messages} onRefresh={loadMessages} />
 
       {error && (
         <div style={styles.errorRow}>

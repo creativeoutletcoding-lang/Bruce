@@ -108,6 +108,7 @@ export default function NewChatOrchestrator({
   if (messages.length === 0) {
     return (
       <div style={styles.container}>
+        <TopBar title="New Chat" hasMessages={false} />
         <WelcomeScreen userName={userName} onSuggestion={handleSuggestion} />
         <MessageInput
           value={input}

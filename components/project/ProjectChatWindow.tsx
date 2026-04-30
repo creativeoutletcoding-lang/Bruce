@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import ProjectTopBar from "./ProjectTopBar";
 import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
 import type { ChatMessage } from "@/components/chat/MessageList";
-import type { Message } from "@/lib/types";
+import type { Message, MessageRole } from "@/lib/types";
 
 interface ProjectChatWindowProps {
   chatId: string;
@@ -41,6 +42,27 @@ export default function ProjectChatWindow({
   const instructionsFiredRef = useRef(false);
   const messagesRef = useRef(messages);
   const initialSentRef = useRef(false);
+
+  const loadMessages = useCallback(async () => {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("messages")
+      .select("id, role, content, created_at")
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: true })
+      .limit(100);
+    if (!data) return;
+    setMessages(
+      (data as Array<{ id: string; role: string; content: string; created_at: string }>).map(
+        (m) => ({
+          id: m.id,
+          role: m.role as MessageRole,
+          content: m.content,
+          created_at: m.created_at,
+        })
+      )
+    );
+  }, [chatId]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -149,7 +171,7 @@ export default function ProjectChatWindow({
         projectIcon={projectIcon}
       />
 
-      <MessageList messages={messages} />
+      <MessageList messages={messages} onRefresh={loadMessages} />
 
       {error && (
         <div style={styles.errorRow}>

@@ -6,9 +6,10 @@ import { useChatContext } from "@/components/layout/ChatShell";
 interface TopBarProps {
   title: string;
   hasMessages: boolean;
+  onRefresh?: () => void | Promise<void>;
 }
 
-export default function TopBar({ title, hasMessages }: TopBarProps) {
+export default function TopBar({ title, hasMessages, onRefresh }: TopBarProps) {
   const router = useRouter();
   const { openDrawer, incognito, setIncognito } = useChatContext();
 
@@ -65,6 +66,17 @@ export default function TopBar({ title, hasMessages }: TopBarProps) {
 
       <h1 style={styles.title}>{title}</h1>
 
+      {onRefresh && (
+        <button
+          onClick={onRefresh}
+          style={styles.refreshButton}
+          aria-label="Refresh"
+          title="Refresh"
+        >
+          <RefreshIcon />
+        </button>
+      )}
+
       <button
         onClick={handleIncognitoToggle}
         style={{
@@ -78,6 +90,20 @@ export default function TopBar({ title, hasMessages }: TopBarProps) {
         <span style={styles.incognitoLabel}>Incognito</span>
       </button>
     </div>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+      <path
+        d="M13 2v4h-4M2 13v-4h4M2.5 9a5.5 5.5 0 0 0 10 1.5M12.5 6A5.5 5.5 0 0 0 2.5 7.5"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -169,5 +195,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
   incognitoLabel: {
     lineHeight: 1,
+  },
+  refreshButton: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "30px",
+    height: "30px",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--text-tertiary)",
+    cursor: "pointer",
+    flexShrink: 0,
+    transition: "color var(--transition)",
   },
 };

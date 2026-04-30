@@ -76,6 +76,8 @@ export default function FamilyChatWindow({
   const workingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isStreamingRef = useRef(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollTouchStartY = useRef<number>(-1);
+  const [refreshState, setRefreshState] = useState<"idle" | "pulling" | "refreshing">("idle");
 
   // Presence heartbeat — tells the server this chat is open so it can suppress
   // push notifications while the user is actively viewing the conversation.
@@ -315,6 +317,30 @@ export default function FamilyChatWindow({
 
   // ── Long press / context menu ─────────────────────────────────────────────
 
+  function handleScrollTouchStart(e: React.TouchEvent<HTMLDivElement>) {
+    if ((containerRef.current?.scrollTop ?? 1) === 0) {
+      scrollTouchStartY.current = e.touches[0].clientY;
+    }
+  }
+
+  function handleScrollTouchMove(e: React.TouchEvent<HTMLDivElement>) {
+    if (scrollTouchStartY.current < 0) return;
+    const dy = e.touches[0].clientY - scrollTouchStartY.current;
+    setRefreshState(dy >= 56 ? "pulling" : "idle");
+  }
+
+  async function handleScrollTouchEnd() {
+    if (refreshState === "pulling") {
+      scrollTouchStartY.current = -1;
+      setRefreshState("refreshing");
+      await loadMessages();
+      setRefreshState("idle");
+    } else {
+      setRefreshState("idle");
+      scrollTouchStartY.current = -1;
+    }
+  }
+
   function handleTouchStart(e: React.TouchEvent, msg: FamilyMessage) {
     const touch = e.touches[0];
     longPressTimer.current = setTimeout(() => {
@@ -363,8 +389,20 @@ export default function FamilyChatWindow({
 
       {/* Message list */}
       <div style={styles.listWrapper}>
-        <div ref={containerRef} onScroll={handleScroll} style={styles.listScroll}>
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          onTouchStart={handleScrollTouchStart}
+          onTouchMove={handleScrollTouchMove}
+          onTouchEnd={handleScrollTouchEnd}
+          style={styles.listScroll}
+        >
           <div style={styles.inner}>
+          {refreshState !== "idle" && (
+            <div style={styles.refreshIndicator}>
+              {refreshState === "refreshing" ? "Refreshing…" : "Release to refresh"}
+            </div>
+          )}
           <div style={styles.spacer} />
 
           {messages.map((msg, i) => {
@@ -502,6 +540,7 @@ const styles: Record<string, React.CSSProperties> = {
   inner: { width: "100%", maxWidth: 780, margin: "0 auto", display: "flex", flexDirection: "column", flex: 1 },
   spacer: { flex: 1 },
   bottomPad: { height: "8px" },
+  refreshIndicator: { textAlign: "center", padding: "10px", fontSize: "0.75rem", color: "var(--text-tertiary)", flexShrink: 0 },
   messageRow: { display: "flex", padding: "0 14px" },
   messageGroup: { display: "flex", flexDirection: "column", gap: "3px", maxWidth: "78%" },
   senderName: { fontSize: "0.6875rem", fontWeight: "600", letterSpacing: "0.01em", marginBottom: "1px" },
