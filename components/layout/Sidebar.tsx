@@ -177,6 +177,11 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     const v = localStorage.getItem("bruce_sidebar_chats");
     return v === null ? true : v === "true";
   });
+  const [familyExpanded, setFamilyExpanded] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const v = localStorage.getItem("bruce_sidebar_family");
+    return v === null ? true : v === "true";
+  });
 
   const activeChatId = pathname.startsWith("/chat/")
     ? pathname.split("/chat/")[1]
@@ -406,6 +411,14 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     });
   }
 
+  function toggleFamily() {
+    setFamilyExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("bruce_sidebar_family", String(next));
+      return next;
+    });
+  }
+
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -593,55 +606,72 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           ))}
         </div>
 
-        {/* Family section — permanent group chat + threads */}
+        {/* Family section */}
         <div style={styles.familySection}>
-          <div style={styles.sectionHeaderRow}>
-            <span style={styles.sectionLabel}>Family</span>
-            <button
-              onClick={openNewThreadModal}
-              style={styles.sectionAddButton}
-              aria-label="New group chat"
-              title="New group chat"
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-          <button
-            onClick={() => { router.push("/family"); onNavigate(); }}
-            style={{
-              ...styles.familyButton,
-              ...(isFamilyActive ? styles.familyButtonActive : {}),
-            }}
+          <div
+            style={{ ...styles.sectionHeaderRow, cursor: "pointer" }}
+            onClick={toggleFamily}
+            role="button"
+            aria-expanded={familyExpanded}
           >
-            <span style={styles.familyEmoji}>🏠</span>
-            <span style={styles.familyName}>Family Chat</span>
-            {!isFamilyActive && (familyGroup?.unreadCount ?? 0) > 0 && (
-              <UnreadDot count={familyGroup!.unreadCount} />
-            )}
-          </button>
-          {familyThreads.map((thread) => {
-            const isActive = thread.id === activeThreadId;
-            return (
+            <span style={styles.sectionLabel}>Family</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <svg
+                width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                style={{ transform: familyExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0 }}
+              >
+                <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
               <button
-                key={thread.id}
-                onClick={() => { router.push(`/family/threads/${thread.id}`); onNavigate(); }}
+                onClick={(e) => { e.stopPropagation(); openNewThreadModal(); }}
+                style={styles.sectionAddButton}
+                aria-label="New group chat"
+                title="New group chat"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          {familyExpanded && (
+            <>
+              <button
+                onClick={() => { router.push("/family"); onNavigate(); }}
                 style={{
-                  ...styles.threadItem,
-                  ...(isActive ? styles.threadItemActive : {}),
+                  ...styles.familyButton,
+                  ...(isFamilyActive ? styles.familyButtonActive : {}),
                 }}
               >
-                <span style={styles.threadName}>{thread.title}</span>
-                {thread.members.length > 0 && (
-                  <ThreadAvatarStack members={thread.members} />
-                )}
-                {!isActive && thread.unreadCount > 0 && (
-                  <UnreadDot count={thread.unreadCount} />
+                <span style={styles.familyEmoji}>🏠</span>
+                <span style={styles.familyName}>Family Chat</span>
+                {!isFamilyActive && (familyGroup?.unreadCount ?? 0) > 0 && (
+                  <UnreadDot count={familyGroup!.unreadCount} />
                 )}
               </button>
-            );
-          })}
+              {familyThreads.map((thread) => {
+                const isActive = thread.id === activeThreadId;
+                return (
+                  <button
+                    key={thread.id}
+                    onClick={() => { router.push(`/family/threads/${thread.id}`); onNavigate(); }}
+                    style={{
+                      ...styles.threadItem,
+                      ...(isActive ? styles.threadItemActive : {}),
+                    }}
+                  >
+                    <span style={styles.threadName}>{thread.title}</span>
+                    {thread.members.length > 0 && (
+                      <ThreadAvatarStack members={thread.members} />
+                    )}
+                    {!isActive && thread.unreadCount > 0 && (
+                      <UnreadDot count={thread.unreadCount} />
+                    )}
+                  </button>
+                );
+              })}
+            </>
+          )}
         </div>
       </div>
       </div>
