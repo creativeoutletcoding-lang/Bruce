@@ -35,8 +35,11 @@ messaging.onBackgroundMessage(async (payload) => {
   if ("setAppBadge" in self.navigator) {
     try {
       const shown = await self.registration.getNotifications();
+      console.log("[SW] setAppBadge — shown notifications count:", shown.length);
       await self.navigator.setAppBadge(shown.length || 1);
-    } catch {}
+    } catch (err) {
+      console.error("[SW] setAppBadge failed:", err);
+    }
   }
 });
 

@@ -67,8 +67,15 @@ export default function ChatShell({ user, children }: ChatShellProps) {
 
   // On app open: clear badge immediately and mark all notifications as read.
   useEffect(() => {
-    if ("clearAppBadge" in navigator) navigator.clearAppBadge().catch(() => {});
-    fetch("/api/notifications/mark-read", { method: "POST" }).catch(() => {});
+    console.log("[ChatShell] mount — clearAppBadge supported:", "clearAppBadge" in navigator);
+    if ("clearAppBadge" in navigator) {
+      navigator.clearAppBadge()
+        .then(() => console.log("[ChatShell] clearAppBadge() resolved OK"))
+        .catch((err) => console.error("[ChatShell] clearAppBadge() failed:", err));
+    }
+    fetch("/api/notifications/mark-read", { method: "POST" })
+      .then((res) => console.log("[ChatShell] mark-all-read response:", res.status))
+      .catch((err) => console.error("[ChatShell] mark-all-read fetch failed:", err));
   }, []);
 
   return (
