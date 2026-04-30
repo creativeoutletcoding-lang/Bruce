@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import MessageInput from "@/components/chat/MessageInput";
+import PullProgressBar from "@/components/ui/PullProgressBar";
+import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
 import type { UserSummary } from "@/lib/types";
 
@@ -77,7 +79,8 @@ export default function FamilyChatWindow({
   const isStreamingRef = useRef(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollTouchStartY = useRef<number>(-1);
-  const [refreshState, setRefreshState] = useState<"idle" | "pulling" | "refreshing">("idle");
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Presence heartbeat — tells the server this chat is open so it can suppress
   // push notifications while the user is actively viewing the conversation.
@@ -325,18 +328,20 @@ export default function FamilyChatWindow({
 
   function handleScrollTouchMove(e: React.TouchEvent<HTMLDivElement>) {
     if (scrollTouchStartY.current < 0) return;
-    const dy = e.touches[0].clientY - scrollTouchStartY.current;
-    setRefreshState(dy >= 56 ? "pulling" : "idle");
+    const dy = Math.max(0, e.touches[0].clientY - scrollTouchStartY.current);
+    setPullDistance(dy);
   }
 
   async function handleScrollTouchEnd() {
-    if (refreshState === "pulling") {
+    if (pullDistance >= 56) {
       scrollTouchStartY.current = -1;
-      setRefreshState("refreshing");
+      setPullDistance(0);
+      setIsRefreshing(true);
+      lightHaptic();
       await loadMessages();
-      setRefreshState("idle");
+      setIsRefreshing(false);
     } else {
-      setRefreshState("idle");
+      setPullDistance(0);
       scrollTouchStartY.current = -1;
     }
   }
@@ -389,6 +394,7 @@ export default function FamilyChatWindow({
 
       {/* Message list */}
       <div style={styles.listWrapper}>
+        <PullProgressBar pullProgress={Math.min(pullDistance / 56, 1)} refreshing={isRefreshing} />
         <div
           ref={containerRef}
           onScroll={handleScroll}
@@ -398,11 +404,6 @@ export default function FamilyChatWindow({
           style={styles.listScroll}
         >
           <div style={styles.inner}>
-          {refreshState !== "idle" && (
-            <div style={styles.refreshIndicator}>
-              {refreshState === "refreshing" ? "Refreshing…" : "Release to refresh"}
-            </div>
-          )}
           <div style={styles.spacer} />
 
           {messages.map((msg, i) => {
@@ -540,7 +541,6 @@ const styles: Record<string, React.CSSProperties> = {
   inner: { width: "100%", maxWidth: 780, margin: "0 auto", display: "flex", flexDirection: "column", flex: 1 },
   spacer: { flex: 1 },
   bottomPad: { height: "8px" },
-  refreshIndicator: { textAlign: "center", padding: "10px", fontSize: "0.75rem", color: "var(--text-tertiary)", flexShrink: 0 },
   messageRow: { display: "flex", padding: "0 14px" },
   messageGroup: { display: "flex", flexDirection: "column", gap: "3px", maxWidth: "78%" },
   senderName: { fontSize: "0.6875rem", fontWeight: "600", letterSpacing: "0.01em", marginBottom: "1px" },

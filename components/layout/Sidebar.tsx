@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useChatContext } from "@/components/layout/ChatShell";
+import PullProgressBar from "@/components/ui/PullProgressBar";
+import { lightHaptic } from "@/lib/utils/haptics";
 import type { User, ProjectListItem, UserSummary } from "@/lib/types";
 
 interface ThreadMemberSummary {
@@ -52,7 +54,7 @@ function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-const ICON_OPTIONS = ["📁", "💼", "🏠", "🐾", "💰", "📋"];
+const ICON_OPTIONS = ["", "📁", "💼", "🏠", "🐾", "💰", "📋"];
 
 function ThreadAvatarStack({ members }: { members: ThreadMemberSummary[] }) {
   const shown = members.slice(0, 3);
@@ -151,7 +153,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [familyGroup, setFamilyGroup] = useState<FamilyGroupInfo | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
-  const [newProjectIcon, setNewProjectIcon] = useState("📁");
+  const [newProjectIcon, setNewProjectIcon] = useState("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [projectErrorMsg, setProjectErrorMsg] = useState("");
   const [showNewThreadModal, setShowNewThreadModal] = useState(false);
@@ -163,7 +165,8 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const supabase = createClient();
   const contentRef = useRef<HTMLDivElement>(null);
   const sidebarTouchStartY = useRef<number>(-1);
-  const [sidebarRefreshState, setSidebarRefreshState] = useState<"idle" | "pulling" | "refreshing">("idle");
+  const [sidebarPullDistance, setSidebarPullDistance] = useState(0);
+  const [sidebarIsRefreshing, setSidebarIsRefreshing] = useState(false);
 
   const activeChatId = pathname.startsWith("/chat/")
     ? pathname.split("/chat/")[1]
@@ -303,7 +306,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         const project = await res.json();
         setShowNewProjectModal(false);
         setNewProjectName("");
-        setNewProjectIcon("📁");
+        setNewProjectIcon("");
         await loadProjects();
         router.push(`/projects/${project.id}`);
         onNavigate();
@@ -391,18 +394,20 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
 
   function handleSidebarTouchMove(e: React.TouchEvent<HTMLDivElement>) {
     if (sidebarTouchStartY.current < 0) return;
-    const dy = e.touches[0].clientY - sidebarTouchStartY.current;
-    setSidebarRefreshState(dy >= 56 ? "pulling" : "idle");
+    const dy = Math.max(0, e.touches[0].clientY - sidebarTouchStartY.current);
+    setSidebarPullDistance(dy);
   }
 
   async function handleSidebarTouchEnd() {
-    if (sidebarRefreshState === "pulling") {
+    if (sidebarPullDistance >= 56) {
       sidebarTouchStartY.current = -1;
-      setSidebarRefreshState("refreshing");
+      setSidebarPullDistance(0);
+      setSidebarIsRefreshing(true);
+      lightHaptic();
       await Promise.all([loadChats(), loadProjects(), loadFamilyThreads()]);
-      setSidebarRefreshState("idle");
+      setSidebarIsRefreshing(false);
     } else {
-      setSidebarRefreshState("idle");
+      setSidebarPullDistance(0);
       sidebarTouchStartY.current = -1;
     }
   }
@@ -440,18 +445,15 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         </button>
       </div>
 
-      <div
-        ref={contentRef}
-        onTouchStart={handleSidebarTouchStart}
-        onTouchMove={handleSidebarTouchMove}
-        onTouchEnd={handleSidebarTouchEnd}
-        style={styles.content}
-      >
-        {sidebarRefreshState !== "idle" && (
-          <div style={styles.sidebarRefreshIndicator}>
-            {sidebarRefreshState === "refreshing" ? "Refreshing…" : "Release to refresh"}
-          </div>
-        )}
+      <div style={styles.contentWrapper}>
+        <PullProgressBar pullProgress={Math.min(sidebarPullDistance / 56, 1)} refreshing={sidebarIsRefreshing} />
+        <div
+          ref={contentRef}
+          onTouchStart={handleSidebarTouchStart}
+          onTouchMove={handleSidebarTouchMove}
+          onTouchEnd={handleSidebarTouchEnd}
+          style={styles.content}
+        >
         {/* Projects section */}
         <div style={styles.section}>
           <div style={styles.sectionHeaderRow}>
@@ -482,7 +484,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     ...(isActive ? styles.projectItemActive : {}),
                   }}
                 >
-                  <span style={styles.projectItemIcon}>{project.icon}</span>
+                  {project.icon && <span style={styles.projectItemIcon}>{project.icon}</span>}
                   <span style={styles.projectItemName}>{project.name}</span>
                   <div style={styles.memberPips}>
                     {Array.from({ length: Math.min(project.member_count, 4) }).map((_, i) => (
@@ -589,6 +591,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             );
           })}
         </div>
+      </div>
       </div>
 
       {/* User profile */}
@@ -721,14 +724,14 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       {showNewProjectModal && (
         <div
           style={styles.modalOverlay}
-          onClick={() => { setShowNewProjectModal(false); setNewProjectName(""); setNewProjectIcon("📁"); setProjectErrorMsg(""); }}
+          onClick={() => { setShowNewProjectModal(false); setNewProjectName(""); setNewProjectIcon(""); setProjectErrorMsg(""); }}
         >
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <span style={styles.modalTitle}>New project</span>
               <button
                 style={styles.modalClose}
-                onClick={() => { setShowNewProjectModal(false); setNewProjectName(""); setNewProjectIcon("📁"); setProjectErrorMsg(""); }}
+                onClick={() => { setShowNewProjectModal(false); setNewProjectName(""); setNewProjectIcon(""); setProjectErrorMsg(""); }}
               >
                 ×
               </button>
@@ -738,14 +741,14 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               <div style={styles.iconPickerRow}>
                 {ICON_OPTIONS.map((icon) => (
                   <button
-                    key={icon}
+                    key={icon === "" ? "none" : icon}
                     style={{
                       ...styles.iconOption,
                       ...(newProjectIcon === icon ? styles.iconOptionSelected : {}),
                     }}
                     onClick={() => setNewProjectIcon(icon)}
                   >
-                    {icon}
+                    {icon === "" ? <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>—</span> : icon}
                   </button>
                 ))}
               </div>
@@ -824,12 +827,12 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "color var(--transition)",
     border: "1px solid var(--border)",
   },
-  sidebarRefreshIndicator: {
-    textAlign: "center" as const,
-    padding: "8px",
-    fontSize: "0.75rem",
-    color: "var(--text-tertiary)",
-    flexShrink: 0,
+  contentWrapper: {
+    position: "relative",
+    flex: 1,
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
   },
   content: {
     flex: 1,

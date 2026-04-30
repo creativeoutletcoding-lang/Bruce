@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import MessageBubble from "./MessageBubble";
+import PullProgressBar from "@/components/ui/PullProgressBar";
+import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
 
 export interface ChatMessage {
@@ -23,7 +25,8 @@ export default function MessageList({ messages, onRefresh }: MessageListProps) {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const userScrolledUp = useRef(false);
   const touchStartY = useRef<number>(-1);
-  const [refreshState, setRefreshState] = useState<"idle" | "pulling" | "refreshing">("idle");
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   function handleTouchStart(e: React.TouchEvent<HTMLDivElement>) {
     if ((containerRef.current?.scrollTop ?? 1) === 0) {
@@ -33,18 +36,20 @@ export default function MessageList({ messages, onRefresh }: MessageListProps) {
 
   function handleTouchMove(e: React.TouchEvent<HTMLDivElement>) {
     if (touchStartY.current < 0 || !onRefresh) return;
-    const dy = e.touches[0].clientY - touchStartY.current;
-    setRefreshState(dy >= 56 ? "pulling" : "idle");
+    const dy = Math.max(0, e.touches[0].clientY - touchStartY.current);
+    setPullDistance(dy);
   }
 
   async function handleTouchEnd() {
-    if (refreshState === "pulling" && onRefresh) {
+    if (pullDistance >= 56 && onRefresh) {
       touchStartY.current = -1;
-      setRefreshState("refreshing");
+      setPullDistance(0);
+      setIsRefreshing(true);
+      lightHaptic();
       await onRefresh();
-      setRefreshState("idle");
+      setIsRefreshing(false);
     } else {
-      setRefreshState("idle");
+      setPullDistance(0);
       touchStartY.current = -1;
     }
   }
@@ -61,12 +66,10 @@ export default function MessageList({ messages, onRefresh }: MessageListProps) {
     setShowScrollButton(!atBottom);
   }
 
-  // Scroll to bottom on initial load
   useEffect(() => {
     scrollToBottom("instant");
   }, []);
 
-  // Auto-scroll on new messages only if user hasn't scrolled up
   useEffect(() => {
     if (!userScrolledUp.current) {
       scrollToBottom("smooth");
@@ -75,6 +78,7 @@ export default function MessageList({ messages, onRefresh }: MessageListProps) {
 
   return (
     <div style={styles.wrapper}>
+      <PullProgressBar pullProgress={Math.min(pullDistance / 56, 1)} refreshing={isRefreshing} />
       <div
         ref={containerRef}
         onScroll={handleScroll}
@@ -84,11 +88,6 @@ export default function MessageList({ messages, onRefresh }: MessageListProps) {
         style={styles.container}
       >
         <div style={styles.inner}>
-          {refreshState !== "idle" && (
-            <div style={styles.refreshIndicator}>
-              {refreshState === "refreshing" ? "Refreshing…" : "Release to refresh"}
-            </div>
-          )}
           <div style={styles.spacer} />
           {messages.map((msg) => (
             <MessageBubble
@@ -153,13 +152,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   bottomPad: {
     height: "8px",
-  },
-  refreshIndicator: {
-    textAlign: "center",
-    padding: "10px",
-    fontSize: "0.75rem",
-    color: "var(--text-tertiary)",
-    flexShrink: 0,
   },
   scrollButton: {
     position: "absolute",

@@ -83,7 +83,6 @@ export default function FamilyThreadTopBar({
 
         {/* Title */}
         <div style={styles.titleGroup}>
-          <span style={styles.emoji}>💬</span>
           <h1 style={styles.title}>{threadName}</h1>
         </div>
 
@@ -366,15 +365,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   titleGroup: {
     flex: 1,
-    display: "flex",
-    alignItems: "center",
-    gap: "7px",
     minWidth: 0,
-  },
-  emoji: {
-    fontSize: "1.0625rem",
-    lineHeight: 1,
-    flexShrink: 0,
   },
   title: {
     fontSize: "0.9375rem",

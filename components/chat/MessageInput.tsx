@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
+import { lightHaptic } from "@/lib/utils/haptics";
 
 interface MessageInputProps {
   value: string;
@@ -50,7 +51,7 @@ export default function MessageInput({
     const isMobile = window.matchMedia("(pointer: coarse)").matches;
     if (e.key === "Enter" && !e.shiftKey && !isMobile) {
       e.preventDefault();
-      if (!disabled && value.trim()) onSend();
+      if (!disabled && value.trim()) { lightHaptic(); onSend(); }
     }
   }
 
@@ -70,7 +71,7 @@ export default function MessageInput({
           aria-label="Message input"
         />
         <button
-          onClick={onSend}
+          onClick={() => { if (canSend) { lightHaptic(); onSend(); } }}
           disabled={!canSend}
           style={{
             ...styles.sendButton,

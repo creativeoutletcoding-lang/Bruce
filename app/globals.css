@@ -253,6 +253,16 @@ span[class*="typingDots"] > span:nth-child(3),
   }
 }
 
+@keyframes pull-refresh-indeterminate {
+  0%   { left: -40%; }
+  60%  { left: 100%; }
+  100% { left: 100%; }
+}
+
+.pull-refresh-bar {
+  animation: pull-refresh-indeterminate 1.2s ease-in-out infinite;
+}
+
 /* ============================================================
    FOCUS RINGS
    ============================================================ */
