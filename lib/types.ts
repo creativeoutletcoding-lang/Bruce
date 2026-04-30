@@ -173,7 +173,9 @@ export interface Notification {
   type: string;
   content: string;
   metadata: Record<string, unknown>;
+  chat_id: string | null;
   read: boolean;
+  read_at: string | null;
   created_at: string;
 }
 

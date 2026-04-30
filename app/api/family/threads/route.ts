@@ -3,6 +3,9 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import { notifyUser } from "@/lib/notifications";
 import { NextRequest } from "next/server";
 
+// Response shape:
+// { familyGroup: { id: string; unreadCount: number } | null, threads: FamilyThread[] }
+// FamilyThread: { id, title, last_message_at, unreadCount, members }
 export async function GET() {
   const supabase = await createClient();
   const {
@@ -17,29 +20,64 @@ export async function GET() {
   // policy's own EXISTS subquery can see them.
   const adminSupabase = createServiceRoleClient();
 
+  // Family group chat — needed for its ID and unread count in sidebar.
+  const { data: familyGroupChat } = await adminSupabase
+    .from("chats")
+    .select("id")
+    .eq("type", "family_group")
+    .maybeSingle();
+
   const { data: memberRows } = await adminSupabase
     .from("chat_members")
     .select("chat_id")
     .eq("user_id", user.id);
 
   const chatIds = (memberRows ?? []).map((r: { chat_id: string }) => r.chat_id);
-  if (chatIds.length === 0) return Response.json([]);
 
-  const { data: threads } = await adminSupabase
-    .from("chats")
-    .select("id, title, last_message_at")
-    .eq("type", "family_thread")
-    .in("id", chatIds)
-    .order("last_message_at", { ascending: false })
-    .limit(30);
+  const { data: threads } = chatIds.length > 0
+    ? await adminSupabase
+        .from("chats")
+        .select("id, title, last_message_at")
+        .eq("type", "family_thread")
+        .in("id", chatIds)
+        .order("last_message_at", { ascending: false })
+        .limit(30)
+    : { data: [] };
 
-  if (!threads || threads.length === 0) return Response.json([]);
+  // Batch-fetch unread notification counts for family group + all threads.
+  const allFamilyChatIds = [
+    ...(familyGroupChat ? [familyGroupChat.id as string] : []),
+    ...((threads ?? []) as { id: string }[]).map((t) => t.id),
+  ];
+
+  const unreadByChatId: Record<string, number> = {};
+  if (allFamilyChatIds.length > 0) {
+    const { data: unreadRows } = await adminSupabase
+      .from("notifications")
+      .select("chat_id")
+      .eq("user_id", user.id)
+      .eq("read", false)
+      .in("chat_id", allFamilyChatIds);
+
+    (unreadRows ?? []).forEach((r: { chat_id: string }) => {
+      unreadByChatId[r.chat_id] = (unreadByChatId[r.chat_id] ?? 0) + 1;
+    });
+  }
+
+  if (!threads || threads.length === 0) {
+    return Response.json({
+      familyGroup: familyGroupChat
+        ? { id: familyGroupChat.id, unreadCount: unreadByChatId[familyGroupChat.id as string] ?? 0 }
+        : null,
+      threads: [],
+    });
+  }
 
   // Batch-fetch members for all threads in two queries (not N+1)
   const { data: threadMemberRows } = await adminSupabase
     .from("chat_members")
     .select("chat_id, user_id")
-    .in("chat_id", threads.map((t: { id: string }) => t.id));
+    .in("chat_id", (threads as { id: string }[]).map((t) => t.id));
 
   const allMemberUserIds = [
     ...new Set((threadMemberRows ?? []).map((m: { user_id: string }) => m.user_id)),
@@ -57,18 +95,26 @@ export async function GET() {
     userMap[u.id] = u;
   });
 
-  const result = threads.map((thread: { id: string; title: string; last_message_at: string }) => ({
-    id: thread.id,
-    title: thread.title,
-    last_message_at: thread.last_message_at,
-    members: (threadMemberRows ?? [])
-      .filter((m: { chat_id: string }) => m.chat_id === thread.id)
-      .map((m: { user_id: string }) => userMap[m.user_id])
-      .filter(Boolean)
-      .slice(0, 4),
-  }));
+  const result = (threads as { id: string; title: string; last_message_at: string }[]).map(
+    (thread) => ({
+      id: thread.id,
+      title: thread.title,
+      last_message_at: thread.last_message_at,
+      unreadCount: unreadByChatId[thread.id] ?? 0,
+      members: (threadMemberRows ?? [])
+        .filter((m: { chat_id: string }) => m.chat_id === thread.id)
+        .map((m: { user_id: string }) => userMap[m.user_id])
+        .filter(Boolean)
+        .slice(0, 4),
+    })
+  );
 
-  return Response.json(result);
+  return Response.json({
+    familyGroup: familyGroupChat
+      ? { id: familyGroupChat.id, unreadCount: unreadByChatId[familyGroupChat.id as string] ?? 0 }
+      : null,
+    threads: result,
+  });
 }
 
 export async function POST(request: NextRequest) {

@@ -16,7 +16,13 @@ interface FamilyThread {
   id: string;
   title: string;
   last_message_at: string;
+  unreadCount: number;
   members: ThreadMemberSummary[];
+}
+
+interface FamilyGroupInfo {
+  id: string;
+  unreadCount: number;
 }
 
 interface ChatListItem {
@@ -120,6 +126,29 @@ function ThreadAvatarStack({ members }: { members: ThreadMemberSummary[] }) {
   );
 }
 
+function UnreadDot({ count }: { count: number }) {
+  return (
+    <div
+      style={{
+        minWidth: count > 9 ? 18 : 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: "var(--accent)",
+        color: "#fff",
+        fontSize: "0.6rem",
+        fontWeight: "700",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "0 4px",
+        flexShrink: 0,
+      }}
+    >
+      {count > 99 ? "99+" : count}
+    </div>
+  );
+}
+
 export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -127,6 +156,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [familyThreads, setFamilyThreads] = useState<FamilyThread[]>([]);
+  const [familyGroup, setFamilyGroup] = useState<FamilyGroupInfo | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectIcon, setNewProjectIcon] = useState("📁");
@@ -199,8 +229,10 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const loadFamilyThreads = useCallback(async () => {
     const res = await fetch("/api/family/threads", { cache: "no-store" });
     if (res.ok) {
-      const data: FamilyThread[] = await res.json();
-      setFamilyThreads(data);
+      const data: { familyGroup: FamilyGroupInfo | null; threads: FamilyThread[] } =
+        await res.json();
+      setFamilyGroup(data.familyGroup);
+      setFamilyThreads(data.threads);
     }
   }, []);
 
@@ -224,6 +256,16 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
         () => loadChats()
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications" },
+        () => loadFamilyThreads()
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "notifications" },
+        () => loadFamilyThreads()
       )
       .subscribe();
 
@@ -326,7 +368,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         setNewThreadName("");
         // Optimistically add the thread so the sidebar is up to date before
         // navigation. members is empty until loadFamilyThreads() syncs.
-        setFamilyThreads((prev) => [{ ...thread, members: [] }, ...prev]);
+        setFamilyThreads((prev) => [{ ...thread, unreadCount: 0, members: [] }, ...prev]);
         router.push(`/family/threads/${thread.id}`);
         onNavigate();
         loadFamilyThreads();
@@ -484,6 +526,9 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               <span style={styles.familyName}>Family Chat</span>
               <span style={styles.familyMeta}>Jake, Laurianne, Jocelynn, Nana</span>
             </div>
+            {!isFamilyActive && (familyGroup?.unreadCount ?? 0) > 0 && (
+              <UnreadDot count={familyGroup!.unreadCount} />
+            )}
           </button>
           {familyThreads.map((thread) => {
             const isActive = thread.id === activeThreadId;
@@ -500,6 +545,9 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                 <span style={styles.threadName}>{thread.title}</span>
                 {thread.members.length > 0 && (
                   <ThreadAvatarStack members={thread.members} />
+                )}
+                {!isActive && thread.unreadCount > 0 && (
+                  <UnreadDot count={thread.unreadCount} />
                 )}
               </button>
             );

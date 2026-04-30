@@ -58,7 +58,13 @@ export async function notifyUser({
   // displayed notification rather than appearing twice.
   const { data: notifRow } = await adminSupabase
     .from("notifications")
-    .insert({ user_id: userId, type, content: body, metadata: metadata ?? {} })
+    .insert({
+      user_id: userId,
+      type,
+      content: body,
+      metadata: metadata ?? {},
+      chat_id: suppressIfActiveInChatId ?? null,
+    })
     .select("id")
     .single();
 

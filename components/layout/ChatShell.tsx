@@ -65,11 +65,10 @@ export default function ChatShell({ user, children }: ChatShellProps) {
     });
   }, []);
 
-  // Clear app badge whenever the user opens Bruce.
+  // On app open: clear badge immediately and mark all notifications as read.
   useEffect(() => {
-    if ("clearAppBadge" in navigator) {
-      navigator.clearAppBadge().catch(() => {});
-    }
+    if ("clearAppBadge" in navigator) navigator.clearAppBadge().catch(() => {});
+    fetch("/api/notifications/mark-read", { method: "POST" }).catch(() => {});
   }, []);
 
   return (

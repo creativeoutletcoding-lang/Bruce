@@ -93,6 +93,17 @@ export default function FamilyChatWindow({
     return () => clearInterval(interval);
   }, [chatId]);
 
+  // Mark this chat's notifications as read when the chat is opened, clearing
+  // any sidebar unread dot for this specific conversation.
+  useEffect(() => {
+    fetch("/api/notifications/mark-read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId }),
+      keepalive: true,
+    }).catch(() => {});
+  }, [chatId]);
+
   // Member map for enriching realtime messages
   const memberMap = useRef<Record<string, { name: string; avatar_url: string | null }>>({});
   useEffect(() => {
