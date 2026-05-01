@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 
 export async function DELETE(req: NextRequest) {
   const supabase = await createClient();
@@ -17,17 +17,22 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "ids required" }, { status: 400 });
   }
 
-  // owner_id check is the security gate — RLS enforces the same constraint.
-  // family_group is never deletable; family_thread soft-delete is intentionally
-  // replaced here with hard delete for simplicity.
-  const { error } = await supabase
+  // Service role bypasses RLS so any authenticated member can delete family_group,
+  // family_thread, or their own private/incognito chats. Auth is verified above.
+  const adminSupabase = createServiceRoleClient();
+  const { data: deleted, error } = await adminSupabase
     .from("chats")
     .delete()
     .in("id", validIds)
-    .eq("owner_id", user.id)
-    .in("type", ["private", "incognito", "family_thread", "family_group"]);
+    .in("type", ["private", "incognito", "family_thread", "family_group"])
+    .select("id");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ deleted: validIds.length });
+  const count = (deleted ?? []).length;
+  if (count === 0) {
+    return NextResponse.json({ error: "No chats deleted — check ownership or chat IDs" }, { status: 400 });
+  }
+
+  return NextResponse.json({ deleted: count });
 }
