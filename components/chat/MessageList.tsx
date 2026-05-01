@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import MessageBubble from "./MessageBubble";
+import ImageMessage, { ImageMessageSkeleton } from "./ImageMessage";
 import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
@@ -12,6 +13,7 @@ export interface ChatMessage {
   content: string;
   created_at?: string;
   isStreaming?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 interface MessageListProps {
@@ -89,15 +91,23 @@ export default function MessageList({ messages, onRefresh }: MessageListProps) {
       >
         <div style={styles.inner}>
           <div style={styles.spacer} />
-          {messages.map((msg) => (
-            <MessageBubble
-              key={msg.id}
-              role={msg.role}
-              content={msg.content}
-              timestamp={msg.created_at}
-              isStreaming={msg.isStreaming}
-            />
-          ))}
+          {messages.map((msg) => {
+            if (msg.metadata?.content_type === "image") {
+              const url = msg.metadata.image_url as string;
+              const prompt = (msg.metadata.prompt as string) ?? msg.content;
+              if (!url) return <ImageMessageSkeleton key={msg.id} />;
+              return <ImageMessage key={msg.id} url={url} prompt={prompt} />;
+            }
+            return (
+              <MessageBubble
+                key={msg.id}
+                role={msg.role}
+                content={msg.content}
+                timestamp={msg.created_at}
+                isStreaming={msg.isStreaming}
+              />
+            );
+          })}
           <div style={styles.bottomPad} />
           <div ref={endRef} />
         </div>

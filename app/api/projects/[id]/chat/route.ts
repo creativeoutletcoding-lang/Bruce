@@ -1,8 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { assembleMemoryBlock, buildProjectSystemPrompt, generateChatTitle } from "@/lib/anthropic";
+import { assembleMemoryBlock, buildProjectSystemPrompt, generateChatTitle, IMAGE_SYSTEM_BLOCK } from "@/lib/anthropic";
 import { getFileContent } from "@/lib/google/drive";
+import { generateImageAndSave } from "@/lib/images/generate";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -133,13 +134,14 @@ export async function POST(request: NextRequest, { params }: Props) {
     hour12: true,
   });
 
-  const systemPrompt = buildProjectSystemPrompt(userName, memoryBlock, dateStr, timeStr, {
-    name: project.name as string,
-    instructions: project.instructions as string,
-    memberNames,
-    fileNames,
-    fileContentBlock: fileContentBlock || undefined,
-  });
+  const systemPrompt =
+    buildProjectSystemPrompt(userName, memoryBlock, dateStr, timeStr, {
+      name: project.name as string,
+      instructions: project.instructions as string,
+      memberNames,
+      fileNames,
+      fileContentBlock: fileContentBlock || undefined,
+    }) + IMAGE_SYSTEM_BLOCK;
 
   // Create or use existing chat
   let currentChatId = chatId;
@@ -211,10 +213,42 @@ export async function POST(request: NextRequest, { params }: Props) {
   };
   if (chatTitle) responseHeaders["X-Chat-Title"] = encodeURIComponent(chatTitle);
 
+  const IMAGE_TAG_RE = /<image_request>([\s\S]*?)<\/image_request>/;
   let fullResponse = "";
 
   const readableStream = new ReadableStream({
     async start(controller) {
+      const encoder = new TextEncoder();
+      let pending = "";
+
+      function flushPending() {
+        if (!pending) return;
+        const clean = pending.replace(/<image_request>[\s\S]*?<\/image_request>/g, "").trimStart();
+        if (clean) controller.enqueue(encoder.encode(clean));
+        pending = "";
+      }
+
+      function handleText(text: string) {
+        pending += text;
+        const tagStart = pending.indexOf("<image_request>");
+        if (tagStart !== -1) {
+          if (tagStart > 0) controller.enqueue(encoder.encode(pending.slice(0, tagStart)));
+          pending = pending.slice(tagStart);
+          const tagEnd = pending.indexOf("</image_request>");
+          if (tagEnd !== -1) {
+            const after = pending.slice(tagEnd + "</image_request>".length);
+            pending = "";
+            if (after.trimStart()) controller.enqueue(encoder.encode(after.trimStart()));
+          }
+        } else {
+          const safe = pending.length > 15 ? pending.length - 15 : 0;
+          if (safe > 0) {
+            controller.enqueue(encoder.encode(pending.slice(0, safe)));
+            pending = pending.slice(safe);
+          }
+        }
+      }
+
       try {
         const stream = anthropic.messages.stream({
           model: "claude-sonnet-4-6",
@@ -230,7 +264,27 @@ export async function POST(request: NextRequest, { params }: Props) {
           ) {
             const text = event.delta.text;
             fullResponse += text;
-            controller.enqueue(new TextEncoder().encode(text));
+            handleText(text);
+          }
+        }
+
+        flushPending();
+
+        // Detect image request and generate
+        const imageMatch = IMAGE_TAG_RE.exec(fullResponse);
+        if (imageMatch && currentChatId) {
+          try {
+            const tagContent = JSON.parse(imageMatch[1]) as { prompt: string };
+            const imgResult = await generateImageAndSave(
+              tagContent.prompt,
+              user.id,
+              currentChatId
+            );
+            controller.enqueue(
+              encoder.encode(`\x1fIMAGE_MSG:${JSON.stringify(imgResult)}`)
+            );
+          } catch (imgErr) {
+            console.error("[api/projects/chat] Image generation failed:", imgErr instanceof Error ? imgErr.message : imgErr);
           }
         }
 
@@ -240,21 +294,25 @@ export async function POST(request: NextRequest, { params }: Props) {
         controller.error(err);
       } finally {
         if (currentChatId && fullResponse) {
-          try {
-            await adminSupabase.from("messages").insert({
-              chat_id: currentChatId,
-              sender_id: null,
-              role: "assistant",
-              content: fullResponse,
-            });
-            await adminSupabase
-              .from("chats")
-              .update({ last_message_at: new Date().toISOString() })
-              .eq("id", currentChatId);
-          } catch (dbErr) {
-            console.error("[api/projects/chat] Failed to persist assistant message:", dbErr);
+          const cleanResponse = fullResponse
+            .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+            .trim();
+          if (cleanResponse) {
+            try {
+              await adminSupabase.from("messages").insert({
+                chat_id: currentChatId,
+                sender_id: null,
+                role: "assistant",
+                content: cleanResponse,
+              });
+              await adminSupabase
+                .from("chats")
+                .update({ last_message_at: new Date().toISOString() })
+                .eq("id", currentChatId);
+            } catch (dbErr) {
+              console.error("[api/projects/chat] Failed to persist assistant message:", dbErr);
+            }
           }
-
         }
       }
     },

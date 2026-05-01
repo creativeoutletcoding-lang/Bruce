@@ -77,6 +77,16 @@ Today is ${dateStr}. Current time: ${timeStr}.`;
   return base;
 }
 
+export const IMAGE_SYSTEM_BLOCK = `
+
+## Image generation
+
+You can generate images. When the user asks for an image, a picture, a photo, artwork, a drawing, or anything visual, respond conversationally AND include an image generation tag:
+
+<image_request>{"prompt": "detailed prompt here"}</image_request>
+
+Write the prompt as if describing the image to a professional photographer or artist — specific, visual, detailed. Include lighting, style, composition, subject matter, and color palette. Do not use vague language. Do not generate images unless explicitly asked or clearly implied.`;
+
 export function classifyMemory(content: string): string {
   const lower = content.toLowerCase();
   if (

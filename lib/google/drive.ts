@@ -306,6 +306,54 @@ export async function getFileContent(
   return "";
 }
 
+export async function uploadImageToPersonalFolder(
+  userId: string,
+  imageBuffer: Buffer,
+  mimeType: string,
+  filename: string
+): Promise<string> {
+  const token = await getValidToken(userId);
+  const { personalId } = await ensureBruceFolders(userId);
+
+  const boundary = `bruce_img_${Date.now()}`;
+  const metadataJson = JSON.stringify({ name: filename, parents: [personalId], mimeType });
+
+  const headerPart = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadataJson}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+    "utf8"
+  );
+  const footerPart = Buffer.from(`\r\n--${boundary}--`, "utf8");
+  const body = Buffer.concat([headerPart, imageBuffer, footerPart]);
+
+  const uploadRes = await fetch(`${UPLOAD_API}/files?uploadType=multipart&fields=id`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": `multipart/related; boundary=${boundary}`,
+    },
+    body,
+  });
+
+  if (!uploadRes.ok) {
+    const err = await uploadRes.text();
+    throw new Error(`Drive image upload failed: ${uploadRes.status} — ${err}`);
+  }
+
+  const { id: fileId } = await uploadRes.json() as { id: string };
+
+  // Make publicly readable so it can serve as an <img> src
+  await fetch(`${DRIVE_API}/files/${fileId}/permissions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ role: "reader", type: "anyone" }),
+  });
+
+  return `https://drive.google.com/uc?id=${fileId}`;
+}
+
 export async function uploadFile(
   userId: string,
   projectId: string,

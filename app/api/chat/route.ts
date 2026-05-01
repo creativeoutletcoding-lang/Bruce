@@ -5,12 +5,14 @@ import {
   assembleMemoryBlock,
   buildSystemPrompt,
   generateChatTitle,
+  IMAGE_SYSTEM_BLOCK,
 } from "@/lib/anthropic";
 import {
   CALENDAR_TOOLS,
   CALENDAR_SYSTEM_BLOCK,
   executeCalendarTool,
 } from "@/lib/google/calendarTools";
+import { generateImageAndSave } from "@/lib/images/generate";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -77,7 +79,9 @@ export async function POST(request: NextRequest) {
     hour12: true,
   });
   const systemPrompt =
-    buildSystemPrompt(memoryBlock, dateStr, timeStr) + CALENDAR_SYSTEM_BLOCK;
+    buildSystemPrompt(memoryBlock, dateStr, timeStr) +
+    CALENDAR_SYSTEM_BLOCK +
+    IMAGE_SYSTEM_BLOCK;
 
   const adminSupabase = createServiceRoleClient();
   let currentChatId = chatId;
@@ -137,10 +141,52 @@ export async function POST(request: NextRequest) {
   if (currentChatId) responseHeaders["X-Chat-Id"] = currentChatId;
   if (chatTitle) responseHeaders["X-Chat-Title"] = encodeURIComponent(chatTitle);
 
+  const IMAGE_TAG_RE = /<image_request>([\s\S]*?)<\/image_request>/;
+
   const readableStream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
       let fullResponse = "";
+      // Lookahead buffer to prevent streaming the <image_request> tag to the client
+      let pending = "";
+
+      function flushPending() {
+        if (!pending) return;
+        // Strip any image_request tag that landed in pending before flushing
+        const clean = pending.replace(/<image_request>[\s\S]*?<\/image_request>/g, "").trimStart();
+        if (clean) controller.enqueue(encoder.encode(clean));
+        pending = "";
+      }
+
+      function handleText(text: string) {
+        pending += text;
+        // Keep buffering until we're sure no partial tag is being formed
+        // A partial tag starts with '<' and could be growing — hold the last 32 chars
+        const tagStart = pending.indexOf("<image_request>");
+        if (tagStart !== -1) {
+          // Flush everything before the tag start immediately
+          if (tagStart > 0) {
+            controller.enqueue(encoder.encode(pending.slice(0, tagStart)));
+          }
+          // Keep the tag portion buffered until the closing tag arrives
+          pending = pending.slice(tagStart);
+          const tagEnd = pending.indexOf("</image_request>");
+          if (tagEnd !== -1) {
+            // Full tag present — swallow it, flush what comes after
+            const after = pending.slice(tagEnd + "</image_request>".length);
+            pending = "";
+            if (after.trimStart()) controller.enqueue(encoder.encode(after.trimStart()));
+          }
+          // else: still waiting for closing tag — keep buffering
+        } else {
+          // No tag start; safe to flush all but the last 15 chars (boundary safety)
+          const safe = pending.length > 15 ? pending.length - 15 : 0;
+          if (safe > 0) {
+            controller.enqueue(encoder.encode(pending.slice(0, safe)));
+            pending = pending.slice(safe);
+          }
+        }
+      }
 
       try {
         let currentMessages = [...anthropicMessages];
@@ -156,7 +202,7 @@ export async function POST(request: NextRequest) {
 
           stream.on("text", (text) => {
             fullResponse += text;
-            controller.enqueue(encoder.encode(text));
+            handleText(text);
           });
 
           const finalMsg = await stream.finalMessage();
@@ -194,6 +240,27 @@ export async function POST(request: NextRequest) {
           ];
         }
 
+        // Flush any remaining buffered text
+        flushPending();
+
+        // Detect image request and generate
+        const imageMatch = IMAGE_TAG_RE.exec(fullResponse);
+        if (imageMatch && !isIncognito && currentChatId) {
+          try {
+            const tagContent = JSON.parse(imageMatch[1]) as { prompt: string };
+            const imgResult = await generateImageAndSave(
+              tagContent.prompt,
+              user.id,
+              currentChatId
+            );
+            controller.enqueue(
+              encoder.encode(`\x1fIMAGE_MSG:${JSON.stringify(imgResult)}`)
+            );
+          } catch (imgErr) {
+            console.error("[api/chat] Image generation failed:", imgErr instanceof Error ? imgErr.message : imgErr);
+          }
+        }
+
         controller.close();
       } catch (err) {
         console.error("[api/chat] Stream error:", {
@@ -204,19 +271,25 @@ export async function POST(request: NextRequest) {
         controller.error(err);
       } finally {
         if (!isIncognito && currentChatId && fullResponse) {
-          try {
-            await adminSupabase.from("messages").insert({
-              chat_id: currentChatId,
-              sender_id: null,
-              role: "assistant",
-              content: fullResponse,
-            });
-            await adminSupabase
-              .from("chats")
-              .update({ last_message_at: new Date().toISOString() })
-              .eq("id", currentChatId);
-          } catch (dbErr) {
-            console.error("[api/chat] Failed to persist assistant message:", dbErr);
+          // Strip image tag before saving to DB
+          const cleanResponse = fullResponse
+            .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+            .trim();
+          if (cleanResponse) {
+            try {
+              await adminSupabase.from("messages").insert({
+                chat_id: currentChatId,
+                sender_id: null,
+                role: "assistant",
+                content: cleanResponse,
+              });
+              await adminSupabase
+                .from("chats")
+                .update({ last_message_at: new Date().toISOString() })
+                .eq("id", currentChatId);
+            } catch (dbErr) {
+              console.error("[api/chat] Failed to persist assistant message:", dbErr);
+            }
           }
         }
       }

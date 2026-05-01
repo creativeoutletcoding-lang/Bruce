@@ -27,6 +27,7 @@ export default function ChatWindow({
       role: m.role,
       content: m.content,
       created_at: m.created_at,
+      metadata: (m.metadata as Record<string, unknown>) ?? undefined,
     }))
   );
   const [title, setTitle] = useState(initialTitle);
@@ -41,18 +42,19 @@ export default function ChatWindow({
     const supabase = createClient();
     const { data } = await supabase
       .from("messages")
-      .select("id, role, content, created_at")
+      .select("id, role, content, created_at, metadata")
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true })
       .limit(100);
     if (!data) return;
     setMessages(
-      (data as Array<{ id: string; role: string; content: string; created_at: string }>).map(
+      (data as Array<{ id: string; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null }>).map(
         (m) => ({
           id: m.id,
           role: m.role as MessageRole,
           content: m.content,
           created_at: m.created_at,
+          metadata: m.metadata ?? undefined,
         })
       )
     );
@@ -137,24 +139,62 @@ export default function ChatWindow({
         const { value, done } = await reader.read();
         if (done) break;
         accumulated += decoder.decode(value, { stream: true });
-        const current = accumulated;
+        // Strip image tag from display; IMAGE_MSG sentinel lives after \x1f
+        const textPart = accumulated.split("\x1f")[0];
+        const display = textPart
+          .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+          .trimStart();
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === streamMsgId
-              ? { ...m, content: current }
-              : m
+            m.id === streamMsgId ? { ...m, content: display } : m
           )
         );
       }
 
-      // Finalize streaming message
+      // Parse IMAGE_MSG sentinel
+      const sentinelParts = accumulated.split("\x1f");
+      const imageSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_MSG:"));
+
+      // Finalize streaming text message
+      const finalText = sentinelParts[0]
+        .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+        .trim();
       setMessages((prev) =>
         prev.map((m) =>
           m.id === streamMsgId
-            ? { ...m, isStreaming: false, created_at: new Date().toISOString() }
+            ? { ...m, content: finalText, isStreaming: false, created_at: new Date().toISOString() }
             : m
         )
       );
+
+      // Append image message if present
+      if (imageSentinel) {
+        try {
+          const imgData = JSON.parse(imageSentinel.slice("IMAGE_MSG:".length)) as {
+            messageId: string;
+            url: string;
+            prompt: string;
+            model: string;
+          };
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: imgData.messageId,
+              role: "assistant" as const,
+              content: `[Image: ${imgData.prompt.slice(0, 100)}]`,
+              created_at: new Date().toISOString(),
+              metadata: {
+                content_type: "image",
+                image_url: imgData.url,
+                prompt: imgData.prompt,
+                model: imgData.model,
+              },
+            },
+          ]);
+        } catch {
+          // Malformed sentinel — ignore
+        }
+      }
     } catch (err) {
       console.error("[ChatWindow] Send error:", err);
       setError("Something went wrong. Tap to retry.");
