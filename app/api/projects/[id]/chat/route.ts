@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { assembleMemoryBlock, buildProjectSystemPrompt, generateChatTitle, IMAGE_SYSTEM_BLOCK } from "@/lib/anthropic";
 import { getFileContent } from "@/lib/google/drive";
-import { generateImageAndSave, type ImageQuality } from "@/lib/images/generate";
+import { type ImageQuality } from "@/lib/images/generate";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -271,30 +271,16 @@ export async function POST(request: NextRequest, { params }: Props) {
 
         flushPending();
 
-        // Detect image request and generate
-        console.log(`[api/projects/chat] fullResponse (first 500): ${fullResponse.slice(0, 500)}`);
+        // Detect image request — pass prompt back to client to fetch separately
         const imageMatch = IMAGE_TAG_RE.exec(fullResponse);
-        if (!imageMatch) {
-          console.log("[api/projects/chat] no image_request tag found in fullResponse");
-        } else {
-          console.log(`[api/projects/chat] image_request tag detected — raw content: ${imageMatch[1].slice(0, 200)}`);
-        }
         if (imageMatch && currentChatId) {
           try {
             const tagContent = JSON.parse(imageMatch[1]) as { prompt: string; quality?: ImageQuality };
-            console.log(`[api/projects/chat] parsed image request — prompt="${tagContent.prompt.slice(0, 100)}" quality=${tagContent.quality ?? "standard"}`);
-            console.log("[api/projects/chat] calling generateImageAndSave...");
-            const imgResult = await generateImageAndSave(
-              tagContent.prompt,
-              user.id,
-              currentChatId,
-              tagContent.quality
-            );
             controller.enqueue(
-              encoder.encode(`\x1fIMAGE_MSG:${JSON.stringify(imgResult)}`)
+              encoder.encode(`\x1fIMAGE_REQ:${JSON.stringify({ prompt: tagContent.prompt, quality: tagContent.quality ?? "standard", chatId: currentChatId })}`)
             );
-          } catch (imgErr) {
-            console.error("[api/projects/chat] generateImageAndSave error:", imgErr);
+          } catch {
+            // Malformed tag — ignore
           }
         }
 

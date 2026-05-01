@@ -151,8 +151,9 @@ export default function ProjectChatWindow({
         }
       }
 
+      // Parse sentinel
       const sentinelParts = accumulated.split("\x1f");
-      const imageSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_MSG:"));
+      const imageReqSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_REQ:"));
 
       const finalText = sentinelParts[0]
         .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
@@ -165,33 +166,62 @@ export default function ProjectChatWindow({
         )
       );
 
-      if (imageSentinel) {
+      // Fire image generation as a separate client-side fetch
+      if (imageReqSentinel) {
         try {
-          const imgData = JSON.parse(imageSentinel.slice("IMAGE_MSG:".length)) as {
-            messageId: string;
-            url: string;
+          const reqData = JSON.parse(imageReqSentinel.slice("IMAGE_REQ:".length)) as {
             prompt: string;
-            model: string;
             quality: string;
+            chatId: string;
           };
+          const skeletonId = `skeleton-${Date.now()}`;
           setMessages((prev) => [
             ...prev,
             {
-              id: imgData.messageId,
+              id: skeletonId,
               role: "assistant" as const,
-              content: `[Image: ${imgData.prompt.slice(0, 100)}]`,
+              content: "",
               created_at: new Date().toISOString(),
-              metadata: {
-                content_type: "image",
-                image_url: imgData.url,
-                prompt: imgData.prompt,
-                model: imgData.model,
-                quality: imgData.quality,
-              },
+              metadata: { content_type: "image", image_url: "", prompt: reqData.prompt, quality: reqData.quality },
             },
           ]);
+          const imgRes = await fetch("/api/images/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: reqData.prompt, chatId: reqData.chatId, quality: reqData.quality }),
+          });
+          if (imgRes.ok) {
+            const imgData = await imgRes.json() as {
+              messageId: string;
+              url: string;
+              prompt: string;
+              model: string;
+              quality: string;
+            };
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === skeletonId
+                  ? {
+                      id: imgData.messageId,
+                      role: "assistant" as const,
+                      content: `[Image: ${imgData.prompt.slice(0, 100)}]`,
+                      created_at: new Date().toISOString(),
+                      metadata: {
+                        content_type: "image",
+                        image_url: imgData.url,
+                        prompt: imgData.prompt,
+                        model: imgData.model,
+                        quality: imgData.quality,
+                      },
+                    }
+                  : m
+              )
+            );
+          } else {
+            setMessages((prev) => prev.filter((m) => m.id !== skeletonId));
+          }
         } catch {
-          // Malformed sentinel — ignore
+          // Image generation failed — skeleton removed or will clear on refresh
         }
       }
     } catch (err) {
