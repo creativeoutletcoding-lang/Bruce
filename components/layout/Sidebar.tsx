@@ -147,26 +147,49 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { registerRefresh } = useChatContext();
+
+  // ── data ──────────────────────────────────────────────────────────────────
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [familyThreads, setFamilyThreads] = useState<FamilyThread[]>([]);
   const [familyGroup, setFamilyGroup] = useState<FamilyGroupInfo | null>(null);
+
+  // ── new project modal ─────────────────────────────────────────────────────
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectIcon, setNewProjectIcon] = useState("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [projectErrorMsg, setProjectErrorMsg] = useState("");
+
+  // ── new thread modal ──────────────────────────────────────────────────────
   const [showNewThreadModal, setShowNewThreadModal] = useState(false);
   const [newThreadName, setNewThreadName] = useState("");
   const [isCreatingThread, setIsCreatingThread] = useState(false);
   const [threadErrorMsg, setThreadErrorMsg] = useState("");
   const [householdMembers, setHouseholdMembers] = useState<UserSummary[]>([]);
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
+
+  // ── bulk delete (PATH 1) ──────────────────────────────────────────────────
+  const [chatsSelectMode, setChatsSelectMode] = useState(false);
+  const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
+
+  // ── single delete context menu (PATH 2) ───────────────────────────────────
+  const [contextMenu, setContextMenu] = useState<{ chatId: string; x: number; y: number } | null>(null);
+  const [singleDeleteChatId, setSingleDeleteChatId] = useState<string | null>(null);
+  const [isDeletingSingle, setIsDeletingSingle] = useState(false);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressActiveRef = useRef(false);
+
+  // ── pull-to-refresh ───────────────────────────────────────────────────────
   const supabase = createClient();
   const contentRef = useRef<HTMLDivElement>(null);
   const sidebarTouchStartY = useRef<number>(-1);
   const [sidebarPullDistance, setSidebarPullDistance] = useState(0);
   const [sidebarIsRefreshing, setSidebarIsRefreshing] = useState(false);
+
+  // ── section collapse ──────────────────────────────────────────────────────
   const [projectsExpanded, setProjectsExpanded] = useState(() => {
     if (typeof window === "undefined") return true;
     const v = localStorage.getItem("bruce_sidebar_projects");
@@ -183,6 +206,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     return v === null ? true : v === "true";
   });
 
+  // ── derived ───────────────────────────────────────────────────────────────
   const activeChatId = pathname.startsWith("/chat/")
     ? pathname.split("/chat/")[1]
     : null;
@@ -196,6 +220,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     ? pathname.split("/family/threads/")[1]?.split("/")[0]
     : null;
 
+  // ── data loaders ──────────────────────────────────────────────────────────
   const loadChats = useCallback(async () => {
     const supabase = createClient();
     const { data } = await supabase
@@ -249,6 +274,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }, []);
 
+  // ── realtime subscription + initial load ──────────────────────────────────
   useEffect(() => {
     registerRefresh(loadChats);
     loadChats();
@@ -260,40 +286,39 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
 
     const channel = supabase
       .channel("chat-list")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "chats" },
-        () => { loadChats(); loadFamilyThreads(); }
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        () => loadChats()
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "notifications" },
-        () => loadFamilyThreads()
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "notifications" },
-        () => loadFamilyThreads()
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "chats" },
+        () => { loadChats(); loadFamilyThreads(); })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" },
+        () => loadChats())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" },
+        () => loadFamilyThreads())
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "notifications" },
+        () => loadFamilyThreads())
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── context menu: click-outside dismiss ───────────────────────────────────
+  useEffect(() => {
+    if (!contextMenu) return;
+    function dismiss() { setContextMenu(null); }
+    document.addEventListener("click", dismiss);
+    return () => document.removeEventListener("click", dismiss);
+  }, [contextMenu]);
+
+  // ── navigation ────────────────────────────────────────────────────────────
   function handleNewChat() {
     router.push("/chat");
     onNavigate();
   }
 
   function handleSelectChat(chat: ChatListItem) {
+    if (longPressActiveRef.current) {
+      longPressActiveRef.current = false;
+      return;
+    }
     if (chat.project_id) {
       router.push(`/projects/${chat.project_id}/chat/${chat.id}`);
     } else {
@@ -307,6 +332,142 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     onNavigate();
   }
 
+  // ── section collapse ──────────────────────────────────────────────────────
+  function toggleProjects() {
+    setProjectsExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("bruce_sidebar_projects", String(next));
+      return next;
+    });
+  }
+
+  function toggleChats() {
+    setChatsExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("bruce_sidebar_chats", String(next));
+      return next;
+    });
+  }
+
+  function toggleFamily() {
+    setFamilyExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("bruce_sidebar_family", String(next));
+      return next;
+    });
+  }
+
+  // ── PATH 1: bulk delete ───────────────────────────────────────────────────
+  function enterChatsSelectMode() {
+    setContextMenu(null);
+    setSelectedChatIds(new Set());
+    setChatsSelectMode(true);
+    if (!chatsExpanded) {
+      setChatsExpanded(true);
+      localStorage.setItem("bruce_sidebar_chats", "true");
+    }
+  }
+
+  function exitChatsSelectMode() {
+    setChatsSelectMode(false);
+    setSelectedChatIds(new Set());
+  }
+
+  function toggleChatSelection(id: string) {
+    setSelectedChatIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleBulkDelete() {
+    if (isDeletingBulk || selectedChatIds.size === 0) return;
+    setIsDeletingBulk(true);
+    try {
+      const ids = Array.from(selectedChatIds);
+      const res = await fetch("/api/chats", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (res.ok) {
+        const deletedActive = activeChatId && selectedChatIds.has(activeChatId);
+        setShowBulkDeleteConfirm(false);
+        exitChatsSelectMode();
+        await loadChats();
+        if (deletedActive) {
+          router.push("/chat");
+          onNavigate();
+        }
+      }
+    } finally {
+      setIsDeletingBulk(false);
+    }
+  }
+
+  // ── PATH 2: single delete context menu ───────────────────────────────────
+  function handleChatRightClick(e: React.MouseEvent, chatId: string) {
+    if (chatsSelectMode) return;
+    e.preventDefault();
+    setContextMenu({ chatId, x: e.clientX, y: e.clientY });
+  }
+
+  function handleChatLongPressStart(e: React.TouchEvent, chatId: string) {
+    if (chatsSelectMode) return;
+    const touch = e.touches[0];
+    const x = touch.clientX;
+    const y = touch.clientY;
+    longPressTimerRef.current = setTimeout(() => {
+      lightHaptic();
+      longPressActiveRef.current = true;
+      setContextMenu({ chatId, x, y });
+      longPressTimerRef.current = null;
+    }, 500);
+  }
+
+  function handleChatLongPressEnd(e: React.TouchEvent) {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    if (longPressActiveRef.current) {
+      e.preventDefault();
+    }
+  }
+
+  function handleChatLongPressMove() {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }
+
+  async function handleSingleDelete() {
+    if (!singleDeleteChatId || isDeletingSingle) return;
+    setIsDeletingSingle(true);
+    try {
+      const res = await fetch("/api/chats", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [singleDeleteChatId] }),
+      });
+      if (res.ok) {
+        const deletedActive = activeChatId === singleDeleteChatId;
+        setSingleDeleteChatId(null);
+        await loadChats();
+        if (deletedActive) {
+          router.push("/chat");
+          onNavigate();
+        }
+      }
+    } finally {
+      setIsDeletingSingle(false);
+    }
+  }
+
+  // ── project creation ──────────────────────────────────────────────────────
   async function handleCreateProject() {
     if (!newProjectName.trim() || isCreatingProject) return;
     setIsCreatingProject(true);
@@ -336,6 +497,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
+  // ── thread creation ───────────────────────────────────────────────────────
   async function openNewThreadModal() {
     setThreadErrorMsg("");
     setShowNewThreadModal(true);
@@ -379,8 +541,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         const thread: FamilyThread = await res.json();
         setShowNewThreadModal(false);
         setNewThreadName("");
-        // Optimistically add the thread so the sidebar is up to date before
-        // navigation. members is empty until loadFamilyThreads() syncs.
         setFamilyThreads((prev) => [{ ...thread, unreadCount: 0, members: [] }, ...prev]);
         router.push(`/family/threads/${thread.id}`);
         onNavigate();
@@ -395,36 +555,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
-  function toggleProjects() {
-    setProjectsExpanded((prev) => {
-      const next = !prev;
-      localStorage.setItem("bruce_sidebar_projects", String(next));
-      return next;
-    });
-  }
-
-  function toggleChats() {
-    setChatsExpanded((prev) => {
-      const next = !prev;
-      localStorage.setItem("bruce_sidebar_chats", String(next));
-      return next;
-    });
-  }
-
-  function toggleFamily() {
-    setFamilyExpanded((prev) => {
-      const next = !prev;
-      localStorage.setItem("bruce_sidebar_family", String(next));
-      return next;
-    });
-  }
-
-  async function handleSignOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-  }
-
+  // ── pull-to-refresh ───────────────────────────────────────────────────────
   function handleSidebarTouchStart(e: React.TouchEvent<HTMLDivElement>) {
     if ((contentRef.current?.scrollTop ?? 1) === 0) {
       sidebarTouchStartY.current = e.touches[0].clientY;
@@ -451,22 +582,25 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
-  // Member pip colors based on accent with opacity
+  // ── misc ──────────────────────────────────────────────────────────────────
   function getMemberPipColor(index: number): string {
     const opacities = [1, 0.7, 0.45, 0.25];
     const opacity = opacities[index] ?? 0.2;
     return `rgba(15, 110, 86, ${opacity})`;
   }
 
+  async function handleSignOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
+
+  // ── render ────────────────────────────────────────────────────────────────
   return (
     <div style={styles.sidebar}>
-      {/* New chat button */}
+      {/* Header */}
       <div style={styles.header}>
-        <button
-          onClick={handleNewChat}
-          style={styles.newChatButton}
-          aria-label="New chat"
-        >
+        <button onClick={handleNewChat} style={styles.newChatButton} aria-label="New chat">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
           </svg>
@@ -493,187 +627,238 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           onTouchEnd={handleSidebarTouchEnd}
           style={styles.content}
         >
-        {/* Projects section */}
-        <div style={styles.section}>
-          <div
-            style={{ ...styles.sectionHeaderRow, cursor: "pointer" }}
-            onClick={toggleProjects}
-            role="button"
-            aria-expanded={projectsExpanded}
-          >
-            <span style={styles.sectionLabel}>Projects</span>
-            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <svg
-                width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
-                style={{ transform: projectsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0 }}
-              >
-                <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowNewProjectModal(true); }}
-                style={styles.sectionAddButton}
-                aria-label="New project"
-                title="New project"
-              >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          {projectsExpanded && (projects.length === 0 ? (
-            <p style={styles.emptyState}>No projects yet</p>
-          ) : (
-            projects.map((project) => {
-              const isActive = project.id === activeProjectId;
-              return (
-                <button
-                  key={project.id}
-                  onClick={() => handleSelectProject(project.id)}
-                  style={{
-                    ...styles.projectItem,
-                    ...(isActive ? styles.projectItemActive : {}),
-                  }}
-                >
-                  {project.icon && <span style={styles.projectItemIcon}>{project.icon}</span>}
-                  <span style={styles.projectItemName}>{project.name}</span>
-                  <div style={styles.memberPips}>
-                    {Array.from({ length: Math.min(project.member_count, 4) }).map((_, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          ...styles.memberPip,
-                          backgroundColor: getMemberPipColor(i),
-                        }}
-                      />
-                    ))}
-                  </div>
-                </button>
-              );
-            })
-          ))}
-        </div>
-
-        {/* Chats section */}
-        <div style={styles.section}>
-          <div
-            style={{ ...styles.sectionHeaderRow, cursor: "pointer" }}
-            onClick={toggleChats}
-            role="button"
-            aria-expanded={chatsExpanded}
-          >
-            <span style={styles.sectionLabel}>Chats</span>
-            <svg
-              width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
-              style={{ transform: chatsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0 }}
+          {/* Projects section */}
+          <div style={styles.section}>
+            <div
+              style={{ ...styles.sectionHeaderRow, cursor: "pointer" }}
+              onClick={toggleProjects}
+              role="button"
+              aria-expanded={projectsExpanded}
             >
-              <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-          {chatsExpanded && (chats.length === 0 ? (
-            <p style={styles.emptyState}>No conversations yet</p>
-          ) : (
-            chats.map((chat) => {
-              const isActive = chat.id === activeChatId;
-              const preview = chat.last_message_content
-                ? chat.last_message_content.substring(0, 60)
-                : null;
-
-              return (
-                <button
-                  key={chat.id}
-                  onClick={() => handleSelectChat(chat)}
-                  style={{
-                    ...styles.chatItem,
-                    ...(isActive ? styles.chatItemActive : {}),
-                  }}
+              <span style={styles.sectionLabel}>Projects</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <svg
+                  width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                  style={{ transform: projectsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0 }}
                 >
-                  <span style={styles.chatItemTitle}>
-                    {chat.title ?? "Untitled"}
-                  </span>
-                  <div style={styles.chatItemMeta}>
-                    {preview && (
-                      <span style={styles.chatItemPreview}>{preview}</span>
-                    )}
-                    <span style={styles.chatItemTime}>
-                      {formatRelativeTime(chat.last_message_at)}
-                    </span>
-                  </div>
-                </button>
-              );
-            })
-          ))}
-        </div>
-
-        {/* Family section */}
-        <div style={styles.familySection}>
-          <div
-            style={{ ...styles.sectionHeaderRow, cursor: "pointer" }}
-            onClick={toggleFamily}
-            role="button"
-            aria-expanded={familyExpanded}
-          >
-            <span style={styles.sectionLabel}>Family</span>
-            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <svg
-                width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
-                style={{ transform: familyExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0 }}
-              >
-                <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <button
-                onClick={(e) => { e.stopPropagation(); openNewThreadModal(); }}
-                style={styles.sectionAddButton}
-                aria-label="New group chat"
-                title="New group chat"
-              >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-              </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowNewProjectModal(true); }}
+                  style={styles.sectionAddButton}
+                  aria-label="New project"
+                  title="New project"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
             </div>
-          </div>
-          {familyExpanded && (
-            <>
-              <button
-                onClick={() => { router.push("/family"); onNavigate(); }}
-                style={{
-                  ...styles.familyButton,
-                  ...(isFamilyActive ? styles.familyButtonActive : {}),
-                }}
-              >
-                <span style={styles.familyEmoji}>🏠</span>
-                <span style={styles.familyName}>Family Chat</span>
-                {!isFamilyActive && (familyGroup?.unreadCount ?? 0) > 0 && (
-                  <UnreadDot count={familyGroup!.unreadCount} />
-                )}
-              </button>
-              {familyThreads.map((thread) => {
-                const isActive = thread.id === activeThreadId;
+
+            {projectsExpanded && (projects.length === 0 ? (
+              <p style={styles.emptyState}>No projects yet</p>
+            ) : (
+              projects.map((project) => {
+                const isActive = project.id === activeProjectId;
                 return (
                   <button
-                    key={thread.id}
-                    onClick={() => { router.push(`/family/threads/${thread.id}`); onNavigate(); }}
-                    style={{
-                      ...styles.threadItem,
-                      ...(isActive ? styles.threadItemActive : {}),
-                    }}
+                    key={project.id}
+                    onClick={() => handleSelectProject(project.id)}
+                    style={{ ...styles.projectItem, ...(isActive ? styles.projectItemActive : {}) }}
                   >
-                    <span style={styles.threadName}>{thread.title}</span>
-                    {thread.members.length > 0 && (
-                      <ThreadAvatarStack members={thread.members} />
-                    )}
-                    {!isActive && thread.unreadCount > 0 && (
-                      <UnreadDot count={thread.unreadCount} />
-                    )}
+                    {project.icon && <span style={styles.projectItemIcon}>{project.icon}</span>}
+                    <span style={styles.projectItemName}>{project.name}</span>
+                    <div style={styles.memberPips}>
+                      {Array.from({ length: Math.min(project.member_count, 4) }).map((_, i) => (
+                        <div key={i} style={{ ...styles.memberPip, backgroundColor: getMemberPipColor(i) }} />
+                      ))}
+                    </div>
                   </button>
                 );
-              })}
-            </>
-          )}
+              })
+            ))}
+          </div>
+
+          {/* Chats section */}
+          <div style={styles.section}>
+            <div style={styles.sectionHeaderRow}>
+              <span
+                style={{ ...styles.sectionLabel, cursor: "pointer", flex: 1 }}
+                onClick={toggleChats}
+                role="button"
+                aria-expanded={chatsExpanded}
+              >
+                Chats
+              </span>
+              {chatsSelectMode ? (
+                <button onClick={exitChatsSelectMode} style={styles.sectionEditButton}>
+                  Done
+                </button>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  {chats.length > 0 && (
+                    <button
+                      onClick={enterChatsSelectMode}
+                      style={styles.sectionEditButton}
+                      aria-label="Select chats"
+                      title="Select chats"
+                    >
+                      Edit
+                    </button>
+                  )}
+                  <svg
+                    width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                    onClick={toggleChats}
+                    style={{ transform: chatsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0, cursor: "pointer" }}
+                  >
+                    <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              )}
+            </div>
+
+            {chatsExpanded && (chats.length === 0 ? (
+              <p style={styles.emptyState}>No conversations yet</p>
+            ) : (
+              <>
+                {chats.map((chat) => {
+                  const isActive = chat.id === activeChatId;
+                  const isSelected = selectedChatIds.has(chat.id);
+                  const preview = chat.last_message_content
+                    ? chat.last_message_content.substring(0, 60)
+                    : null;
+
+                  if (chatsSelectMode) {
+                    return (
+                      <button
+                        key={chat.id}
+                        onClick={() => toggleChatSelection(chat.id)}
+                        style={{
+                          ...styles.chatItem,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: "8px",
+                          ...(isSelected ? styles.chatItemSelected : {}),
+                        }}
+                      >
+                        <div style={{
+                          ...styles.chatSelectCircle,
+                          ...(isSelected ? { backgroundColor: "var(--accent)", borderColor: "var(--accent)" } : {}),
+                        }}>
+                          {isSelected && (
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                              <path d="M1.5 5l2.5 2.5 4.5-5" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={styles.chatItemTitle}>{chat.title ?? "Untitled"}</div>
+                          <div style={styles.chatItemMeta}>
+                            {preview && <span style={styles.chatItemPreview}>{preview}</span>}
+                            <span style={styles.chatItemTime}>{formatRelativeTime(chat.last_message_at)}</span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <button
+                      key={chat.id}
+                      onClick={() => handleSelectChat(chat)}
+                      onContextMenu={(e) => handleChatRightClick(e, chat.id)}
+                      onTouchStart={(e) => handleChatLongPressStart(e, chat.id)}
+                      onTouchEnd={handleChatLongPressEnd}
+                      onTouchMove={handleChatLongPressMove}
+                      style={{ ...styles.chatItem, ...(isActive ? styles.chatItemActive : {}) }}
+                    >
+                      <div style={styles.chatItemTitle}>{chat.title ?? "Untitled"}</div>
+                      <div style={styles.chatItemMeta}>
+                        {preview && <span style={styles.chatItemPreview}>{preview}</span>}
+                        <span style={styles.chatItemTime}>{formatRelativeTime(chat.last_message_at)}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+
+                {/* Bulk delete action — always visible in select mode */}
+                {chatsSelectMode && (
+                  <button
+                    onClick={() => { if (selectedChatIds.size > 0) setShowBulkDeleteConfirm(true); }}
+                    disabled={selectedChatIds.size === 0}
+                    style={{
+                      ...styles.deleteSelectedButton,
+                      ...(selectedChatIds.size === 0 ? styles.deleteSelectedButtonDisabled : {}),
+                    }}
+                  >
+                    {selectedChatIds.size === 0
+                      ? "Select chats to delete"
+                      : `Delete ${selectedChatIds.size} ${selectedChatIds.size === 1 ? "chat" : "chats"}`}
+                  </button>
+                )}
+              </>
+            ))}
+          </div>
+
+          {/* Family section */}
+          <div style={styles.familySection}>
+            <div
+              style={{ ...styles.sectionHeaderRow, cursor: "pointer" }}
+              onClick={toggleFamily}
+              role="button"
+              aria-expanded={familyExpanded}
+            >
+              <span style={styles.sectionLabel}>Family</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <svg
+                  width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                  style={{ transform: familyExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0 }}
+                >
+                  <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <button
+                  onClick={(e) => { e.stopPropagation(); openNewThreadModal(); }}
+                  style={styles.sectionAddButton}
+                  aria-label="New group chat"
+                  title="New group chat"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            {familyExpanded && (
+              <>
+                <button
+                  onClick={() => { router.push("/family"); onNavigate(); }}
+                  style={{ ...styles.familyButton, ...(isFamilyActive ? styles.familyButtonActive : {}) }}
+                >
+                  <span style={styles.familyEmoji}>🏠</span>
+                  <span style={styles.familyName}>Family Chat</span>
+                  {!isFamilyActive && (familyGroup?.unreadCount ?? 0) > 0 && (
+                    <UnreadDot count={familyGroup!.unreadCount} />
+                  )}
+                </button>
+                {familyThreads.map((thread) => {
+                  const isActive = thread.id === activeThreadId;
+                  return (
+                    <button
+                      key={thread.id}
+                      onClick={() => { router.push(`/family/threads/${thread.id}`); onNavigate(); }}
+                      style={{ ...styles.threadItem, ...(isActive ? styles.threadItemActive : {}) }}
+                    >
+                      <span style={styles.threadName}>{thread.title}</span>
+                      {thread.members.length > 0 && <ThreadAvatarStack members={thread.members} />}
+                      {!isActive && thread.unreadCount > 0 && <UnreadDot count={thread.unreadCount} />}
+                    </button>
+                  );
+                })}
+              </>
+            )}
+          </div>
         </div>
-      </div>
       </div>
 
       {/* User profile */}
@@ -681,16 +866,9 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         <div style={styles.userInfo}>
           {user.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={user.avatar_url}
-              alt=""
-              style={styles.avatar}
-              referrerPolicy="no-referrer"
-            />
+            <img src={user.avatar_url} alt="" style={styles.avatar} referrerPolicy="no-referrer" />
           ) : (
-            <div style={styles.avatarFallback}>
-              {user.name.charAt(0).toUpperCase()}
-            </div>
+            <div style={styles.avatarFallback}>{user.name.charAt(0).toUpperCase()}</div>
           )}
           <span style={styles.userName}>{user.name.split(" ")[0]}</span>
         </div>
@@ -702,29 +880,113 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.4" />
-              <path
-                d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M3 13l1.4-1.4M11.6 4.4 13 3"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
+              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M3 13l1.4-1.4M11.6 4.4 13 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
           </button>
           <button onClick={handleSignOut} style={styles.iconButton} title="Sign out">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l3-3-3-3M13 8H6"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+              <path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l3-3-3-3M13 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         </div>
       </div>
 
-      {/* New Thread Modal */}
+      {/* ── PATH 2: floating context menu ─────────────────────────────────── */}
+      {contextMenu && (
+        <div
+          style={{
+            position: "fixed",
+            top: contextMenu.y,
+            left: contextMenu.x,
+            zIndex: 500,
+            backgroundColor: "var(--bg-primary)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-md)",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
+            overflow: "hidden",
+            minWidth: "130px",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            style={styles.contextMenuItem}
+            onClick={() => {
+              setSingleDeleteChatId(contextMenu.chatId);
+              setContextMenu(null);
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+
+      {/* ── PATH 2: single delete confirmation ────────────────────────────── */}
+      {singleDeleteChatId && (
+        <div style={styles.modalOverlay} onClick={() => setSingleDeleteChatId(null)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <span style={styles.modalTitle}>Delete this chat?</span>
+              <button style={styles.modalClose} onClick={() => setSingleDeleteChatId(null)}>×</button>
+            </div>
+            <div style={styles.modalBody}>
+              <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>
+                This cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={() => setSingleDeleteChatId(null)}
+                  style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSingleDelete}
+                  disabled={isDeletingSingle}
+                  style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingSingle ? styles.createButtonDisabled : {}) }}
+                >
+                  {isDeletingSingle ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── PATH 1: bulk delete confirmation ──────────────────────────────── */}
+      {showBulkDeleteConfirm && (
+        <div style={styles.modalOverlay} onClick={() => setShowBulkDeleteConfirm(false)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <span style={styles.modalTitle}>
+                Delete {selectedChatIds.size} {selectedChatIds.size === 1 ? "chat" : "chats"}?
+              </span>
+              <button style={styles.modalClose} onClick={() => setShowBulkDeleteConfirm(false)}>×</button>
+            </div>
+            <div style={styles.modalBody}>
+              <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>
+                This cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={() => setShowBulkDeleteConfirm(false)}
+                  style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={isDeletingBulk}
+                  style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingBulk ? styles.createButtonDisabled : {}) }}
+                >
+                  {isDeletingBulk ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Thread modal */}
       {showNewThreadModal && (
         <div
           style={styles.modalOverlay}
@@ -750,8 +1012,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                 style={styles.nameInput}
                 autoFocus
               />
-
-              {/* Member picker */}
               {householdMembers.length > 0 && (
                 <div>
                   <p style={styles.memberPickerLabel}>Members</p>
@@ -762,10 +1022,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                         <button
                           key={member.id}
                           onClick={() => toggleThreadMember(member.id)}
-                          style={{
-                            ...styles.memberPickerRow,
-                            ...(checked ? styles.memberPickerRowChecked : {}),
-                          }}
+                          style={{ ...styles.memberPickerRow, ...(checked ? styles.memberPickerRowChecked : {}) }}
                         >
                           <div style={styles.memberPickerCheck}>
                             {checked && (
@@ -781,18 +1038,13 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                   </div>
                 </div>
               )}
-
-              {threadErrorMsg && (
-                <p style={styles.errorMsg}>{threadErrorMsg}</p>
-              )}
+              {threadErrorMsg && <p style={styles.errorMsg}>{threadErrorMsg}</p>}
               <button
                 onClick={handleCreateThread}
                 disabled={!newThreadName.trim() || isCreatingThread || selectedMemberIds.size === 0}
                 style={{
                   ...styles.createButton,
-                  ...(!newThreadName.trim() || isCreatingThread || selectedMemberIds.size === 0
-                    ? styles.createButtonDisabled
-                    : {}),
+                  ...(!newThreadName.trim() || isCreatingThread || selectedMemberIds.size === 0 ? styles.createButtonDisabled : {}),
                 }}
               >
                 {isCreatingThread ? "Creating…" : "Create group chat"}
@@ -802,7 +1054,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         </div>
       )}
 
-      {/* New Project Modal */}
+      {/* New Project modal */}
       {showNewProjectModal && (
         <div
           style={styles.modalOverlay}
@@ -819,23 +1071,17 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               </button>
             </div>
             <div style={styles.modalBody}>
-              {/* Icon picker */}
               <div style={styles.iconPickerRow}>
                 {ICON_OPTIONS.map((icon) => (
                   <button
                     key={icon === "" ? "none" : icon}
-                    style={{
-                      ...styles.iconOption,
-                      ...(newProjectIcon === icon ? styles.iconOptionSelected : {}),
-                    }}
+                    style={{ ...styles.iconOption, ...(newProjectIcon === icon ? styles.iconOptionSelected : {}) }}
                     onClick={() => setNewProjectIcon(icon)}
                   >
                     {icon === "" ? <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>—</span> : icon}
                   </button>
                 ))}
               </div>
-
-              {/* Name input */}
               <input
                 type="text"
                 placeholder="Project name"
@@ -845,10 +1091,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                 style={styles.nameInput}
                 autoFocus
               />
-
-              {projectErrorMsg && (
-                <p style={styles.errorMsg}>{projectErrorMsg}</p>
-              )}
+              {projectErrorMsg && <p style={styles.errorMsg}>{projectErrorMsg}</p>}
               <button
                 onClick={handleCreateProject}
                 disabled={!newProjectName.trim() || isCreatingProject}
@@ -950,6 +1193,16 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-sm)",
     transition: "color var(--transition)",
   },
+  sectionEditButton: {
+    fontSize: "0.6875rem",
+    fontWeight: "500",
+    color: "var(--accent)",
+    cursor: "pointer",
+    padding: "2px 4px",
+    borderRadius: "var(--radius-sm)",
+    transition: "opacity var(--transition)",
+    flexShrink: 0,
+  },
   emptyState: {
     fontSize: "0.8125rem",
     color: "var(--text-tertiary)",
@@ -1021,6 +1274,10 @@ const styles: Record<string, React.CSSProperties> = {
     borderLeft: "2px solid var(--accent)",
     color: "var(--accent)",
   },
+  chatItemSelected: {
+    backgroundColor: "rgba(15, 110, 86, 0.06)",
+    borderLeft: "2px solid var(--accent)",
+  },
   chatItemTitle: {
     fontSize: "0.875rem",
     fontWeight: "500",
@@ -1047,6 +1304,51 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-tertiary)",
     flexShrink: 0,
   },
+  chatSelectCircle: {
+    width: "18px",
+    height: "18px",
+    borderRadius: "var(--radius-full)",
+    border: "1.5px solid var(--border-strong)",
+    backgroundColor: "var(--bg-secondary)",
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deleteSelectedButton: {
+    width: "100%",
+    marginTop: "6px",
+    padding: "8px 10px",
+    fontSize: "0.8125rem",
+    fontWeight: "500",
+    color: "#c0392b",
+    backgroundColor: "rgba(192, 57, 43, 0.08)",
+    borderRadius: "var(--radius-md)",
+    cursor: "pointer",
+    textAlign: "left" as const,
+    transition: "background-color var(--transition)",
+  },
+  deleteSelectedButtonDisabled: {
+    color: "var(--text-tertiary)",
+    backgroundColor: "transparent",
+    cursor: "default",
+  },
+
+  // Context menu
+  contextMenuItem: {
+    width: "100%",
+    padding: "10px 14px",
+    textAlign: "left" as const,
+    fontSize: "0.875rem",
+    fontWeight: "500",
+    color: "#c0392b",
+    cursor: "pointer",
+    backgroundColor: "transparent",
+    transition: "background-color var(--transition)",
+    display: "block",
+  },
+
+  // Family
   familySection: {
     padding: "8px 6px",
     borderTop: "1px solid var(--border)",
@@ -1103,11 +1405,6 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "rgba(15, 110, 86, 0.08)",
     borderLeft: "2px solid var(--accent)",
     color: "var(--accent)",
-  },
-  threadEmoji: {
-    fontSize: "0.875rem",
-    lineHeight: 1,
-    flexShrink: 0,
   },
   threadName: {
     fontSize: "0.8125rem",
@@ -1172,7 +1469,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "color var(--transition), background-color var(--transition)",
   },
 
-  // New project modal
+  // Modals
   modalOverlay: {
     position: "fixed",
     inset: 0,
