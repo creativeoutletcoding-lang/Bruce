@@ -60,21 +60,27 @@ export async function generateImageAndSave(
   }
 
   console.log("[generate] Replicate prediction created successfully");
+  console.log(`[generate] NODE_ENV=${process.env.NODE_ENV}`);
 
   const prediction = (await createRes.json()) as {
     id: string;
     status: string;
     output?: string[];
+    error?: unknown;
   };
 
   // 2. Poll until complete (max 60s)
   let imageUrl: string | null = null;
-  for (let i = 0; i < 60; i++) {
+  const MAX_ATTEMPTS = 60;
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    console.log(`[generate] polling attempt ${i + 1} — status: ${prediction.status}`);
     if (prediction.status === "succeeded" && prediction.output?.length) {
       imageUrl = prediction.output[0];
+      console.log(`[generate] prediction succeeded — output URL: ${imageUrl}`);
       break;
     }
     if (prediction.status === "failed" || prediction.status === "canceled") {
+      console.error(`[generate] Replicate prediction failed — error: ${JSON.stringify(prediction.error ?? null)}`);
       throw new Error("Image generation failed on Replicate");
     }
     await new Promise((r) => setTimeout(r, 1000));
@@ -86,12 +92,17 @@ export async function generateImageAndSave(
     const updated = (await pollRes.json()) as {
       status: string;
       output?: string[];
+      error?: unknown;
     };
     prediction.status = updated.status;
     prediction.output = updated.output;
+    prediction.error = updated.error;
   }
 
-  if (!imageUrl) throw new Error("Image generation timed out");
+  if (!imageUrl) {
+    console.error(`[generate] polling timed out after ${MAX_ATTEMPTS} attempts — last status: ${prediction.status}`);
+    throw new Error("Image generation timed out");
+  }
 
   // 3. Download image from Replicate
   const imgRes = await fetch(imageUrl);

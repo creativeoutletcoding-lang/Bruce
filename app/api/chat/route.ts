@@ -16,6 +16,7 @@ import { generateImageAndSave, type ImageQuality } from "@/lib/images/generate";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
