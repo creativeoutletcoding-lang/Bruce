@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type {
   ProjectMemberDetail,
@@ -68,6 +68,7 @@ export default function ProjectHome({
   userRole,
 }: ProjectHomeProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const supabase = createClient();
   const canEdit = userRole === "owner";
 
@@ -101,9 +102,16 @@ export default function ProjectHome({
   const [isAddingMember, setIsAddingMember] = useState(false);
 
   // ── Chats ──────────────────────────────────────────────────
-  const [chats] = useState<ChatPreview[]>(initialChats);
+  const [chats, setChats] = useState<ChatPreview[]>(initialChats);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [inlineInput, setInlineInput] = useState("");
+
+  // Context menu + single delete
+  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isDeletingChat, setIsDeletingChat] = useState(false);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressActiveRef = useRef(false);
 
   // ── Helpers ────────────────────────────────────────────────
 
@@ -306,6 +314,64 @@ export default function ProjectHome({
       setIsCreatingChat(false);
     }
   }
+
+  // ── Chat context menu ──────────────────────────────────────
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    function dismiss() { setContextMenu(null); }
+    document.addEventListener("click", dismiss);
+    return () => document.removeEventListener("click", dismiss);
+  }, [contextMenu]);
+
+  function handleChatRightClick(e: React.MouseEvent, chatId: string, ownerId: string) {
+    if (ownerId !== userId) return;
+    e.preventDefault();
+    setContextMenu({ id: chatId, x: e.clientX, y: e.clientY });
+  }
+
+  function handleChatLongPressStart(e: React.TouchEvent, chatId: string, ownerId: string) {
+    if (ownerId !== userId) return;
+    longPressActiveRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      longPressActiveRef.current = true;
+      const touch = e.touches[0];
+      setContextMenu({ id: chatId, x: touch.clientX, y: touch.clientY });
+    }, 500);
+  }
+
+  function handleChatLongPressEnd(e: React.TouchEvent) {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    if (longPressActiveRef.current) e.preventDefault();
+  }
+
+  function handleChatLongPressMove() {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+  }
+
+  async function handleDeleteChat() {
+    if (!deleteTargetId || isDeletingChat) return;
+    setIsDeletingChat(true);
+    try {
+      const res = await fetch("/api/chats", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [deleteTargetId] }),
+      });
+      if (res.ok) {
+        setChats((prev) => prev.filter((c) => c.id !== deleteTargetId));
+        const activeChatPath = `/projects/${projectId}/chat/${deleteTargetId}`;
+        if (pathname === activeChatPath || pathname.startsWith(activeChatPath + "/")) {
+          router.push(`/projects/${projectId}`);
+        }
+      }
+    } finally {
+      setIsDeletingChat(false);
+      setDeleteTargetId(null);
+    }
+  }
+
+  // ── Computed ───────────────────────────────────────────────
 
   const nonMembers = allUsers.filter(
     (u) => !memberList.some((m) => m.id === u.id)
@@ -528,9 +594,14 @@ export default function ProjectHome({
                 <button
                   key={chat.id}
                   style={styles.chatRow}
-                  onClick={() =>
-                    router.push(`/projects/${projectId}/chat/${chat.id}`)
-                  }
+                  onClick={() => {
+                    if (longPressActiveRef.current) { longPressActiveRef.current = false; return; }
+                    router.push(`/projects/${projectId}/chat/${chat.id}`);
+                  }}
+                  onContextMenu={(e) => handleChatRightClick(e, chat.id, chat.owner_id)}
+                  onTouchStart={(e) => handleChatLongPressStart(e, chat.id, chat.owner_id)}
+                  onTouchEnd={handleChatLongPressEnd}
+                  onTouchMove={handleChatLongPressMove}
                 >
                   <div style={styles.chatRowTop}>
                     <span style={styles.chatTitle}>
@@ -581,6 +652,61 @@ export default function ProjectHome({
           </button>
         </div>
       </div>
+
+      {/* CHAT CONTEXT MENU */}
+      {contextMenu && (
+        <div
+          style={{
+            ...styles.contextMenu,
+            top: contextMenu.y,
+            left: contextMenu.x,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            style={styles.contextMenuItem}
+            onClick={() => {
+              setDeleteTargetId(contextMenu.id);
+              setContextMenu(null);
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+
+      {/* SINGLE DELETE CONFIRMATION */}
+      {deleteTargetId && (
+        <div style={styles.modalOverlay} onClick={() => setDeleteTargetId(null)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <span style={styles.modalTitle}>Delete this chat?</span>
+              <button style={styles.modalClose} onClick={() => setDeleteTargetId(null)}>×</button>
+            </div>
+            <div style={{ padding: "16px 20px" }}>
+              <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", marginBottom: "20px" }}>
+                This cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                <button
+                  style={styles.cancelButton}
+                  onClick={() => setDeleteTargetId(null)}
+                  disabled={isDeletingChat}
+                >
+                  Cancel
+                </button>
+                <button
+                  style={{ ...styles.deleteConfirmButton, ...(isDeletingChat ? { opacity: 0.6 } : {}) }}
+                  onClick={handleDeleteChat}
+                  disabled={isDeletingChat}
+                >
+                  {isDeletingChat ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FILE PICKER MODAL */}
       {showFilePicker && (
@@ -1284,6 +1410,50 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "opacity var(--transition)",
   },
   createButtonDisabled: { opacity: 0.5, cursor: "not-allowed" },
+
+  // Context menu
+  contextMenu: {
+    position: "fixed" as const,
+    zIndex: 500,
+    backgroundColor: "var(--bg-primary)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-md)",
+    boxShadow: "0 4px 16px rgba(0,0,0,0.14)",
+    overflow: "hidden",
+    minWidth: "140px",
+  },
+  contextMenuItem: {
+    display: "block",
+    width: "100%",
+    padding: "10px 16px",
+    textAlign: "left" as const,
+    fontSize: "0.875rem",
+    fontWeight: "500",
+    color: "#dc2626",
+    cursor: "pointer",
+    backgroundColor: "transparent",
+    transition: "background-color var(--transition)",
+  },
+  cancelButton: {
+    padding: "8px 16px",
+    fontSize: "0.875rem",
+    fontWeight: "500",
+    color: "var(--text-secondary)",
+    backgroundColor: "var(--bg-secondary)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-md)",
+    cursor: "pointer",
+  },
+  deleteConfirmButton: {
+    padding: "8px 16px",
+    fontSize: "0.875rem",
+    fontWeight: "500",
+    color: "#fff",
+    backgroundColor: "#dc2626",
+    borderRadius: "var(--radius-md)",
+    cursor: "pointer",
+    transition: "opacity var(--transition)",
+  },
 
   // Member picker
   userPickerRow: {

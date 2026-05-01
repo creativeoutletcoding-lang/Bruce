@@ -8,6 +8,8 @@ import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { User, ProjectListItem, UserSummary } from "@/lib/types";
 
+// ── Local interfaces ────────────────────────────────────────────────────────
+
 interface ThreadMemberSummary {
   id: string;
   name: string;
@@ -37,10 +39,29 @@ interface ChatListItem {
   project_id?: string | null;
 }
 
+interface ProjectChatListItem {
+  id: string;
+  title: string | null;
+  last_message_at: string;
+  owner_id: string;
+  project_id: string;
+  project_name: string;
+  project_icon: string;
+}
+
+interface ContextMenuState {
+  id: string;
+  kind: "chat" | "thread";
+  x: number;
+  y: number;
+}
+
 interface SidebarProps {
   user: User;
   onNavigate: () => void;
 }
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -143,25 +164,27 @@ function UnreadDot({ count }: { count: number }) {
   );
 }
 
+// ── Component ────────────────────────────────────────────────────────────────
+
 export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { registerRefresh } = useChatContext();
 
-  // ── data ──────────────────────────────────────────────────────────────────
+  // ── data ────────────────────────────────────────────────────────────────
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [familyThreads, setFamilyThreads] = useState<FamilyThread[]>([]);
   const [familyGroup, setFamilyGroup] = useState<FamilyGroupInfo | null>(null);
 
-  // ── new project modal ─────────────────────────────────────────────────────
+  // ── new project modal ────────────────────────────────────────────────────
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectIcon, setNewProjectIcon] = useState("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [projectErrorMsg, setProjectErrorMsg] = useState("");
 
-  // ── new thread modal ──────────────────────────────────────────────────────
+  // ── new thread modal ─────────────────────────────────────────────────────
   const [showNewThreadModal, setShowNewThreadModal] = useState(false);
   const [newThreadName, setNewThreadName] = useState("");
   const [isCreatingThread, setIsCreatingThread] = useState(false);
@@ -169,27 +192,35 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [householdMembers, setHouseholdMembers] = useState<UserSummary[]>([]);
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
 
-  // ── bulk delete (PATH 1) ──────────────────────────────────────────────────
+  // ── standalone chats bulk delete (PATH 1) ────────────────────────────────
   const [chatsSelectMode, setChatsSelectMode] = useState(false);
   const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
 
-  // ── single delete context menu (PATH 2) ───────────────────────────────────
-  const [contextMenu, setContextMenu] = useState<{ chatId: string; x: number; y: number } | null>(null);
-  const [singleDeleteChatId, setSingleDeleteChatId] = useState<string | null>(null);
+  // ── projects bulk delete ─────────────────────────────────────────────────
+  const [projectsSelectMode, setProjectsSelectMode] = useState(false);
+  const [allProjectChats, setAllProjectChats] = useState<ProjectChatListItem[]>([]);
+  const [selectedProjectChatIds, setSelectedProjectChatIds] = useState<Set<string>>(new Set());
+  const [showProjectBulkDeleteConfirm, setShowProjectBulkDeleteConfirm] = useState(false);
+  const [isDeletingProjectChats, setIsDeletingProjectChats] = useState(false);
+  const [loadingProjectChats, setLoadingProjectChats] = useState(false);
+
+  // ── shared context menu + single delete ──────────────────────────────────
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [singleDeleteTarget, setSingleDeleteTarget] = useState<{ id: string; kind: "chat" | "thread" } | null>(null);
   const [isDeletingSingle, setIsDeletingSingle] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressActiveRef = useRef(false);
 
-  // ── pull-to-refresh ───────────────────────────────────────────────────────
+  // ── pull-to-refresh ──────────────────────────────────────────────────────
   const supabase = createClient();
   const contentRef = useRef<HTMLDivElement>(null);
   const sidebarTouchStartY = useRef<number>(-1);
   const [sidebarPullDistance, setSidebarPullDistance] = useState(0);
   const [sidebarIsRefreshing, setSidebarIsRefreshing] = useState(false);
 
-  // ── section collapse ──────────────────────────────────────────────────────
+  // ── section collapse ─────────────────────────────────────────────────────
   const [projectsExpanded, setProjectsExpanded] = useState(() => {
     if (typeof window === "undefined") return true;
     const v = localStorage.getItem("bruce_sidebar_projects");
@@ -206,7 +237,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     return v === null ? true : v === "true";
   });
 
-  // ── derived ───────────────────────────────────────────────────────────────
+  // ── derived ──────────────────────────────────────────────────────────────
   const activeChatId = pathname.startsWith("/chat/")
     ? pathname.split("/chat/")[1]
     : null;
@@ -220,7 +251,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     ? pathname.split("/family/threads/")[1]?.split("/")[0]
     : null;
 
-  // ── data loaders ──────────────────────────────────────────────────────────
+  // ── data loaders ─────────────────────────────────────────────────────────
   const loadChats = useCallback(async () => {
     const supabase = createClient();
     const { data } = await supabase
@@ -274,7 +305,38 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }, []);
 
-  // ── realtime subscription + initial load ──────────────────────────────────
+  async function loadAllProjectChats(currentProjects: ProjectListItem[]) {
+    setLoadingProjectChats(true);
+    try {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("chats")
+        .select("id, title, owner_id, last_message_at, project_id")
+        .not("project_id", "is", null)
+        .order("last_message_at", { ascending: false });
+
+      if (!data) return;
+
+      const items: ProjectChatListItem[] = data.map((c) => {
+        const proj = currentProjects.find((p) => p.id === c.project_id);
+        return {
+          id: c.id as string,
+          title: c.title as string | null,
+          last_message_at: c.last_message_at as string,
+          owner_id: c.owner_id as string,
+          project_id: c.project_id as string,
+          project_name: proj?.name ?? "Unknown project",
+          project_icon: proj?.icon ?? "",
+        };
+      });
+
+      setAllProjectChats(items);
+    } finally {
+      setLoadingProjectChats(false);
+    }
+  }
+
+  // ── realtime subscription + initial load ─────────────────────────────────
   useEffect(() => {
     registerRefresh(loadChats);
     loadChats();
@@ -300,13 +362,38 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── context menu: click-outside dismiss ───────────────────────────────────
+  // ── context menu: click-outside dismiss ──────────────────────────────────
   useEffect(() => {
     if (!contextMenu) return;
     function dismiss() { setContextMenu(null); }
     document.addEventListener("click", dismiss);
     return () => document.removeEventListener("click", dismiss);
   }, [contextMenu]);
+
+  // ── section collapse ─────────────────────────────────────────────────────
+  function toggleProjects() {
+    setProjectsExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("bruce_sidebar_projects", String(next));
+      return next;
+    });
+  }
+
+  function toggleChats() {
+    setChatsExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("bruce_sidebar_chats", String(next));
+      return next;
+    });
+  }
+
+  function toggleFamily() {
+    setFamilyExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("bruce_sidebar_family", String(next));
+      return next;
+    });
+  }
 
   // ── navigation ────────────────────────────────────────────────────────────
   function handleNewChat() {
@@ -332,34 +419,10 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     onNavigate();
   }
 
-  // ── section collapse ──────────────────────────────────────────────────────
-  function toggleProjects() {
-    setProjectsExpanded((prev) => {
-      const next = !prev;
-      localStorage.setItem("bruce_sidebar_projects", String(next));
-      return next;
-    });
-  }
-
-  function toggleChats() {
-    setChatsExpanded((prev) => {
-      const next = !prev;
-      localStorage.setItem("bruce_sidebar_chats", String(next));
-      return next;
-    });
-  }
-
-  function toggleFamily() {
-    setFamilyExpanded((prev) => {
-      const next = !prev;
-      localStorage.setItem("bruce_sidebar_family", String(next));
-      return next;
-    });
-  }
-
-  // ── PATH 1: bulk delete ───────────────────────────────────────────────────
+  // ── standalone chats: bulk delete ────────────────────────────────────────
   function enterChatsSelectMode() {
     setContextMenu(null);
+    setProjectsSelectMode(false);
     setSelectedChatIds(new Set());
     setChatsSelectMode(true);
     if (!chatsExpanded) {
@@ -407,27 +470,86 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
-  // ── PATH 2: single delete context menu ───────────────────────────────────
-  function handleChatRightClick(e: React.MouseEvent, chatId: string) {
-    if (chatsSelectMode) return;
-    e.preventDefault();
-    setContextMenu({ chatId, x: e.clientX, y: e.clientY });
+  // ── projects: bulk delete ────────────────────────────────────────────────
+  function enterProjectsSelectMode() {
+    setContextMenu(null);
+    setChatsSelectMode(false);
+    setSelectedProjectChatIds(new Set());
+    setProjectsSelectMode(true);
+    setAllProjectChats([]);
+    loadAllProjectChats(projects);
+    if (!projectsExpanded) {
+      setProjectsExpanded(true);
+      localStorage.setItem("bruce_sidebar_projects", "true");
+    }
   }
 
-  function handleChatLongPressStart(e: React.TouchEvent, chatId: string) {
-    if (chatsSelectMode) return;
+  function exitProjectsSelectMode() {
+    setProjectsSelectMode(false);
+    setSelectedProjectChatIds(new Set());
+    setAllProjectChats([]);
+  }
+
+  function toggleProjectChatSelection(id: string, isOwned: boolean) {
+    if (!isOwned) return;
+    setSelectedProjectChatIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleProjectBulkDelete() {
+    if (isDeletingProjectChats || selectedProjectChatIds.size === 0) return;
+    setIsDeletingProjectChats(true);
+    try {
+      const ids = Array.from(selectedProjectChatIds);
+      const res = await fetch("/api/chats", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (res.ok) {
+        const match = pathname.match(/^\/projects\/([^/]+)\/chat\/([^/]+)/);
+        if (match) {
+          const currentProjectId = match[1];
+          const currentChatId = match[2];
+          if (selectedProjectChatIds.has(currentChatId)) {
+            router.push(`/projects/${currentProjectId}`);
+            onNavigate();
+          }
+        }
+        setShowProjectBulkDeleteConfirm(false);
+        exitProjectsSelectMode();
+        await loadProjects();
+      }
+    } finally {
+      setIsDeletingProjectChats(false);
+    }
+  }
+
+  // ── shared context menu: right-click + long press ────────────────────────
+  function handleItemRightClick(e: React.MouseEvent, id: string, kind: "chat" | "thread") {
+    if (kind === "chat" && chatsSelectMode) return;
+    e.preventDefault();
+    setContextMenu({ id, kind, x: e.clientX, y: e.clientY });
+  }
+
+  function handleItemLongPressStart(e: React.TouchEvent, id: string, kind: "chat" | "thread") {
+    if (kind === "chat" && chatsSelectMode) return;
     const touch = e.touches[0];
     const x = touch.clientX;
     const y = touch.clientY;
     longPressTimerRef.current = setTimeout(() => {
       lightHaptic();
       longPressActiveRef.current = true;
-      setContextMenu({ chatId, x, y });
+      setContextMenu({ id, kind, x, y });
       longPressTimerRef.current = null;
     }, 500);
   }
 
-  function handleChatLongPressEnd(e: React.TouchEvent) {
+  function handleItemLongPressEnd(e: React.TouchEvent) {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
@@ -437,29 +559,41 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
-  function handleChatLongPressMove() {
+  function handleItemLongPressMove() {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
   }
 
+  // ── shared single delete ─────────────────────────────────────────────────
   async function handleSingleDelete() {
-    if (!singleDeleteChatId || isDeletingSingle) return;
+    if (!singleDeleteTarget || isDeletingSingle) return;
     setIsDeletingSingle(true);
     try {
       const res = await fetch("/api/chats", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [singleDeleteChatId] }),
+        body: JSON.stringify({ ids: [singleDeleteTarget.id] }),
       });
       if (res.ok) {
-        const deletedActive = activeChatId === singleDeleteChatId;
-        setSingleDeleteChatId(null);
-        await loadChats();
-        if (deletedActive) {
-          router.push("/chat");
-          onNavigate();
+        const { id, kind } = singleDeleteTarget;
+        setSingleDeleteTarget(null);
+
+        if (kind === "chat") {
+          const deletedActive = activeChatId === id;
+          await loadChats();
+          if (deletedActive) {
+            router.push("/chat");
+            onNavigate();
+          }
+        } else {
+          // thread
+          await loadFamilyThreads();
+          if (activeThreadId === id) {
+            router.push("/family");
+            onNavigate();
+          }
         }
       }
     } finally {
@@ -467,7 +601,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
-  // ── project creation ──────────────────────────────────────────────────────
+  // ── project creation ─────────────────────────────────────────────────────
   async function handleCreateProject() {
     if (!newProjectName.trim() || isCreatingProject) return;
     setIsCreatingProject(true);
@@ -488,7 +622,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         onNavigate();
       } else {
         const body = await res.json().catch(() => ({}));
-        setProjectErrorMsg((body as { error?: string }).error ?? "Failed to create project. Please try again.");
+        setProjectErrorMsg((body as { error?: string }).error ?? "Failed to create project.");
       }
     } catch {
       setProjectErrorMsg("Network error. Please try again.");
@@ -497,7 +631,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
-  // ── thread creation ───────────────────────────────────────────────────────
+  // ── thread creation ──────────────────────────────────────────────────────
   async function openNewThreadModal() {
     setThreadErrorMsg("");
     setShowNewThreadModal(true);
@@ -555,7 +689,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
-  // ── pull-to-refresh ───────────────────────────────────────────────────────
+  // ── pull-to-refresh ──────────────────────────────────────────────────────
   function handleSidebarTouchStart(e: React.TouchEvent<HTMLDivElement>) {
     if ((contentRef.current?.scrollTop ?? 1) === 0) {
       sidebarTouchStartY.current = e.touches[0].clientY;
@@ -582,7 +716,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
-  // ── misc ──────────────────────────────────────────────────────────────────
   function getMemberPipColor(index: number): string {
     const opacities = [1, 0.7, 0.45, 0.25];
     const opacity = opacities[index] ?? 0.2;
@@ -594,6 +727,16 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     await supabase.auth.signOut();
     router.push("/login");
   }
+
+  // ── grouped project chats for edit mode ──────────────────────────────────
+  const groupedProjectChats = (() => {
+    const map = new Map<string, ProjectChatListItem[]>();
+    for (const chat of allProjectChats) {
+      if (!map.has(chat.project_id)) map.set(chat.project_id, []);
+      map.get(chat.project_id)!.push(chat);
+    }
+    return Array.from(map.entries());
+  })();
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
@@ -627,60 +770,151 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           onTouchEnd={handleSidebarTouchEnd}
           style={styles.content}
         >
-          {/* Projects section */}
+          {/* ── Projects section ─────────────────────────────────────────── */}
           <div style={styles.section}>
-            <div
-              style={{ ...styles.sectionHeaderRow, cursor: "pointer" }}
-              onClick={toggleProjects}
-              role="button"
-              aria-expanded={projectsExpanded}
-            >
-              <span style={styles.sectionLabel}>Projects</span>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <svg
-                  width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
-                  style={{ transform: projectsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0 }}
-                >
-                  <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowNewProjectModal(true); }}
-                  style={styles.sectionAddButton}
-                  aria-label="New project"
-                  title="New project"
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <div style={styles.sectionHeaderRow}>
+              <span
+                style={{ ...styles.sectionLabel, cursor: projectsSelectMode ? "default" : "pointer", flex: 1 }}
+                onClick={projectsSelectMode ? undefined : toggleProjects}
+                role={projectsSelectMode ? undefined : "button"}
+                aria-expanded={projectsSelectMode ? undefined : projectsExpanded}
+              >
+                Projects
+              </span>
+              {projectsSelectMode ? (
+                <button onClick={exitProjectsSelectMode} style={styles.sectionEditButton}>Done</button>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  {projects.length > 0 && (
+                    <button
+                      onClick={enterProjectsSelectMode}
+                      style={styles.sectionEditButton}
+                      aria-label="Select project chats"
+                      title="Select project chats"
+                    >
+                      Edit
+                    </button>
+                  )}
+                  <svg
+                    width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                    onClick={toggleProjects}
+                    style={{ transform: projectsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0, cursor: "pointer" }}
+                  >
+                    <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                </button>
-              </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowNewProjectModal(true); }}
+                    style={styles.sectionAddButton}
+                    aria-label="New project"
+                    title="New project"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
 
-            {projectsExpanded && (projects.length === 0 ? (
-              <p style={styles.emptyState}>No projects yet</p>
+            {projectsSelectMode ? (
+              // Edit mode: flat list of all project chats grouped by project
+              <>
+                {loadingProjectChats ? (
+                  <p style={styles.emptyState}>Loading…</p>
+                ) : allProjectChats.length === 0 ? (
+                  <p style={styles.emptyState}>No project chats yet</p>
+                ) : (
+                  groupedProjectChats.map(([, chats]) => {
+                    const first = chats[0];
+                    return (
+                      <div key={first.project_id}>
+                        <div style={styles.projectChatGroupHeader}>
+                          {first.project_icon && (
+                            <span style={{ fontSize: "0.875rem", flexShrink: 0 }}>{first.project_icon}</span>
+                          )}
+                          <span style={styles.projectChatGroupName}>{first.project_name}</span>
+                        </div>
+                        {chats.map((chat) => {
+                          const isOwned = chat.owner_id === user.id;
+                          const isSelected = selectedProjectChatIds.has(chat.id);
+                          return (
+                            <button
+                              key={chat.id}
+                              onClick={() => toggleProjectChatSelection(chat.id, isOwned)}
+                              style={{
+                                ...styles.chatItem,
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: "8px",
+                                paddingLeft: "20px",
+                                ...(isSelected ? styles.chatItemSelected : {}),
+                                ...(!isOwned ? { opacity: 0.45, cursor: "default" } : {}),
+                              }}
+                            >
+                              <div style={{
+                                ...styles.chatSelectCircle,
+                                ...(isSelected ? { backgroundColor: "var(--accent)", borderColor: "var(--accent)" } : {}),
+                                ...(!isOwned ? { borderStyle: "dashed" } : {}),
+                              }}>
+                                {isSelected && (
+                                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                                    <path d="M1.5 5l2.5 2.5 4.5-5" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                )}
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={styles.chatItemTitle}>{chat.title ?? "Untitled"}</div>
+                                <div style={styles.chatItemMeta}>
+                                  <span style={styles.chatItemTime}>{formatRelativeTime(chat.last_message_at)}</span>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })
+                )}
+                <button
+                  onClick={() => { if (selectedProjectChatIds.size > 0) setShowProjectBulkDeleteConfirm(true); }}
+                  disabled={selectedProjectChatIds.size === 0}
+                  style={{
+                    ...styles.deleteSelectedButton,
+                    ...(selectedProjectChatIds.size === 0 ? styles.deleteSelectedButtonDisabled : {}),
+                  }}
+                >
+                  {selectedProjectChatIds.size === 0
+                    ? "Select chats to delete"
+                    : `Delete ${selectedProjectChatIds.size} ${selectedProjectChatIds.size === 1 ? "chat" : "chats"}`}
+                </button>
+              </>
             ) : (
-              projects.map((project) => {
-                const isActive = project.id === activeProjectId;
-                return (
-                  <button
-                    key={project.id}
-                    onClick={() => handleSelectProject(project.id)}
-                    style={{ ...styles.projectItem, ...(isActive ? styles.projectItemActive : {}) }}
-                  >
-                    {project.icon && <span style={styles.projectItemIcon}>{project.icon}</span>}
-                    <span style={styles.projectItemName}>{project.name}</span>
-                    <div style={styles.memberPips}>
-                      {Array.from({ length: Math.min(project.member_count, 4) }).map((_, i) => (
-                        <div key={i} style={{ ...styles.memberPip, backgroundColor: getMemberPipColor(i) }} />
-                      ))}
-                    </div>
-                  </button>
-                );
-              })
-            ))}
+              projectsExpanded && (projects.length === 0 ? (
+                <p style={styles.emptyState}>No projects yet</p>
+              ) : (
+                projects.map((project) => {
+                  const isActive = project.id === activeProjectId;
+                  return (
+                    <button
+                      key={project.id}
+                      onClick={() => handleSelectProject(project.id)}
+                      style={{ ...styles.projectItem, ...(isActive ? styles.projectItemActive : {}) }}
+                    >
+                      {project.icon && <span style={styles.projectItemIcon}>{project.icon}</span>}
+                      <span style={styles.projectItemName}>{project.name}</span>
+                      <div style={styles.memberPips}>
+                        {Array.from({ length: Math.min(project.member_count, 4) }).map((_, i) => (
+                          <div key={i} style={{ ...styles.memberPip, backgroundColor: getMemberPipColor(i) }} />
+                        ))}
+                      </div>
+                    </button>
+                  );
+                })
+              ))
+            )}
           </div>
 
-          {/* Chats section */}
+          {/* ── Chats section ────────────────────────────────────────────── */}
           <div style={styles.section}>
             <div style={styles.sectionHeaderRow}>
               <span
@@ -692,9 +926,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                 Chats
               </span>
               {chatsSelectMode ? (
-                <button onClick={exitChatsSelectMode} style={styles.sectionEditButton}>
-                  Done
-                </button>
+                <button onClick={exitChatsSelectMode} style={styles.sectionEditButton}>Done</button>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                   {chats.length > 0 && (
@@ -767,10 +999,10 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     <button
                       key={chat.id}
                       onClick={() => handleSelectChat(chat)}
-                      onContextMenu={(e) => handleChatRightClick(e, chat.id)}
-                      onTouchStart={(e) => handleChatLongPressStart(e, chat.id)}
-                      onTouchEnd={handleChatLongPressEnd}
-                      onTouchMove={handleChatLongPressMove}
+                      onContextMenu={(e) => handleItemRightClick(e, chat.id, "chat")}
+                      onTouchStart={(e) => handleItemLongPressStart(e, chat.id, "chat")}
+                      onTouchEnd={handleItemLongPressEnd}
+                      onTouchMove={handleItemLongPressMove}
                       style={{ ...styles.chatItem, ...(isActive ? styles.chatItemActive : {}) }}
                     >
                       <div style={styles.chatItemTitle}>{chat.title ?? "Untitled"}</div>
@@ -782,7 +1014,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                   );
                 })}
 
-                {/* Bulk delete action — always visible in select mode */}
                 {chatsSelectMode && (
                   <button
                     onClick={() => { if (selectedChatIds.size > 0) setShowBulkDeleteConfirm(true); }}
@@ -801,7 +1032,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             ))}
           </div>
 
-          {/* Family section */}
+          {/* ── Family section ───────────────────────────────────────────── */}
           <div style={styles.familySection}>
             <div
               style={{ ...styles.sectionHeaderRow, cursor: "pointer" }}
@@ -831,6 +1062,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             </div>
             {familyExpanded && (
               <>
+                {/* Family group chat — no delete option */}
                 <button
                   onClick={() => { router.push("/family"); onNavigate(); }}
                   style={{ ...styles.familyButton, ...(isFamilyActive ? styles.familyButtonActive : {}) }}
@@ -841,12 +1073,25 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     <UnreadDot count={familyGroup!.unreadCount} />
                   )}
                 </button>
+
+                {/* Family threads — right-click / long press to delete */}
                 {familyThreads.map((thread) => {
                   const isActive = thread.id === activeThreadId;
                   return (
                     <button
                       key={thread.id}
-                      onClick={() => { router.push(`/family/threads/${thread.id}`); onNavigate(); }}
+                      onClick={() => {
+                        if (longPressActiveRef.current) {
+                          longPressActiveRef.current = false;
+                          return;
+                        }
+                        router.push(`/family/threads/${thread.id}`);
+                        onNavigate();
+                      }}
+                      onContextMenu={(e) => handleItemRightClick(e, thread.id, "thread")}
+                      onTouchStart={(e) => handleItemLongPressStart(e, thread.id, "thread")}
+                      onTouchEnd={handleItemLongPressEnd}
+                      onTouchMove={handleItemLongPressMove}
                       style={{ ...styles.threadItem, ...(isActive ? styles.threadItemActive : {}) }}
                     >
                       <span style={styles.threadName}>{thread.title}</span>
@@ -873,11 +1118,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           <span style={styles.userName}>{user.name.split(" ")[0]}</span>
         </div>
         <div style={styles.userActions}>
-          <button
-            onClick={() => { router.push("/settings"); onNavigate(); }}
-            style={styles.iconButton}
-            title="Settings"
-          >
+          <button onClick={() => { router.push("/settings"); onNavigate(); }} style={styles.iconButton} title="Settings">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.4" />
               <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M3 13l1.4-1.4M11.6 4.4 13 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
@@ -891,7 +1132,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         </div>
       </div>
 
-      {/* ── PATH 2: floating context menu ─────────────────────────────────── */}
+      {/* ── Floating context menu ─────────────────────────────────────────── */}
       {contextMenu && (
         <div
           style={{
@@ -911,7 +1152,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           <button
             style={styles.contextMenuItem}
             onClick={() => {
-              setSingleDeleteChatId(contextMenu.chatId);
+              setSingleDeleteTarget({ id: contextMenu.id, kind: contextMenu.kind });
               setContextMenu(null);
             }}
           >
@@ -920,13 +1161,15 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         </div>
       )}
 
-      {/* ── PATH 2: single delete confirmation ────────────────────────────── */}
-      {singleDeleteChatId && (
-        <div style={styles.modalOverlay} onClick={() => setSingleDeleteChatId(null)}>
+      {/* ── Single delete confirmation ─────────────────────────────────────── */}
+      {singleDeleteTarget && (
+        <div style={styles.modalOverlay} onClick={() => setSingleDeleteTarget(null)}>
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
-              <span style={styles.modalTitle}>Delete this chat?</span>
-              <button style={styles.modalClose} onClick={() => setSingleDeleteChatId(null)}>×</button>
+              <span style={styles.modalTitle}>
+                {singleDeleteTarget.kind === "thread" ? "Delete this thread?" : "Delete this chat?"}
+              </span>
+              <button style={styles.modalClose} onClick={() => setSingleDeleteTarget(null)}>×</button>
             </div>
             <div style={styles.modalBody}>
               <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>
@@ -934,7 +1177,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               </p>
               <div style={{ display: "flex", gap: "8px" }}>
                 <button
-                  onClick={() => setSingleDeleteChatId(null)}
+                  onClick={() => setSingleDeleteTarget(null)}
                   style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
                 >
                   Cancel
@@ -952,7 +1195,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         </div>
       )}
 
-      {/* ── PATH 1: bulk delete confirmation ──────────────────────────────── */}
+      {/* ── Standalone chats bulk delete confirmation ─────────────────────── */}
       {showBulkDeleteConfirm && (
         <div style={styles.modalOverlay} onClick={() => setShowBulkDeleteConfirm(false)}>
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -986,7 +1229,41 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         </div>
       )}
 
-      {/* New Thread modal */}
+      {/* ── Project chats bulk delete confirmation ─────────────────────────── */}
+      {showProjectBulkDeleteConfirm && (
+        <div style={styles.modalOverlay} onClick={() => setShowProjectBulkDeleteConfirm(false)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <span style={styles.modalTitle}>
+                Delete {selectedProjectChatIds.size} {selectedProjectChatIds.size === 1 ? "chat" : "chats"}?
+              </span>
+              <button style={styles.modalClose} onClick={() => setShowProjectBulkDeleteConfirm(false)}>×</button>
+            </div>
+            <div style={styles.modalBody}>
+              <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>
+                This cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={() => setShowProjectBulkDeleteConfirm(false)}
+                  style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleProjectBulkDelete}
+                  disabled={isDeletingProjectChats}
+                  style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingProjectChats ? styles.createButtonDisabled : {}) }}
+                >
+                  {isDeletingProjectChats ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── New Thread modal ─────────────────────────────────────────────── */}
       {showNewThreadModal && (
         <div
           style={styles.modalOverlay}
@@ -1054,7 +1331,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         </div>
       )}
 
-      {/* New Project modal */}
+      {/* ── New Project modal ─────────────────────────────────────────────── */}
       {showNewProjectModal && (
         <div
           style={styles.modalOverlay}
@@ -1209,7 +1486,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "4px 8px",
   },
 
-  // Project items
+  // Project items (normal mode)
   projectItem: {
     width: "100%",
     display: "flex",
@@ -1252,6 +1529,23 @@ const styles: Record<string, React.CSSProperties> = {
     width: "6px",
     height: "6px",
     borderRadius: "var(--radius-full)",
+  },
+
+  // Project edit mode — group headers
+  projectChatGroupHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "6px 10px 2px",
+    marginTop: "4px",
+  },
+  projectChatGroupName: {
+    fontSize: "0.75rem",
+    fontWeight: "600",
+    color: "var(--text-secondary)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
 
   // Chat items

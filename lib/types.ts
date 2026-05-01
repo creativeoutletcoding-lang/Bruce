@@ -237,6 +237,7 @@ export interface ChatPreview {
   type: ChatType;
   last_message_at: string;
   last_message_content: string | null;
+  owner_id: string;
 }
 
 // ------------------------------------------------------------

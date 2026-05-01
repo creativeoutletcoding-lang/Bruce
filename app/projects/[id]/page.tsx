@@ -61,7 +61,7 @@ export default async function ProjectPage({ params }: Props) {
   // Fetch project chats with last message preview
   const { data: chats } = await supabase
     .from("chats")
-    .select(`id, title, last_message_at, messages(content, role, created_at)`)
+    .select(`id, title, owner_id, last_message_at, messages(content, role, created_at)`)
     .eq("project_id", id)
     .order("last_message_at", { ascending: false });
 
@@ -78,6 +78,7 @@ export default async function ProjectPage({ params }: Props) {
       type: "private" as const,
       last_message_at: c.last_message_at as string,
       last_message_content: last?.content ?? null,
+      owner_id: c.owner_id as string,
     };
   });
 

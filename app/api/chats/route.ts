@@ -17,13 +17,15 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "ids required" }, { status: 400 });
   }
 
+  // owner_id check is the security gate — RLS enforces the same constraint.
+  // family_group is never deletable; family_thread soft-delete is intentionally
+  // replaced here with hard delete for simplicity.
   const { error } = await supabase
     .from("chats")
     .delete()
     .in("id", validIds)
     .eq("owner_id", user.id)
-    .is("project_id", null)
-    .in("type", ["private", "incognito"]);
+    .in("type", ["private", "incognito", "family_thread"]);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
