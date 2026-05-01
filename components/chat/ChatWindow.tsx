@@ -187,6 +187,7 @@ export default function ChatWindow({
             quality: string;
             chatId: string;
           };
+          console.log(`[client] IMAGE_REQ sentinel received — prompt: "${reqData.prompt.slice(0, 100)}" quality: ${reqData.quality}`);
           const skeletonId = `skeleton-${Date.now()}`;
           setMessages((prev) => [
             ...prev,
@@ -198,13 +199,17 @@ export default function ChatWindow({
               metadata: { content_type: "image", image_url: "", prompt: reqData.prompt, quality: reqData.quality },
             },
           ]);
+          console.log("[client] calling /api/images/generate...");
           const imgRes = await fetch("/api/images/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ prompt: reqData.prompt, chatId: reqData.chatId, quality: reqData.quality }),
           });
+          console.log(`[client] /api/images/generate response status: ${imgRes.status}`);
+          const imgBody = await imgRes.text();
+          console.log(`[client] image generation response: ${imgBody.slice(0, 200)}`);
           if (imgRes.ok) {
-            const imgData = await imgRes.json() as {
+            const imgData = JSON.parse(imgBody) as {
               messageId: string;
               url: string;
               prompt: string;
