@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useChatContext } from "@/components/layout/ChatShell";
@@ -201,6 +202,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   // ── projects bulk delete ─────────────────────────────────────────────────
   const [projectsSelectMode, setProjectsSelectMode] = useState(false);
   const [allProjectChats, setAllProjectChats] = useState<ProjectChatListItem[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
   const [selectedProjectChatIds, setSelectedProjectChatIds] = useState<Set<string>>(new Set());
   const [showProjectBulkDeleteConfirm, setShowProjectBulkDeleteConfirm] = useState(false);
   const [isDeletingProjectChats, setIsDeletingProjectChats] = useState(false);
@@ -212,6 +214,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [isDeletingSingle, setIsDeletingSingle] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressActiveRef = useRef(false);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // ── pull-to-refresh ──────────────────────────────────────────────────────
   const supabase = createClient();
@@ -362,12 +365,25 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── context menu: click-outside dismiss ──────────────────────────────────
+  // ── context menu: outside-click/touch dismiss ────────────────────────────
+  // Use mousedown+touchstart (more reliable than click) and check via ref so
+  // interactions inside the menu itself never dismiss it.
   useEffect(() => {
     if (!contextMenu) return;
-    function dismiss() { setContextMenu(null); }
-    document.addEventListener("click", dismiss);
-    return () => document.removeEventListener("click", dismiss);
+    function dismiss(e: Event) {
+      if (contextMenuRef.current?.contains(e.target as Node)) return;
+      setContextMenu(null);
+    }
+    // Delay so the event that opened the menu doesn't immediately close it.
+    const timerId = setTimeout(() => {
+      document.addEventListener("mousedown", dismiss);
+      document.addEventListener("touchstart", dismiss, { passive: true });
+    }, 0);
+    return () => {
+      clearTimeout(timerId);
+      document.removeEventListener("mousedown", dismiss);
+      document.removeEventListener("touchstart", dismiss);
+    };
   }, [contextMenu]);
 
   // ── section collapse ─────────────────────────────────────────────────────
@@ -474,6 +490,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   function enterProjectsSelectMode() {
     setContextMenu(null);
     setChatsSelectMode(false);
+    setSelectedProjectIds(new Set());
     setSelectedProjectChatIds(new Set());
     setProjectsSelectMode(true);
     setAllProjectChats([]);
@@ -486,8 +503,19 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
 
   function exitProjectsSelectMode() {
     setProjectsSelectMode(false);
+    setSelectedProjectIds(new Set());
     setSelectedProjectChatIds(new Set());
     setAllProjectChats([]);
+  }
+
+  function toggleProjectSelection(id: string, isOwned: boolean) {
+    if (!isOwned) return;
+    setSelectedProjectIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   function toggleProjectChatSelection(id: string, isOwned: boolean) {
@@ -501,29 +529,55 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   }
 
   async function handleProjectBulkDelete() {
-    if (isDeletingProjectChats || selectedProjectChatIds.size === 0) return;
+    if (isDeletingProjectChats) return;
+    if (selectedProjectIds.size === 0 && selectedProjectChatIds.size === 0) return;
     setIsDeletingProjectChats(true);
     try {
-      const ids = Array.from(selectedProjectChatIds);
-      const res = await fetch("/api/chats", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
+      // Delete whole projects (FK cascades handle chats/messages/files/members)
+      if (selectedProjectIds.size > 0) {
+        const res = await fetch("/api/projects", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: Array.from(selectedProjectIds) }),
+        });
+        if (!res.ok) throw new Error("Failed to delete projects");
+      }
+
+      // Delete individual chats that are NOT inside a project being deleted
+      const chatIdsToDelete = Array.from(selectedProjectChatIds).filter((chatId) => {
+        const chat = allProjectChats.find((c) => c.id === chatId);
+        return chat && !selectedProjectIds.has(chat.project_id);
       });
-      if (res.ok) {
-        const match = pathname.match(/^\/projects\/([^/]+)\/chat\/([^/]+)/);
-        if (match) {
-          const currentProjectId = match[1];
-          const currentChatId = match[2];
-          if (selectedProjectChatIds.has(currentChatId)) {
+      if (chatIdsToDelete.length > 0) {
+        const res = await fetch("/api/chats", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: chatIdsToDelete }),
+        });
+        if (!res.ok) throw new Error("Failed to delete chats");
+      }
+
+      // Navigate away from deleted context
+      const projMatch = pathname.match(/^\/projects\/([^/]+)/);
+      if (projMatch) {
+        const currentProjectId = projMatch[1];
+        if (selectedProjectIds.has(currentProjectId)) {
+          router.push("/chat");
+          onNavigate();
+        } else {
+          const chatMatch = pathname.match(/^\/projects\/[^/]+\/chat\/([^/]+)/);
+          if (chatMatch && selectedProjectChatIds.has(chatMatch[1])) {
             router.push(`/projects/${currentProjectId}`);
             onNavigate();
           }
         }
-        setShowProjectBulkDeleteConfirm(false);
-        exitProjectsSelectMode();
-        await loadProjects();
       }
+
+      setShowProjectBulkDeleteConfirm(false);
+      exitProjectsSelectMode();
+      await loadProjects();
+    } catch (err) {
+      console.error("[Sidebar] Bulk delete failed:", err);
     } finally {
       setIsDeletingProjectChats(false);
     }
@@ -728,16 +782,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     router.push("/login");
   }
 
-  // ── grouped project chats for edit mode ──────────────────────────────────
-  const groupedProjectChats = (() => {
-    const map = new Map<string, ProjectChatListItem[]>();
-    for (const chat of allProjectChats) {
-      if (!map.has(chat.project_id)) map.set(chat.project_id, []);
-      map.get(chat.project_id)!.push(chat);
-    }
-    return Array.from(map.entries());
-  })();
-
   // ── render ────────────────────────────────────────────────────────────────
   return (
     <div style={styles.sidebar}>
@@ -817,76 +861,106 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             </div>
 
             {projectsSelectMode ? (
-              // Edit mode: flat list of all project chats grouped by project
+              // Edit mode: project rows (with checkboxes) + their chats underneath
               <>
-                {loadingProjectChats ? (
-                  <p style={styles.emptyState}>Loading…</p>
-                ) : allProjectChats.length === 0 ? (
-                  <p style={styles.emptyState}>No project chats yet</p>
-                ) : (
-                  groupedProjectChats.map(([, chats]) => {
-                    const first = chats[0];
-                    return (
-                      <div key={first.project_id}>
-                        <div style={styles.projectChatGroupHeader}>
-                          {first.project_icon && (
-                            <span style={{ fontSize: "0.875rem", flexShrink: 0 }}>{first.project_icon}</span>
+                {projects.map((project) => {
+                  const isOwnedProject = project.owner_id === user.id;
+                  const isProjectSelected = selectedProjectIds.has(project.id);
+                  const projectChats = allProjectChats.filter((c) => c.project_id === project.id);
+                  return (
+                    <div key={project.id}>
+                      {/* Project row */}
+                      <button
+                        onClick={() => toggleProjectSelection(project.id, isOwnedProject)}
+                        style={{
+                          ...styles.chatItem,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: "8px",
+                          ...(isProjectSelected ? styles.chatItemSelected : {}),
+                          ...(!isOwnedProject ? { opacity: 0.45, cursor: "default" } : {}),
+                        }}
+                      >
+                        <div style={{
+                          ...styles.chatSelectCircle,
+                          ...(isProjectSelected ? { backgroundColor: "var(--accent)", borderColor: "var(--accent)" } : {}),
+                          ...(!isOwnedProject ? { borderStyle: "dashed" } : {}),
+                        }}>
+                          {isProjectSelected && (
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                              <path d="M1.5 5l2.5 2.5 4.5-5" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
                           )}
-                          <span style={styles.projectChatGroupName}>{first.project_name}</span>
                         </div>
-                        {chats.map((chat) => {
-                          const isOwned = chat.owner_id === user.id;
-                          const isSelected = selectedProjectChatIds.has(chat.id);
-                          return (
-                            <button
-                              key={chat.id}
-                              onClick={() => toggleProjectChatSelection(chat.id, isOwned)}
-                              style={{
-                                ...styles.chatItem,
-                                flexDirection: "row",
-                                alignItems: "center",
-                                gap: "8px",
-                                paddingLeft: "20px",
-                                ...(isSelected ? styles.chatItemSelected : {}),
-                                ...(!isOwned ? { opacity: 0.45, cursor: "default" } : {}),
-                              }}
-                            >
-                              <div style={{
-                                ...styles.chatSelectCircle,
-                                ...(isSelected ? { backgroundColor: "var(--accent)", borderColor: "var(--accent)" } : {}),
-                                ...(!isOwned ? { borderStyle: "dashed" } : {}),
-                              }}>
-                                {isSelected && (
-                                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-                                    <path d="M1.5 5l2.5 2.5 4.5-5" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                                  </svg>
-                                )}
+                        {project.icon && <span style={{ fontSize: "0.9375rem", flexShrink: 0 }}>{project.icon}</span>}
+                        <span style={{ ...styles.chatItemTitle, fontWeight: "600" }}>{project.name}</span>
+                      </button>
+
+                      {/* Chat rows for this project */}
+                      {!loadingProjectChats && projectChats.map((chat) => {
+                        const isOwned = chat.owner_id === user.id;
+                        const isSelected = selectedProjectChatIds.has(chat.id);
+                        return (
+                          <button
+                            key={chat.id}
+                            onClick={() => toggleProjectChatSelection(chat.id, isOwned)}
+                            style={{
+                              ...styles.chatItem,
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: "8px",
+                              paddingLeft: "20px",
+                              ...(isSelected ? styles.chatItemSelected : {}),
+                              ...(!isOwned ? { opacity: 0.45, cursor: "default" } : {}),
+                            }}
+                          >
+                            <div style={{
+                              ...styles.chatSelectCircle,
+                              ...(isSelected ? { backgroundColor: "var(--accent)", borderColor: "var(--accent)" } : {}),
+                              ...(!isOwned ? { borderStyle: "dashed" } : {}),
+                            }}>
+                              {isSelected && (
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                                  <path d="M1.5 5l2.5 2.5 4.5-5" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              )}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={styles.chatItemTitle}>{chat.title ?? "Untitled"}</div>
+                              <div style={styles.chatItemMeta}>
+                                <span style={styles.chatItemTime}>{formatRelativeTime(chat.last_message_at)}</span>
                               </div>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={styles.chatItemTitle}>{chat.title ?? "Untitled"}</div>
-                                <div style={styles.chatItemMeta}>
-                                  <span style={styles.chatItemTime}>{formatRelativeTime(chat.last_message_at)}</span>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })
-                )}
-                <button
-                  onClick={() => { if (selectedProjectChatIds.size > 0) setShowProjectBulkDeleteConfirm(true); }}
-                  disabled={selectedProjectChatIds.size === 0}
-                  style={{
-                    ...styles.deleteSelectedButton,
-                    ...(selectedProjectChatIds.size === 0 ? styles.deleteSelectedButtonDisabled : {}),
-                  }}
-                >
-                  {selectedProjectChatIds.size === 0
-                    ? "Select chats to delete"
-                    : `Delete ${selectedProjectChatIds.size} ${selectedProjectChatIds.size === 1 ? "chat" : "chats"}`}
-                </button>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+                {loadingProjectChats && <p style={styles.emptyState}>Loading chats…</p>}
+                {(() => {
+                  const hasSelection = selectedProjectIds.size > 0 || selectedProjectChatIds.size > 0;
+                  let label = "Select items to delete";
+                  if (selectedProjectIds.size > 0 && selectedProjectChatIds.size > 0) {
+                    label = `Delete ${selectedProjectIds.size} ${selectedProjectIds.size === 1 ? "project" : "projects"} and ${selectedProjectChatIds.size} ${selectedProjectChatIds.size === 1 ? "chat" : "chats"}`;
+                  } else if (selectedProjectIds.size > 0) {
+                    label = `Delete ${selectedProjectIds.size} ${selectedProjectIds.size === 1 ? "project" : "projects"}`;
+                  } else if (selectedProjectChatIds.size > 0) {
+                    label = `Delete ${selectedProjectChatIds.size} ${selectedProjectChatIds.size === 1 ? "chat" : "chats"}`;
+                  }
+                  return (
+                    <button
+                      onClick={() => { if (hasSelection) setShowProjectBulkDeleteConfirm(true); }}
+                      disabled={!hasSelection}
+                      style={{
+                        ...styles.deleteSelectedButton,
+                        ...(!hasSelection ? styles.deleteSelectedButtonDisabled : {}),
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })()}
               </>
             ) : (
               projectsExpanded && (projects.length === 0 ? (
@@ -1132,14 +1206,15 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         </div>
       </div>
 
-      {/* ── Floating context menu ─────────────────────────────────────────── */}
-      {contextMenu && (
+      {/* ── Floating context menu — rendered in document.body via portal ──── */}
+      {contextMenu && createPortal(
         <div
+          ref={contextMenuRef}
           style={{
             position: "fixed",
             top: contextMenu.y,
             left: contextMenu.x,
-            zIndex: 500,
+            zIndex: 9999,
             backgroundColor: "var(--bg-primary)",
             border: "1px solid var(--border)",
             borderRadius: "var(--radius-md)",
@@ -1147,7 +1222,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             overflow: "hidden",
             minWidth: "130px",
           }}
-          onClick={(e) => e.stopPropagation()}
         >
           <button
             style={styles.contextMenuItem}
@@ -1158,7 +1232,8 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           >
             Delete
           </button>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Single delete confirmation ─────────────────────────────────────── */}
@@ -1229,19 +1304,25 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         </div>
       )}
 
-      {/* ── Project chats bulk delete confirmation ─────────────────────────── */}
+      {/* ── Projects + chats bulk delete confirmation ─────────────────────── */}
       {showProjectBulkDeleteConfirm && (
         <div style={styles.modalOverlay} onClick={() => setShowProjectBulkDeleteConfirm(false)}>
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <span style={styles.modalTitle}>
-                Delete {selectedProjectChatIds.size} {selectedProjectChatIds.size === 1 ? "chat" : "chats"}?
+                {selectedProjectIds.size > 0 && selectedProjectChatIds.size > 0
+                  ? `Delete ${selectedProjectIds.size} ${selectedProjectIds.size === 1 ? "project" : "projects"} and ${selectedProjectChatIds.size} ${selectedProjectChatIds.size === 1 ? "chat" : "chats"}?`
+                  : selectedProjectIds.size > 0
+                    ? `Delete ${selectedProjectIds.size} ${selectedProjectIds.size === 1 ? "project" : "projects"}?`
+                    : `Delete ${selectedProjectChatIds.size} ${selectedProjectChatIds.size === 1 ? "chat" : "chats"}?`}
               </span>
               <button style={styles.modalClose} onClick={() => setShowProjectBulkDeleteConfirm(false)}>×</button>
             </div>
             <div style={styles.modalBody}>
               <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>
-                This cannot be undone.
+                {selectedProjectIds.size > 0
+                  ? "All chats and files in the selected projects will be permanently removed. This cannot be undone."
+                  : "This cannot be undone."}
               </p>
               <div style={{ display: "flex", gap: "8px" }}>
                 <button

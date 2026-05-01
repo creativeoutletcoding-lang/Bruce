@@ -207,6 +207,7 @@ export interface ProjectListItem {
   name: string;
   icon: string;
   status: ProjectStatus;
+  owner_id: string;
   member_count: number;
   last_chat_date: string | null;
   created_at: string;

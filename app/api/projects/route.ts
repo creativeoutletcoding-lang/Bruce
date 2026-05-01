@@ -14,7 +14,7 @@ export async function GET() {
   const { data: projects, error } = await supabase
     .from("projects")
     .select(
-      `id, name, icon, status, created_at,
+      `id, name, icon, status, owner_id, created_at,
        project_members(id),
        chats(last_message_at)`
     )
@@ -38,6 +38,7 @@ export async function GET() {
       name: p.name as string,
       icon: p.icon as string,
       status: p.status as "active" | "archived",
+      owner_id: p.owner_id as string,
       member_count: members.length,
       last_chat_date: lastChatDate,
       created_at: p.created_at as string,
@@ -92,4 +93,39 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json(project, { status: 201 });
+}
+
+export async function DELETE(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await req.json().catch(() => ({}));
+  const ids: unknown = body.ids;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return NextResponse.json({ error: "ids required" }, { status: 400 });
+  }
+  const validIds = ids.filter((id): id is string => typeof id === "string");
+  if (validIds.length === 0) {
+    return NextResponse.json({ error: "ids required" }, { status: 400 });
+  }
+
+  // Verify ownership with user's client (RLS gate)
+  const { data: ownedProjects } = await supabase
+    .from("projects")
+    .select("id")
+    .in("id", validIds)
+    .eq("owner_id", user.id);
+
+  const ownedIds = (ownedProjects ?? []).map((p) => p.id as string);
+  if (ownedIds.length === 0) {
+    return NextResponse.json({ error: "No owned projects found" }, { status: 403 });
+  }
+
+  // Service role for cascade delete — FK cascades handle chats/messages/files/members
+  const adminSupabase = createServiceRoleClient();
+  const { error } = await adminSupabase.from("projects").delete().in("id", ownedIds);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ deleted: ownedIds.length });
 }
