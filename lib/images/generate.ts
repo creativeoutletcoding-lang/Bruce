@@ -21,6 +21,8 @@ export async function generateImageAndSave(
   chatId: string,
   quality: ImageQuality = "standard"
 ): Promise<ImageGenerationResult> {
+  console.log("[generate] function entered, token present:", !!process.env.REPLICATE_API_TOKEN);
+
   const token = process.env.REPLICATE_API_TOKEN;
   if (!token) throw new Error("REPLICATE_API_TOKEN not configured");
 
@@ -30,23 +32,34 @@ export async function generateImageAndSave(
       ? { prompt, num_outputs: 1 }
       : { prompt, go_fast: true, num_outputs: 1 };
 
+  console.log(`[generate] creating Replicate prediction — model=${model}`);
+
   // 1. Create Replicate prediction
-  const createRes = await fetch(
-    `${REPLICATE_API}/models/${model}/predictions`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ input }),
-    }
-  );
+  let createRes: Response;
+  try {
+    createRes = await fetch(
+      `${REPLICATE_API}/models/${model}/predictions`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ input }),
+      }
+    );
+  } catch (fetchErr) {
+    console.error("[generate] Replicate fetch threw:", fetchErr instanceof Error ? fetchErr.message : String(fetchErr));
+    throw fetchErr;
+  }
 
   if (!createRes.ok) {
-    const err = await createRes.text();
-    throw new Error(`Replicate create failed: ${createRes.status} — ${err}`);
+    const errBody = await createRes.text().catch(() => "(unreadable)");
+    console.error(`[generate] Replicate create failed: status=${createRes.status} body=${errBody}`);
+    throw new Error(`Replicate create failed: ${createRes.status} — ${errBody}`);
   }
+
+  console.log("[generate] Replicate prediction created successfully");
 
   const prediction = (await createRes.json()) as {
     id: string;

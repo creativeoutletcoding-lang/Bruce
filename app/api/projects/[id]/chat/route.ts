@@ -282,6 +282,7 @@ export async function POST(request: NextRequest, { params }: Props) {
           try {
             const tagContent = JSON.parse(imageMatch[1]) as { prompt: string; quality?: ImageQuality };
             console.log(`[api/projects/chat] parsed image request — prompt="${tagContent.prompt.slice(0, 100)}" quality=${tagContent.quality ?? "standard"}`);
+            console.log("[api/projects/chat] calling generateImageAndSave...");
             const imgResult = await generateImageAndSave(
               tagContent.prompt,
               user.id,
@@ -292,7 +293,7 @@ export async function POST(request: NextRequest, { params }: Props) {
               encoder.encode(`\x1fIMAGE_MSG:${JSON.stringify(imgResult)}`)
             );
           } catch (imgErr) {
-            console.error("[api/projects/chat] Image generation failed:", imgErr instanceof Error ? imgErr.message : String(imgErr));
+            console.error("[api/projects/chat] generateImageAndSave error:", imgErr);
           }
         }
 
