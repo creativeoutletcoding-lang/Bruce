@@ -244,10 +244,17 @@ export async function POST(request: NextRequest) {
         flushPending();
 
         // Detect image request and generate
+        console.log(`[api/chat] fullResponse (first 500): ${fullResponse.slice(0, 500)}`);
         const imageMatch = IMAGE_TAG_RE.exec(fullResponse);
+        if (!imageMatch) {
+          console.log("[api/chat] no image_request tag found in fullResponse");
+        } else {
+          console.log(`[api/chat] image_request tag detected — raw content: ${imageMatch[1].slice(0, 200)}`);
+        }
         if (imageMatch && !isIncognito && currentChatId) {
           try {
             const tagContent = JSON.parse(imageMatch[1]) as { prompt: string; quality?: ImageQuality };
+            console.log(`[api/chat] parsed image request — prompt="${tagContent.prompt.slice(0, 100)}" quality=${tagContent.quality ?? "standard"}`);
             const imgResult = await generateImageAndSave(
               tagContent.prompt,
               user.id,
@@ -258,7 +265,7 @@ export async function POST(request: NextRequest) {
               encoder.encode(`\x1fIMAGE_MSG:${JSON.stringify(imgResult)}`)
             );
           } catch (imgErr) {
-            console.error("[api/chat] Image generation failed:", imgErr instanceof Error ? imgErr.message : imgErr);
+            console.error("[api/chat] Image generation failed:", imgErr instanceof Error ? imgErr.message : String(imgErr));
           }
         }
 
