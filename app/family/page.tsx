@@ -13,59 +13,6 @@ interface RawMessage {
   sender_id: string | null;
 }
 
-async function ensureFamilyChat(adminSupabase: ReturnType<typeof createServiceRoleClient>): Promise<string | null> {
-  const { data: existing } = await adminSupabase
-    .from("chats")
-    .select("id")
-    .eq("type", "family_group")
-    .maybeSingle();
-
-  if (existing) return existing.id as string;
-
-  // Get admin to be owner_id
-  const { data: adminUser } = await adminSupabase
-    .from("users")
-    .select("id")
-    .eq("role", "admin")
-    .maybeSingle();
-
-  if (!adminUser) return null;
-
-  const { data: newChat, error } = await adminSupabase
-    .from("chats")
-    .insert({
-      owner_id: adminUser.id,
-      project_id: null,
-      type: "family_group",
-      title: "Family",
-      last_message_at: new Date().toISOString(),
-    })
-    .select("id")
-    .single();
-
-  if (error || !newChat) {
-    console.error("[family/page] Failed to create family chat:", error);
-    return null;
-  }
-
-  // Add all active members to chat_members so message RLS works
-  const { data: members } = await adminSupabase
-    .from("users")
-    .select("id")
-    .eq("status", "active");
-
-  if (members?.length) {
-    await adminSupabase.from("chat_members").insert(
-      (members as { id: string }[]).map((m) => ({
-        chat_id: newChat.id,
-        user_id: m.id,
-      }))
-    );
-  }
-
-  return newChat.id as string;
-}
-
 export default async function FamilyPage() {
   const supabase = await createClient();
   const {
@@ -76,16 +23,24 @@ export default async function FamilyPage() {
 
   const adminSupabase = createServiceRoleClient();
 
-  const chatId = await ensureFamilyChat(adminSupabase);
-  if (!chatId) {
+  const { data: existingChat } = await adminSupabase
+    .from("chats")
+    .select("id")
+    .eq("type", "family_group")
+    .maybeSingle();
+
+  if (!existingChat) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: "0.5rem" }}>
+        <FamilyTopBar />
         <p style={{ color: "var(--text-secondary)", fontSize: "0.9375rem" }}>
-          Family chat unavailable. Contact Jake.
+          No family chat yet.
         </p>
       </div>
     );
   }
+
+  const chatId = existingChat.id as string;
 
   // Load all active members for the sender map
   const { data: membersRaw } = await adminSupabase
@@ -95,13 +50,11 @@ export default async function FamilyPage() {
 
   const members: UserSummary[] = (membersRaw ?? []) as UserSummary[];
 
-  // Build member map for enriching messages
   const memberMap: Record<string, { name: string; avatar_url: string | null }> = {};
   members.forEach((m) => {
     memberMap[m.id] = { name: m.name, avatar_url: m.avatar_url };
   });
 
-  // Load recent messages
   const { data: rawMessages } = await adminSupabase
     .from("messages")
     .select("id, role, content, created_at, sender_id")

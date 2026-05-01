@@ -642,8 +642,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             onNavigate();
           }
         } else if (kind === "family_group") {
-          // Family group chat deleted — navigate away if currently viewing it.
-          // ensureFamilyChat() will recreate it on the next /family visit.
           await loadFamilyThreads();
           if (isFamilyActive) {
             router.push("/chat");

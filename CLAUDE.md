@@ -430,7 +430,7 @@ All deletes are soft-delete where possible (status field), hard delete for chats
 - **`migrations/005_family_group.sql`** — Expands `chats.type` CHECK constraint to include `'family_group'`. Adds a type-based RLS policy so all authenticated members can read the family chat row.
 - **`app/api/family/chat/route.ts`** — POST streaming endpoint. Saves the user message, loads recent history, determines if Bruce should respond (server-side `shouldBruceRespond()`), streams Bruce's reply if yes. Returns `X-Bruce-Responded: false` and exits immediately when Bruce is passive and not directly addressed.
 - **`app/family/layout.tsx`** — Auth guard + ChatShell wrapper, same pattern as chat/projects layouts.
-- **`app/family/page.tsx`** — Server component. Auto-creates the family_group chat (with `ensureFamilyChat()`) if one doesn't exist, adds all active members to `chat_members`. Loads messages and members, passes to FamilyChatWindow with `topbar={<FamilyTopBar />}`.
+- **`app/family/page.tsx`** — Server component. Loads the existing family_group chat if one exists, renders FamilyChatWindow with it. Shows an empty state if no chat exists. No auto-creation.
 - **`components/family/FamilyTopBar.tsx`** — Top bar: mobile hamburger, centered "🏠 Family" title, invisible spacer for centering. No Bruce toggle.
 - **`components/family/FamilyChatWindow.tsx`** — Accepts `topbar: React.ReactNode` prop and optional `placeholder` prop. Features: member-attributed messages (sender name above each run, color-coded by member), typing dots → "Bruce is working on it…" working indicator, long press + right-click context menu with "Ask Bruce" and "Copy" actions, realtime subscription for other members' messages, auto-dedup of optimistic/streaming messages via DB reload after each send.
 - **Sidebar** — Family section: Family Chat button at top, thread list below, "New Thread" (+) button in the section header. Chats list excludes `family_group` and `family_thread` types. Realtime subscription triggers `loadFamilyThreads()` on chats table changes.
@@ -441,7 +441,7 @@ All deletes are soft-delete where possible (status field), hard delete for chats
 
 **Bruce trigger logic (server-side, hard gate)** — No client-side pause state, no engagement window. `shouldBruceRespond()` checks only the current message: `/@bruce\b/i` or natural-language address ("Bruce, ..."). If not directly addressed, no Anthropic call is made at all — Bruce is fully silent. The earlier 4-message engagement window was removed because it caused Bruce to respond to conversational messages not directed at him.
 
-**Family chat auto-creation (lazy)** — Rather than a seed script, the family chat is created on first visit to `/family` (server component, service role). All active members added to `chat_members` at creation. Subsequent visitors skip creation. New users added in auth/callback. If the family_group chat is deleted, it is recreated on the next visit to `/family` — the chat is self-healing.
+**Family chat — no auto-creation** — `ensureFamilyChat()` has been removed. `/family` just queries for an existing `family_group` chat and displays it; if none exists it shows an empty state. The chat must be created explicitly (e.g., via sidebar "New Group Chat" or direct DB insert). The self-healing behavior was removed because it made deletion appear broken.
 
 **Realtime dedup strategy** — Sender's own messages are shown optimistically then DB-reloaded after API call completes (replacing temp IDs). Other members' messages arrive via realtime subscription and are appended immediately. Bruce streaming messages are handled in the streaming path, then replaced by DB reload. This avoids complex state sync.
 
@@ -490,7 +490,7 @@ The `family_group` chat is no longer treated as permanent or undeletable.
 
 - **`app/api/chats/route.ts`** — `DELETE` handler now includes `"family_group"` in the allowed types list. Right-click/long press on the Family Chat button in the sidebar shows a Delete option.
 - **`components/layout/Sidebar.tsx`** — Family Chat button now supports `onContextMenu`/`onTouchStart`/`onTouchEnd`/`onTouchMove` handlers (same pattern as threads). `handleSingleDelete` handles `kind === "family_group"` by calling the chats delete API and navigating to `/chat` if the family route is active.
-- **Self-healing** — `ensureFamilyChat()` in `app/family/page.tsx` recreates the `family_group` chat row on next visit to `/family` after deletion. No data is permanently lost; only the message history is gone.
+- **`ensureFamilyChat()` removed** — The auto-creation function and its call in `app/family/page.tsx` are deleted. `/family` now shows whatever `family_group` chat exists in the DB, or an empty state if none does. No self-healing.
 
 ---
 
