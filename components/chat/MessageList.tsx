@@ -1,11 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import MessageBubble from "./MessageBubble";
-import ImageMessage, { ImageMessageSkeleton } from "./ImageMessage";
 import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
+
+const ImageMessage = dynamic(() => import("./ImageMessage"), { ssr: false });
+const ImageMessageSkeleton = dynamic(
+  () => import("./ImageMessage").then((m) => ({ default: m.ImageMessageSkeleton })),
+  { ssr: false }
+);
 
 export interface ChatMessage {
   id: string;
