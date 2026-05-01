@@ -125,18 +125,30 @@ export default function ProjectChatWindow({
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
+      let sentinelSeen = false;
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         accumulated += decoder.decode(value, { stream: true });
-        const textPart = accumulated.split("\x1f")[0];
-        const display = textPart
-          .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-          .trimStart();
-        setMessages((prev) =>
-          prev.map((m) => (m.id === streamMsgId ? { ...m, content: display } : m))
-        );
+        if (sentinelSeen) continue;
+        const sentinelIdx = accumulated.indexOf("\x1f");
+        if (sentinelIdx !== -1) {
+          sentinelSeen = true;
+          const display = accumulated.slice(0, sentinelIdx)
+            .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+            .trim();
+          setMessages((prev) =>
+            prev.map((m) => m.id === streamMsgId ? { ...m, content: display } : m)
+          );
+        } else {
+          const display = accumulated
+            .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+            .trimStart();
+          setMessages((prev) =>
+            prev.map((m) => (m.id === streamMsgId ? { ...m, content: display } : m))
+          );
+        }
       }
 
       const sentinelParts = accumulated.split("\x1f");

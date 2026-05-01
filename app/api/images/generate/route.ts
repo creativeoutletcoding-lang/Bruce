@@ -23,11 +23,16 @@ export async function POST(request: NextRequest) {
   if (!prompt?.trim()) return new Response("Prompt required", { status: 400 });
   if (!chatId) return new Response("chatId required", { status: 400 });
 
+  console.log(`[api/images/generate] REPLICATE_API_TOKEN: ${process.env.REPLICATE_API_TOKEN ? "SET" : "MISSING"}`);
+  console.log(`[api/images/generate] quality=${quality ?? "standard"} prompt="${prompt.slice(0, 80)}"`);
+
   try {
     const result = await generateImageAndSave(prompt, user.id, chatId, quality);
     return Response.json(result);
   } catch (err) {
-    console.error("[api/images/generate]", err instanceof Error ? err.message : err);
+    const msg = err instanceof Error ? err.message : String(err);
+    const status = (err as { status?: number })?.status;
+    console.error(`[api/images/generate] Failed — status=${status ?? "unknown"} message="${msg}"`);
     return new Response("Image generation failed", { status: 500 });
   }
 }
