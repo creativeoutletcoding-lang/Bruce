@@ -25,7 +25,7 @@ export async function DELETE(req: NextRequest) {
     .delete()
     .in("id", validIds)
     .eq("owner_id", user.id)
-    .in("type", ["private", "incognito", "family_thread"]);
+    .in("type", ["private", "incognito", "family_thread", "family_group"]);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

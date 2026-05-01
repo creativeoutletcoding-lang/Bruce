@@ -52,7 +52,7 @@ interface ProjectChatListItem {
 
 interface ContextMenuState {
   id: string;
-  kind: "chat" | "thread";
+  kind: "chat" | "thread" | "family_group";
   x: number;
   y: number;
 }
@@ -210,7 +210,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
 
   // ── shared context menu + single delete ──────────────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [singleDeleteTarget, setSingleDeleteTarget] = useState<{ id: string; kind: "chat" | "thread" } | null>(null);
+  const [singleDeleteTarget, setSingleDeleteTarget] = useState<{ id: string; kind: "chat" | "thread" | "family_group" } | null>(null);
   const [isDeletingSingle, setIsDeletingSingle] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressActiveRef = useRef(false);
@@ -584,13 +584,13 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   }
 
   // ── shared context menu: right-click + long press ────────────────────────
-  function handleItemRightClick(e: React.MouseEvent, id: string, kind: "chat" | "thread") {
+  function handleItemRightClick(e: React.MouseEvent, id: string, kind: "chat" | "thread" | "family_group") {
     if (kind === "chat" && chatsSelectMode) return;
     e.preventDefault();
     setContextMenu({ id, kind, x: e.clientX, y: e.clientY });
   }
 
-  function handleItemLongPressStart(e: React.TouchEvent, id: string, kind: "chat" | "thread") {
+  function handleItemLongPressStart(e: React.TouchEvent, id: string, kind: "chat" | "thread" | "family_group") {
     if (kind === "chat" && chatsSelectMode) return;
     const touch = e.touches[0];
     const x = touch.clientX;
@@ -638,6 +638,14 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           const deletedActive = activeChatId === id;
           await loadChats();
           if (deletedActive) {
+            router.push("/chat");
+            onNavigate();
+          }
+        } else if (kind === "family_group") {
+          // Family group chat deleted — navigate away if currently viewing it.
+          // ensureFamilyChat() will recreate it on the next /family visit.
+          await loadFamilyThreads();
+          if (isFamilyActive) {
             router.push("/chat");
             onNavigate();
           }
@@ -1136,9 +1144,17 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             </div>
             {familyExpanded && (
               <>
-                {/* Family group chat — no delete option */}
+                {/* Family group chat */}
                 <button
-                  onClick={() => { router.push("/family"); onNavigate(); }}
+                  onClick={() => {
+                    if (longPressActiveRef.current) { longPressActiveRef.current = false; return; }
+                    router.push("/family");
+                    onNavigate();
+                  }}
+                  onContextMenu={(e) => familyGroup && handleItemRightClick(e, familyGroup.id, "family_group")}
+                  onTouchStart={(e) => familyGroup && handleItemLongPressStart(e, familyGroup.id, "family_group")}
+                  onTouchEnd={handleItemLongPressEnd}
+                  onTouchMove={handleItemLongPressMove}
                   style={{ ...styles.familyButton, ...(isFamilyActive ? styles.familyButtonActive : {}) }}
                 >
                   <span style={styles.familyEmoji}>🏠</span>
