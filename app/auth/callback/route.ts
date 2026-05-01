@@ -281,36 +281,6 @@ async function handleCallback(request: NextRequest) {
     });
   }
 
-  // Add user to family group chat if one exists and they're not already a member
-  try {
-    const { data: familyChat } = await adminSupabase
-      .from("chats")
-      .select("id")
-      .eq("type", "family_group")
-      .maybeSingle();
-
-    if (familyChat) {
-      const { data: existing } = await adminSupabase
-        .from("chat_members")
-        .select("id")
-        .eq("chat_id", familyChat.id)
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (!existing) {
-        await adminSupabase.from("chat_members").insert({
-          chat_id: familyChat.id,
-          user_id: userId,
-        });
-        console.log("[callback] step=family_chat_member_added");
-      }
-    }
-  } catch (familyErr) {
-    console.error("[callback] family chat membership update failed (non-fatal):", {
-      message: familyErr instanceof Error ? familyErr.message : String(familyErr),
-    });
-  }
-
   console.log("[callback] step=redirect_home success");
   return NextResponse.redirect(buildRedirect("/"));
 }

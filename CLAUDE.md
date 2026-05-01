@@ -435,7 +435,7 @@ All deletes are soft-delete where possible (status field), hard delete for chats
 - **`components/family/FamilyChatWindow.tsx`** — Accepts `topbar: React.ReactNode` prop and optional `placeholder` prop. Features: member-attributed messages (sender name above each run, color-coded by member), typing dots → "Bruce is working on it…" working indicator, long press + right-click context menu with "Ask Bruce" and "Copy" actions, realtime subscription for other members' messages, auto-dedup of optimistic/streaming messages via DB reload after each send.
 - **Sidebar** — Family section: Family Chat button at top, thread list below, "New Thread" (+) button in the section header. Chats list excludes `family_group` and `family_thread` types. Realtime subscription triggers `loadFamilyThreads()` on chats table changes.
 - **ChatShell** — Added mobile bottom nav (Home, Projects, Family tabs). Nav hides when inside a specific standalone chat, project chat, or family thread (`/family/threads/[id]`). Fixed nav via `position: fixed`; main content avoids overlap via `with-bottom-nav` CSS class.
-- **`auth/callback`** — On every new user login, checks if a family_group chat exists and adds the user to `chat_members` if not already a member.
+- **`auth/callback`** — ~~On every new user login, checks if a family_group chat exists and adds the user to `chat_members` if not already a member.~~ This auto-join-on-login logic has been removed. Users are no longer automatically added to any family_group chat on sign-in.
 
 #### Key decisions
 
