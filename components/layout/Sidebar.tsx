@@ -208,6 +208,12 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [isDeletingProjectChats, setIsDeletingProjectChats] = useState(false);
   const [loadingProjectChats, setLoadingProjectChats] = useState(false);
 
+  // ── family threads bulk delete ───────────────────────────────────────────
+  const [threadsSelectMode, setThreadsSelectMode] = useState(false);
+  const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(new Set());
+  const [showThreadBulkDeleteConfirm, setShowThreadBulkDeleteConfirm] = useState(false);
+  const [isDeletingThreads, setIsDeletingThreads] = useState(false);
+
   // ── shared context menu + single delete ──────────────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [singleDeleteTarget, setSingleDeleteTarget] = useState<{ id: string; kind: "chat" | "thread" | "family_group" } | null>(null);
@@ -439,6 +445,8 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   function enterChatsSelectMode() {
     setContextMenu(null);
     setProjectsSelectMode(false);
+    setThreadsSelectMode(false);
+    setSelectedThreadIds(new Set());
     setSelectedChatIds(new Set());
     setChatsSelectMode(true);
     if (!chatsExpanded) {
@@ -490,6 +498,8 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   function enterProjectsSelectMode() {
     setContextMenu(null);
     setChatsSelectMode(false);
+    setThreadsSelectMode(false);
+    setSelectedThreadIds(new Set());
     setSelectedProjectIds(new Set());
     setSelectedProjectChatIds(new Set());
     setProjectsSelectMode(true);
@@ -583,15 +593,72 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
+  // ── family threads: bulk delete ──────────────────────────────────────────
+  function enterThreadsSelectMode() {
+    setContextMenu(null);
+    setChatsSelectMode(false);
+    setSelectedChatIds(new Set());
+    setProjectsSelectMode(false);
+    setSelectedProjectIds(new Set());
+    setSelectedProjectChatIds(new Set());
+    setSelectedThreadIds(new Set());
+    setThreadsSelectMode(true);
+    if (!familyExpanded) {
+      setFamilyExpanded(true);
+      localStorage.setItem("bruce_sidebar_family", "true");
+    }
+  }
+
+  function exitThreadsSelectMode() {
+    setThreadsSelectMode(false);
+    setSelectedThreadIds(new Set());
+  }
+
+  function toggleThreadSelection(id: string) {
+    setSelectedThreadIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleThreadBulkDelete() {
+    if (isDeletingThreads || selectedThreadIds.size === 0) return;
+    setIsDeletingThreads(true);
+    try {
+      const ids = Array.from(selectedThreadIds);
+      const res = await fetch("/api/chats", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (res.ok) {
+        const deletedActive = activeThreadId && selectedThreadIds.has(activeThreadId);
+        setShowThreadBulkDeleteConfirm(false);
+        exitThreadsSelectMode();
+        await loadFamilyThreads();
+        if (deletedActive) {
+          router.push("/family");
+          onNavigate();
+        }
+      }
+    } finally {
+      setIsDeletingThreads(false);
+    }
+  }
+
   // ── shared context menu: right-click + long press ────────────────────────
   function handleItemRightClick(e: React.MouseEvent, id: string, kind: "chat" | "thread" | "family_group") {
     if (kind === "chat" && chatsSelectMode) return;
+    if (kind === "thread" && threadsSelectMode) return;
     e.preventDefault();
     setContextMenu({ id, kind, x: e.clientX, y: e.clientY });
   }
 
   function handleItemLongPressStart(e: React.TouchEvent, id: string, kind: "chat" | "thread" | "family_group") {
     if (kind === "chat" && chatsSelectMode) return;
+    if (kind === "thread" && threadsSelectMode) return;
     const touch = e.touches[0];
     const x = touch.clientX;
     const y = touch.clientY;
@@ -1114,31 +1181,48 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
 
           {/* ── Family section ───────────────────────────────────────────── */}
           <div style={styles.familySection}>
-            <div
-              style={{ ...styles.sectionHeaderRow, cursor: "pointer" }}
-              onClick={toggleFamily}
-              role="button"
-              aria-expanded={familyExpanded}
-            >
-              <span style={styles.sectionLabel}>Family</span>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <svg
-                  width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
-                  style={{ transform: familyExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0 }}
-                >
-                  <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <button
-                  onClick={(e) => { e.stopPropagation(); openNewThreadModal(); }}
-                  style={styles.sectionAddButton}
-                  aria-label="New group chat"
-                  title="New group chat"
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <div style={styles.sectionHeaderRow}>
+              <span
+                style={{ ...styles.sectionLabel, cursor: threadsSelectMode ? "default" : "pointer", flex: 1 }}
+                onClick={threadsSelectMode ? undefined : toggleFamily}
+                role={threadsSelectMode ? undefined : "button"}
+                aria-expanded={threadsSelectMode ? undefined : familyExpanded}
+              >
+                Family
+              </span>
+              {threadsSelectMode ? (
+                <button onClick={exitThreadsSelectMode} style={styles.sectionEditButton}>Done</button>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  {familyThreads.length > 0 && (
+                    <button
+                      onClick={enterThreadsSelectMode}
+                      style={styles.sectionEditButton}
+                      aria-label="Select threads"
+                      title="Select threads"
+                    >
+                      Edit
+                    </button>
+                  )}
+                  <svg
+                    width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                    onClick={toggleFamily}
+                    style={{ transform: familyExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0, cursor: "pointer" }}
+                  >
+                    <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                </button>
-              </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openNewThreadModal(); }}
+                    style={styles.sectionAddButton}
+                    aria-label="New group chat"
+                    title="New group chat"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
             {familyExpanded && (
               <>
@@ -1164,9 +1248,39 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                   </button>
                 )}
 
-                {/* Family threads — right-click / long press to delete */}
+                {/* Family threads */}
                 {familyThreads.map((thread) => {
                   const isActive = thread.id === activeThreadId;
+                  const isSelected = selectedThreadIds.has(thread.id);
+
+                  if (threadsSelectMode) {
+                    return (
+                      <button
+                        key={thread.id}
+                        onClick={() => toggleThreadSelection(thread.id)}
+                        style={{
+                          ...styles.threadItem,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: "8px",
+                          ...(isSelected ? styles.chatItemSelected : {}),
+                        }}
+                      >
+                        <div style={{
+                          ...styles.chatSelectCircle,
+                          ...(isSelected ? { backgroundColor: "var(--accent)", borderColor: "var(--accent)" } : {}),
+                        }}>
+                          {isSelected && (
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                              <path d="M1.5 5l2.5 2.5 4.5-5" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </div>
+                        <span style={styles.threadName}>{thread.title}</span>
+                      </button>
+                    );
+                  }
+
                   return (
                     <button
                       key={thread.id}
@@ -1190,6 +1304,21 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     </button>
                   );
                 })}
+
+                {threadsSelectMode && (
+                  <button
+                    onClick={() => { if (selectedThreadIds.size > 0) setShowThreadBulkDeleteConfirm(true); }}
+                    disabled={selectedThreadIds.size === 0}
+                    style={{
+                      ...styles.deleteSelectedButton,
+                      ...(selectedThreadIds.size === 0 ? styles.deleteSelectedButtonDisabled : {}),
+                    }}
+                  >
+                    {selectedThreadIds.size === 0
+                      ? "Select chats to delete"
+                      : `Delete ${selectedThreadIds.size} ${selectedThreadIds.size === 1 ? "chat" : "chats"}`}
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -1353,6 +1482,40 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                   style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingProjectChats ? styles.createButtonDisabled : {}) }}
                 >
                   {isDeletingProjectChats ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Family threads bulk delete confirmation ──────────────────────── */}
+      {showThreadBulkDeleteConfirm && (
+        <div style={styles.modalOverlay} onClick={() => setShowThreadBulkDeleteConfirm(false)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <span style={styles.modalTitle}>
+                Delete {selectedThreadIds.size} {selectedThreadIds.size === 1 ? "chat" : "chats"}?
+              </span>
+              <button style={styles.modalClose} onClick={() => setShowThreadBulkDeleteConfirm(false)}>×</button>
+            </div>
+            <div style={styles.modalBody}>
+              <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>
+                This cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={() => setShowThreadBulkDeleteConfirm(false)}
+                  style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleThreadBulkDelete}
+                  disabled={isDeletingThreads}
+                  style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingThreads ? styles.createButtonDisabled : {}) }}
+                >
+                  {isDeletingThreads ? "Deleting…" : "Delete"}
                 </button>
               </div>
             </div>
