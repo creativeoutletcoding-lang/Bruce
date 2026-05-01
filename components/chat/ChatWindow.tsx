@@ -216,8 +216,12 @@ export default function ChatWindow({
               model: string;
               quality: string;
             };
-            setMessages((prev) =>
-              prev.map((m) =>
+            console.log(`[client] appending image message to list — messageId: ${imgData.messageId} url: ${imgData.url}`);
+            console.log(`[client] replacing skeletonId: ${skeletonId}`);
+            setMessages((prev) => {
+              const found = prev.some((m) => m.id === skeletonId);
+              console.log(`[client] skeleton found in prev: ${found}, prev IDs: ${prev.map((m) => m.id).join(", ")}`);
+              return prev.map((m) =>
                 m.id === skeletonId
                   ? {
                       id: imgData.messageId,
@@ -233,13 +237,13 @@ export default function ChatWindow({
                       },
                     }
                   : m
-              )
-            );
+              );
+            });
           } else {
             setMessages((prev) => prev.filter((m) => m.id !== skeletonId));
           }
-        } catch {
-          // Image generation failed — skeleton already removed or will remain until refresh
+        } catch (err) {
+          console.error("[client] image generation catch:", err);
         }
       }
     } catch (err) {
