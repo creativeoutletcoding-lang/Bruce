@@ -175,6 +175,7 @@ export default function ChatWindow({
             url: string;
             prompt: string;
             model: string;
+            quality: string;
           };
           setMessages((prev) => [
             ...prev,
@@ -188,6 +189,7 @@ export default function ChatWindow({
                 image_url: imgData.url,
                 prompt: imgData.prompt,
                 model: imgData.model,
+                quality: imgData.quality,
               },
             },
           ]);

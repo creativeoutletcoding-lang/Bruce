@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { assembleMemoryBlock, buildProjectSystemPrompt, generateChatTitle, IMAGE_SYSTEM_BLOCK } from "@/lib/anthropic";
 import { getFileContent } from "@/lib/google/drive";
-import { generateImageAndSave } from "@/lib/images/generate";
+import { generateImageAndSave, type ImageQuality } from "@/lib/images/generate";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -274,11 +274,12 @@ export async function POST(request: NextRequest, { params }: Props) {
         const imageMatch = IMAGE_TAG_RE.exec(fullResponse);
         if (imageMatch && currentChatId) {
           try {
-            const tagContent = JSON.parse(imageMatch[1]) as { prompt: string };
+            const tagContent = JSON.parse(imageMatch[1]) as { prompt: string; quality?: ImageQuality };
             const imgResult = await generateImageAndSave(
               tagContent.prompt,
               user.id,
-              currentChatId
+              currentChatId,
+              tagContent.quality
             );
             controller.enqueue(
               encoder.encode(`\x1fIMAGE_MSG:${JSON.stringify(imgResult)}`)

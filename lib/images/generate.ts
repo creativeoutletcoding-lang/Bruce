@@ -2,35 +2,44 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import { uploadImageToPersonalFolder } from "@/lib/google/drive";
 
 const REPLICATE_API = "https://api.replicate.com/v1";
-export const IMAGE_MODEL = "black-forest-labs/flux-schnell";
+const MODEL_STANDARD = "black-forest-labs/flux-schnell";
+const MODEL_HD = "black-forest-labs/flux-dev";
+
+export type ImageQuality = "standard" | "hd";
 
 export interface ImageGenerationResult {
   messageId: string;
   url: string;
   prompt: string;
   model: string;
+  quality: ImageQuality;
 }
 
 export async function generateImageAndSave(
   prompt: string,
   userId: string,
-  chatId: string
+  chatId: string,
+  quality: ImageQuality = "standard"
 ): Promise<ImageGenerationResult> {
   const token = process.env.REPLICATE_API_TOKEN;
   if (!token) throw new Error("REPLICATE_API_TOKEN not configured");
 
+  const model = quality === "hd" ? MODEL_HD : MODEL_STANDARD;
+  const input =
+    quality === "hd"
+      ? { prompt, num_outputs: 1 }
+      : { prompt, go_fast: true, num_outputs: 1 };
+
   // 1. Create Replicate prediction
   const createRes = await fetch(
-    `${REPLICATE_API}/models/${IMAGE_MODEL}/predictions`,
+    `${REPLICATE_API}/models/${model}/predictions`,
     {
       method: "POST",
       headers: {
         Authorization: `Token ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        input: { prompt, go_fast: true, num_outputs: 1 },
-      }),
+      body: JSON.stringify({ input }),
     }
   );
 
@@ -109,7 +118,8 @@ export async function generateImageAndSave(
         content_type: "image",
         image_url: displayUrl,
         prompt,
-        model: IMAGE_MODEL,
+        model,
+        quality,
       },
     })
     .select("id")
@@ -121,6 +131,7 @@ export async function generateImageAndSave(
     messageId: msg.id as string,
     url: displayUrl,
     prompt,
-    model: IMAGE_MODEL,
+    model,
+    quality,
   };
 }

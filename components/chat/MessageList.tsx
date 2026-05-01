@@ -95,8 +95,9 @@ export default function MessageList({ messages, onRefresh }: MessageListProps) {
             if (msg.metadata?.content_type === "image") {
               const url = msg.metadata.image_url as string;
               const prompt = (msg.metadata.prompt as string) ?? msg.content;
-              if (!url) return <ImageMessageSkeleton key={msg.id} />;
-              return <ImageMessage key={msg.id} url={url} prompt={prompt} />;
+              const isHD = msg.metadata.quality === "hd";
+              if (!url) return <ImageMessageSkeleton key={msg.id} isHD={isHD} />;
+              return <ImageMessage key={msg.id} url={url} prompt={prompt} isHD={isHD} />;
             }
             return (
               <MessageBubble

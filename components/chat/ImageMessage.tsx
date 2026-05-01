@@ -5,9 +5,10 @@ import { useState } from "react";
 interface ImageMessageProps {
   url: string;
   prompt: string;
+  isHD?: boolean;
 }
 
-export default function ImageMessage({ url, prompt }: ImageMessageProps) {
+export default function ImageMessage({ url, prompt, isHD }: ImageMessageProps) {
   const [imgError, setImgError] = useState(false);
   const caption = prompt.length > 80 ? prompt.slice(0, 80) + "…" : prompt;
 
@@ -28,23 +29,32 @@ export default function ImageMessage({ url, prompt }: ImageMessageProps) {
         style={styles.link}
         aria-label={`Generated image: ${caption}`}
       >
-        <img
-          src={url}
-          alt={prompt}
-          style={styles.image}
-          onError={() => setImgError(true)}
-        />
+        <div style={styles.imageWrapper}>
+          <img
+            src={url}
+            alt={prompt}
+            style={styles.image}
+            onError={() => setImgError(true)}
+          />
+          {isHD && <span style={styles.hdBadge}>HD</span>}
+        </div>
       </a>
       <p style={styles.caption}>{caption}</p>
     </div>
   );
 }
 
-export function ImageMessageSkeleton() {
+interface SkeletonProps {
+  isHD?: boolean;
+}
+
+export function ImageMessageSkeleton({ isHD }: SkeletonProps) {
   return (
     <div style={styles.wrapper}>
-      <div style={styles.skeleton} />
-      <p style={styles.captionLoading}>Generating image…</p>
+      <div style={styles.skeleton}>
+        {isHD && <span style={styles.skeletonLabel}>Generating HD image…</span>}
+      </div>
+      <p style={styles.captionLoading}>{isHD ? "Generating HD image…" : "Generating image…"}</p>
     </div>
   );
 }
@@ -63,13 +73,31 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     lineHeight: 0,
   },
+  imageWrapper: {
+    position: "relative" as const,
+    lineHeight: 0,
+  },
   image: {
     width: "100%",
     maxHeight: "400px",
-    objectFit: "cover",
+    objectFit: "cover" as const,
     borderRadius: "8px",
     display: "block",
     cursor: "pointer",
+  },
+  hdBadge: {
+    position: "absolute" as const,
+    top: "8px",
+    right: "8px",
+    padding: "2px 6px",
+    borderRadius: "4px",
+    fontSize: "0.6875rem",
+    fontWeight: "600",
+    letterSpacing: "0.04em",
+    backgroundColor: "rgba(0,0,0,0.45)",
+    color: "rgba(255,255,255,0.9)",
+    lineHeight: "1.4",
+    pointerEvents: "none" as const,
   },
   caption: {
     fontSize: "0.75rem",
@@ -83,6 +111,14 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "var(--bg-secondary)",
     border: "1px solid var(--border)",
     animation: "pulse 1.5s ease-in-out infinite",
+    display: "flex",
+    alignItems: "flex-end",
+    padding: "12px",
+  },
+  skeletonLabel: {
+    fontSize: "0.75rem",
+    color: "var(--text-tertiary)",
+    lineHeight: "1.4",
   },
   captionLoading: {
     fontSize: "0.75rem",

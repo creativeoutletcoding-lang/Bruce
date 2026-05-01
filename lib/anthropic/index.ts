@@ -81,9 +81,11 @@ export const IMAGE_SYSTEM_BLOCK = `
 
 ## Image generation
 
-You can generate images. When the user asks for an image, a picture, a photo, artwork, a drawing, or anything visual, respond conversationally AND include an image generation tag:
+You can generate images at two quality levels. When the user asks for an image, a picture, a photo, artwork, a drawing, or anything visual, respond conversationally AND include an image generation tag:
 
-<image_request>{"prompt": "detailed prompt here"}</image_request>
+<image_request>{"prompt": "detailed prompt here", "quality": "standard"}</image_request>
+
+Use quality "hd" when the user explicitly asks for HD, high quality, high res, detailed, or best quality. Use "standard" for everything else.
 
 Write the prompt as if describing the image to a professional photographer or artist — specific, visual, detailed. Include lighting, style, composition, subject matter, and color palette. Do not use vague language. Do not generate images unless explicitly asked or clearly implied.`;
 
