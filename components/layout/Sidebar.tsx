@@ -1142,25 +1142,27 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             </div>
             {familyExpanded && (
               <>
-                {/* Family group chat */}
-                <button
-                  onClick={() => {
-                    if (longPressActiveRef.current) { longPressActiveRef.current = false; return; }
-                    router.push("/family");
-                    onNavigate();
-                  }}
-                  onContextMenu={(e) => familyGroup && handleItemRightClick(e, familyGroup.id, "family_group")}
-                  onTouchStart={(e) => familyGroup && handleItemLongPressStart(e, familyGroup.id, "family_group")}
-                  onTouchEnd={handleItemLongPressEnd}
-                  onTouchMove={handleItemLongPressMove}
-                  style={{ ...styles.familyButton, ...(isFamilyActive ? styles.familyButtonActive : {}) }}
-                >
-                  <span style={styles.familyEmoji}>🏠</span>
-                  <span style={styles.familyName}>Family Chat</span>
-                  {!isFamilyActive && (familyGroup?.unreadCount ?? 0) > 0 && (
-                    <UnreadDot count={familyGroup!.unreadCount} />
-                  )}
-                </button>
+                {/* Family group chat — only rendered when a family_group chat exists */}
+                {familyGroup && (
+                  <button
+                    onClick={() => {
+                      if (longPressActiveRef.current) { longPressActiveRef.current = false; return; }
+                      router.push("/family");
+                      onNavigate();
+                    }}
+                    onContextMenu={(e) => handleItemRightClick(e, familyGroup.id, "family_group")}
+                    onTouchStart={(e) => handleItemLongPressStart(e, familyGroup.id, "family_group")}
+                    onTouchEnd={handleItemLongPressEnd}
+                    onTouchMove={handleItemLongPressMove}
+                    style={{ ...styles.familyButton, ...(isFamilyActive ? styles.familyButtonActive : {}) }}
+                  >
+                    <span style={styles.familyEmoji}>🏠</span>
+                    <span style={styles.familyName}>Family Chat</span>
+                    {!isFamilyActive && familyGroup.unreadCount > 0 && (
+                      <UnreadDot count={familyGroup.unreadCount} />
+                    )}
+                  </button>
+                )}
 
                 {/* Family threads — right-click / long press to delete */}
                 {familyThreads.map((thread) => {
