@@ -74,23 +74,69 @@ export default function NewChatOrchestrator({
         const { value, done } = await reader.read();
         if (done) break;
         accumulated += decoder.decode(value, { stream: true });
-        const current = accumulated;
+        // Strip image tag and sentinel from live display
+        const sentinelIdx = accumulated.indexOf("\x1f");
+        const displayText = (sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated)
+          .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+          .trimStart();
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === streamMsgId ? { ...m, content: current } : m
+            m.id === streamMsgId ? { ...m, content: displayText } : m
           )
         );
       }
 
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === streamMsgId
-            ? { ...m, isStreaming: false, created_at: new Date().toISOString() }
-            : m
-        )
-      );
+      // Parse sentinel
+      const sentinelParts = accumulated.split("\x1f");
+      const imageReqSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_REQ:"));
+      const finalText = sentinelParts[0]
+        .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+        .trim();
 
-      // For non-incognito: refresh sidebar while still on /chat, then navigate
+      // Finalize stream placeholder
+      if (finalText) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamMsgId
+              ? { ...m, content: finalText, isStreaming: false, created_at: new Date().toISOString() }
+              : m
+          )
+        );
+      } else {
+        setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
+      }
+
+      // If image requested, await generation before navigating so ChatWindow
+      // loads with the image already persisted in the DB
+      if (!incognito && newChatId && imageReqSentinel) {
+        try {
+          const reqData = JSON.parse(imageReqSentinel.slice("IMAGE_REQ:".length)) as {
+            prompt: string;
+            quality: string;
+            chatId: string;
+          };
+          const skeletonId = `skeleton-${Date.now()}`;
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: skeletonId,
+              role: "assistant" as const,
+              content: "",
+              created_at: new Date().toISOString(),
+              metadata: { content_type: "image", image_url: "", prompt: reqData.prompt, quality: reqData.quality },
+            },
+          ]);
+          await fetch("/api/images/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: reqData.prompt, chatId: reqData.chatId, quality: reqData.quality }),
+          });
+        } catch {
+          // swallow — navigate regardless, ChatWindow loads whatever is in DB
+        }
+      }
+
+      // Navigate after image (if any) has been persisted
       if (!incognito && newChatId) {
         refreshChats();
         router.push(`/chat/${newChatId}`);
