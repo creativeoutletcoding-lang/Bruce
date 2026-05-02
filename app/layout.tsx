@@ -11,6 +11,10 @@ export const metadata: Metadata = {
     title: "Bruce",
   },
   icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
     apple: "/icons/icon-192.png",
   },
 };

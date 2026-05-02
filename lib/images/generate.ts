@@ -21,8 +21,6 @@ export async function generateImageAndSave(
   chatId: string,
   quality: ImageQuality = "standard"
 ): Promise<ImageGenerationResult> {
-  console.log("[generate] function entered, token present:", !!process.env.REPLICATE_API_TOKEN);
-
   const token = process.env.REPLICATE_API_TOKEN;
   if (!token) throw new Error("REPLICATE_API_TOKEN not configured");
 
@@ -31,8 +29,6 @@ export async function generateImageAndSave(
     quality === "hd"
       ? { prompt, num_outputs: 1 }
       : { prompt, go_fast: true, num_outputs: 1 };
-
-  console.log(`[generate] creating Replicate prediction — model=${model}`);
 
   // 1. Create Replicate prediction
   let createRes: Response;
@@ -59,9 +55,6 @@ export async function generateImageAndSave(
     throw new Error(`Replicate create failed: ${createRes.status} — ${errBody}`);
   }
 
-  console.log("[generate] Replicate prediction created successfully");
-  console.log(`[generate] NODE_ENV=${process.env.NODE_ENV}`);
-
   const prediction = (await createRes.json()) as {
     id: string;
     status: string;
@@ -73,10 +66,8 @@ export async function generateImageAndSave(
   let imageUrl: string | null = null;
   const MAX_ATTEMPTS = 60;
   for (let i = 0; i < MAX_ATTEMPTS; i++) {
-    console.log(`[generate] polling attempt ${i + 1} — status: ${prediction.status}`);
     if (prediction.status === "succeeded" && prediction.output?.length) {
       imageUrl = prediction.output[0];
-      console.log(`[generate] prediction succeeded — output URL: ${imageUrl}`);
       break;
     }
     if (prediction.status === "failed" || prediction.status === "canceled") {

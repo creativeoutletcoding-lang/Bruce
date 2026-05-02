@@ -23,9 +23,6 @@ export async function POST(request: NextRequest) {
   if (!prompt?.trim()) return new Response("Prompt required", { status: 400 });
   if (!chatId) return new Response("chatId required", { status: 400 });
 
-  console.log(`[api/images/generate] REPLICATE_API_TOKEN: ${process.env.REPLICATE_API_TOKEN ? "SET" : "MISSING"}`);
-  console.log(`[api/images/generate] quality=${quality ?? "standard"} prompt="${prompt.slice(0, 80)}"`);
-
   try {
     const result = await generateImageAndSave(prompt, user.id, chatId, quality);
     return Response.json(result);
