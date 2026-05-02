@@ -37,6 +37,7 @@ export default function ProjectChatWindow({
       metadata: (m.metadata as Record<string, unknown>) ?? undefined,
     }))
   );
+  const [isClient, setIsClient] = useState(false);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +67,7 @@ export default function ProjectChatWindow({
     );
   }, [chatId]);
 
+  useEffect(() => { setIsClient(true); }, []);
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
@@ -155,51 +157,46 @@ export default function ProjectChatWindow({
       const sentinelParts = accumulated.split("\x1f");
       const imageReqSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_REQ:"));
 
-      // Finalize streaming text message — remove entirely if empty (image-only response)
       const finalText = sentinelParts[0]
         .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
         .trim();
-      if (finalText) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === streamMsgId
-              ? { ...m, content: finalText, isStreaming: false, created_at: new Date().toISOString() }
-              : m
-          )
-        );
-      } else {
-        setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
-      }
 
-      // Fire image generation as a separate client-side fetch
-      if (imageReqSentinel) {
+      // Fire image generation — image appears first, text after
+      if (imageReqSentinel && isClient) {
         try {
           const reqData = JSON.parse(imageReqSentinel.slice("IMAGE_REQ:".length)) as {
             prompt: string;
             quality: string;
             chatId: string;
           };
-          console.log(`[client] IMAGE_REQ sentinel received — prompt: "${reqData.prompt.slice(0, 100)}" quality: ${reqData.quality}`);
           const skeletonId = `skeleton-${Date.now()}`;
-          setMessages((prev) => [
-            ...prev,
-            {
+          // Atomic: remove stream placeholder, insert skeleton first, text below
+          setMessages((prev) => {
+            const withoutStream = prev.filter((m) => m.id !== streamMsgId);
+            const skeleton: ChatMessage = {
               id: skeletonId,
-              role: "assistant" as const,
+              role: "assistant",
               content: "",
               created_at: new Date().toISOString(),
               metadata: { content_type: "image", image_url: "", prompt: reqData.prompt, quality: reqData.quality },
-            },
-          ]);
-          console.log("[client] calling /api/images/generate...");
+            };
+            if (finalText) {
+              return [...withoutStream, skeleton, {
+                id: `text-${Date.now()}`,
+                role: "assistant" as const,
+                content: finalText,
+                isStreaming: false,
+                created_at: new Date().toISOString(),
+              }];
+            }
+            return [...withoutStream, skeleton];
+          });
           const imgRes = await fetch("/api/images/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ prompt: reqData.prompt, chatId: reqData.chatId, quality: reqData.quality }),
           });
-          console.log(`[client] /api/images/generate response status: ${imgRes.status}`);
           const imgBody = await imgRes.text();
-          console.log(`[client] image generation response: ${imgBody.slice(0, 200)}`);
           if (imgRes.ok) {
             const imgData = JSON.parse(imgBody) as {
               messageId: string;
@@ -208,12 +205,8 @@ export default function ProjectChatWindow({
               model: string;
               quality: string;
             };
-            console.log(`[client] appending image message to list — messageId: ${imgData.messageId} url: ${imgData.url}`);
-            console.log(`[client] replacing skeletonId: ${skeletonId}`);
-            setMessages((prev) => {
-              const found = prev.some((m) => m.id === skeletonId);
-              console.log(`[client] skeleton found in prev: ${found}, prev IDs: ${prev.map((m) => m.id).join(", ")}`);
-              return prev.map((m) =>
+            setMessages((prev) =>
+              prev.map((m) =>
                 m.id === skeletonId
                   ? {
                       id: imgData.messageId,
@@ -229,13 +222,26 @@ export default function ProjectChatWindow({
                       },
                     }
                   : m
-              );
-            });
+              )
+            );
           } else {
             setMessages((prev) => prev.filter((m) => m.id !== skeletonId));
           }
         } catch (err) {
           console.error("[client] image generation catch:", err);
+        }
+      } else {
+        // No image — finalize text bubble
+        if (finalText) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === streamMsgId
+                ? { ...m, content: finalText, isStreaming: false, created_at: new Date().toISOString() }
+                : m
+            )
+          );
+        } else {
+          setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
         }
       }
     } catch (err) {

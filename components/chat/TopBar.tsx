@@ -46,23 +46,25 @@ export default function TopBar({ title, hasMessages, onRefresh }: TopBarProps) {
         </svg>
       </button>
 
-      {/* Back button — mobile only */}
-      <button
-        onClick={() => router.push("/chat")}
-        style={styles.backButton}
-        aria-label="Back"
-        className="mobile-only"
-      >
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-          <path
-            d="M11 4L5 9l6 5"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
+      {/* Back button — mobile only, hidden on landing/welcome state */}
+      {hasMessages && (
+        <button
+          onClick={() => router.push("/chat")}
+          style={styles.backButton}
+          aria-label="Back"
+          className="mobile-only"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <path
+              d="M11 4L5 9l6 5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
 
       <h1 style={styles.title}>{title}</h1>
 

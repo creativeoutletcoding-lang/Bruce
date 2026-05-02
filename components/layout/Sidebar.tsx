@@ -229,6 +229,9 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [sidebarPullDistance, setSidebarPullDistance] = useState(0);
   const [sidebarIsRefreshing, setSidebarIsRefreshing] = useState(false);
 
+  // ── responsive: mobile/desktop ───────────────────────────────────────────
+  const [isMobile, setIsMobile] = useState(false);
+
   // ── section collapse ─────────────────────────────────────────────────────
   const [projectsExpanded, setProjectsExpanded] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -344,6 +347,13 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       setLoadingProjectChats(false);
     }
   }
+
+  useEffect(() => {
+    function checkMobile() { setIsMobile(window.innerWidth <= 768); }
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   // ── realtime subscription + initial load ─────────────────────────────────
   useEffect(() => {
@@ -858,26 +868,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   // ── render ────────────────────────────────────────────────────────────────
   return (
     <div style={styles.sidebar}>
-      {/* Header */}
-      <div style={styles.header}>
-        <button onClick={handleNewChat} style={styles.newChatButton} aria-label="New chat">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
-          </svg>
-          New chat
-        </button>
-        <button
-          onClick={() => { loadChats(); loadProjects(); loadFamilyThreads(); }}
-          style={styles.sidebarRefreshButton}
-          aria-label="Refresh"
-          title="Refresh"
-        >
-          <svg width="14" height="14" viewBox="0 0 15 15" fill="none" aria-hidden="true">
-            <path d="M13 2v4h-4M2 13v-4h4M2.5 9a5.5 5.5 0 0 0 10 1.5M12.5 6A5.5 5.5 0 0 0 2.5 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      </div>
-
       <div style={styles.contentWrapper}>
         <PullProgressBar pullProgress={Math.min(sidebarPullDistance / 56, 1)} refreshing={sidebarIsRefreshing} />
         <div
@@ -899,7 +889,32 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                 Projects
               </span>
               {projectsSelectMode ? (
-                <button onClick={exitProjectsSelectMode} style={styles.sectionEditButton}>Done</button>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  {(() => {
+                    const ownedProjectIds = projects.filter(p => p.owner_id === user.id).map(p => p.id);
+                    const ownedChatIds = allProjectChats.filter(c => c.owner_id === user.id).map(c => c.id);
+                    const allSelected = ownedProjectIds.length > 0 &&
+                      ownedProjectIds.every(id => selectedProjectIds.has(id)) &&
+                      ownedChatIds.every(id => selectedProjectChatIds.has(id));
+                    return (
+                      <button
+                        onClick={() => {
+                          if (allSelected) {
+                            setSelectedProjectIds(new Set());
+                            setSelectedProjectChatIds(new Set());
+                          } else {
+                            setSelectedProjectIds(new Set(ownedProjectIds));
+                            setSelectedProjectChatIds(new Set(ownedChatIds));
+                          }
+                        }}
+                        style={styles.sectionEditButton}
+                      >
+                        {allSelected ? "Deselect All" : "Select All"}
+                      </button>
+                    );
+                  })()}
+                  <button onClick={exitProjectsSelectMode} style={styles.sectionEditButton}>Done</button>
+                </div>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                   {projects.length > 0 && (
@@ -1073,7 +1088,21 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                 Chats
               </span>
               {chatsSelectMode ? (
-                <button onClick={exitChatsSelectMode} style={styles.sectionEditButton}>Done</button>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <button
+                    onClick={() => {
+                      if (selectedChatIds.size === chats.length && chats.length > 0) {
+                        setSelectedChatIds(new Set());
+                      } else {
+                        setSelectedChatIds(new Set(chats.map(c => c.id)));
+                      }
+                    }}
+                    style={styles.sectionEditButton}
+                  >
+                    {selectedChatIds.size === chats.length && chats.length > 0 ? "Deselect All" : "Select All"}
+                  </button>
+                  <button onClick={exitChatsSelectMode} style={styles.sectionEditButton}>Done</button>
+                </div>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                   {chats.length > 0 && (
@@ -1093,6 +1122,16 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                   >
                     <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleNewChat(); }}
+                    style={styles.sectionAddButton}
+                    aria-label="New chat"
+                    title="New chat"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </button>
                 </div>
               )}
             </div>
@@ -1180,7 +1219,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           </div>
 
           {/* ── Family section ───────────────────────────────────────────── */}
-          <div style={styles.familySection}>
+          <div style={styles.section}>
             <div style={styles.sectionHeaderRow}>
               <span
                 style={{ ...styles.sectionLabel, cursor: threadsSelectMode ? "default" : "pointer", flex: 1 }}
@@ -1191,7 +1230,21 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                 Family
               </span>
               {threadsSelectMode ? (
-                <button onClick={exitThreadsSelectMode} style={styles.sectionEditButton}>Done</button>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <button
+                    onClick={() => {
+                      if (selectedThreadIds.size === familyThreads.length && familyThreads.length > 0) {
+                        setSelectedThreadIds(new Set());
+                      } else {
+                        setSelectedThreadIds(new Set(familyThreads.map(t => t.id)));
+                      }
+                    }}
+                    style={styles.sectionEditButton}
+                  >
+                    {selectedThreadIds.size === familyThreads.length && familyThreads.length > 0 ? "Deselect All" : "Select All"}
+                  </button>
+                  <button onClick={exitThreadsSelectMode} style={styles.sectionEditButton}>Done</button>
+                </div>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                   {familyThreads.length > 0 && (
@@ -1337,6 +1390,16 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           <span style={styles.userName}>{user.name.split(" ")[0]}</span>
         </div>
         <div style={styles.userActions}>
+          {user.role === "admin" && (
+            <button onClick={() => { router.push("/admin"); onNavigate(); }} style={styles.iconButton} title="Admin">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4" />
+                <rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4" />
+                <rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4" />
+                <rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4" />
+              </svg>
+            </button>
+          )}
           <button onClick={() => { router.push("/settings"); onNavigate(); }} style={styles.iconButton} title="Settings">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.4" />
@@ -1705,6 +1768,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   section: {
     marginBottom: "4px",
+    paddingBottom: "4px",
+    borderBottom: "1px solid var(--border)",
   },
   sectionHeaderRow: {
     display: "flex",
@@ -1902,11 +1967,11 @@ const styles: Record<string, React.CSSProperties> = {
     display: "block",
   },
 
-  // Family
+  // Family (section style now used; this kept for reference only)
   familySection: {
-    padding: "8px 6px",
-    borderTop: "1px solid var(--border)",
-    marginTop: "auto",
+    marginBottom: "4px",
+    paddingBottom: "4px",
+    borderBottom: "1px solid var(--border)",
   },
   familyButton: {
     width: "100%",
