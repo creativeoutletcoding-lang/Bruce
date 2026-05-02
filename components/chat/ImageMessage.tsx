@@ -15,7 +15,9 @@ export default function ImageMessage({ url, prompt, isHD }: ImageMessageProps) {
   if (imgError) {
     return (
       <div style={styles.wrapper}>
-        <div style={styles.error}>Image generation failed. Try again.</div>
+        <a href={url} target="_blank" rel="noopener noreferrer" style={styles.fallbackLink}>
+          View image →
+        </a>
       </div>
     );
   }
@@ -124,12 +126,10 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.75rem",
     color: "var(--text-tertiary)",
   },
-  error: {
-    padding: "12px 16px",
-    borderRadius: "8px",
-    backgroundColor: "var(--bg-secondary)",
-    border: "1px solid var(--border)",
+  fallbackLink: {
     fontSize: "0.875rem",
-    color: "var(--text-secondary)",
+    color: "var(--accent)",
+    textDecoration: "none",
+    padding: "2px 0",
   },
 };

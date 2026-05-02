@@ -155,16 +155,21 @@ export default function ProjectChatWindow({
       const sentinelParts = accumulated.split("\x1f");
       const imageReqSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_REQ:"));
 
+      // Finalize streaming text message — remove entirely if empty (image-only response)
       const finalText = sentinelParts[0]
         .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
         .trim();
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === streamMsgId
-            ? { ...m, content: finalText, isStreaming: false, created_at: new Date().toISOString() }
-            : m
-        )
-      );
+      if (finalText) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamMsgId
+              ? { ...m, content: finalText, isStreaming: false, created_at: new Date().toISOString() }
+              : m
+          )
+        );
+      } else {
+        setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
+      }
 
       // Fire image generation as a separate client-side fetch
       if (imageReqSentinel) {

@@ -55,15 +55,21 @@ export async function POST(request: NextRequest) {
       .then();
   }
 
-  // Load conversation history
+  // Load conversation history — replace image messages with a brief note
   let history: Array<{ role: string; content: string }> = [];
   if (chatId) {
     const { data: msgs } = await supabase
       .from("messages")
-      .select("role, content")
+      .select("role, content, metadata")
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true });
-    history = msgs ?? [];
+    history = (msgs ?? []).map((m) => {
+      const meta = m.metadata as Record<string, unknown> | null;
+      return {
+        role: m.role as string,
+        content: meta?.content_type === "image" ? "[image generated]" : (m.content as string),
+      };
+    });
   }
 
   // Build system prompt

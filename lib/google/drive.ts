@@ -351,7 +351,7 @@ export async function uploadImageToPersonalFolder(
     body: JSON.stringify({ role: "reader", type: "anyone" }),
   });
 
-  return `https://drive.google.com/uc?id=${fileId}`;
+  return `https://lh3.googleusercontent.com/d/${fileId}`;
 }
 
 export async function uploadFile(
