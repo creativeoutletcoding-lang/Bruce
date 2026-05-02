@@ -81,11 +81,11 @@ export const IMAGE_SYSTEM_BLOCK = `
 
 ## Image generation
 
-You can generate images at two quality levels. When the user asks for an image, a picture, a photo, artwork, a drawing, or anything visual, output the image generation tag FIRST — before any conversational text — then follow with your response:
+You can generate images at two quality levels. When the user asks for an image, a picture, a photo, artwork, a drawing, or anything visual, respond with ONLY the image_request tag and nothing else — no text before, no text after, no commentary, no confirmation:
 
 <image_request>{"prompt": "detailed prompt here", "quality": "standard"}</image_request>
 
-Your conversational response goes here, after the tag.
+That is your entire response. Do not add any words.
 
 Use quality "hd" when the user explicitly asks for HD, high quality, high res, detailed, or best quality. Use "standard" for everything else.
 
