@@ -177,6 +177,7 @@ export default function ChatWindow({
       console.log(`[client] isClient value when sentinel received: ${isClient}`);
 
       // Fire image generation — image appears first, text after
+      console.log(`[client] gate check: !incognito = ${!incognito}`);
       if (imageReqSentinel && !incognito && isClient) {
         try {
           const reqData = JSON.parse(imageReqSentinel.slice("IMAGE_REQ:".length)) as {
@@ -184,6 +185,7 @@ export default function ChatWindow({
             quality: string;
             chatId: string;
           };
+          console.log(`[client] imageRequest value: prompt='${reqData.prompt.slice(0, 80)}' quality='${reqData.quality}'`);
           const skeletonId = `skeleton-${Date.now()}`;
           console.log(`[client] insertSkeleton called — skeletonId: ${skeletonId}`);
           // Atomic: remove stream placeholder, insert skeleton first, text below
@@ -207,6 +209,8 @@ export default function ChatWindow({
             }
             return [...withoutStream, skeleton];
           });
+          console.log(`[client] post-stream image fetch block entered — pendingImageRef current: none`);
+          console.log(`[client] calling /api/images/generate...`);
           const imgRes = await fetch("/api/images/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
