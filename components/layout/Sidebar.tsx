@@ -229,9 +229,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [sidebarPullDistance, setSidebarPullDistance] = useState(0);
   const [sidebarIsRefreshing, setSidebarIsRefreshing] = useState(false);
 
-  // ── responsive: mobile/desktop ───────────────────────────────────────────
-  const [isMobile, setIsMobile] = useState(false);
-
   // ── section collapse ─────────────────────────────────────────────────────
   const [projectsExpanded, setProjectsExpanded] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -347,13 +344,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       setLoadingProjectChats(false);
     }
   }
-
-  useEffect(() => {
-    function checkMobile() { setIsMobile(window.innerWidth <= 768); }
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, []);
 
   // ── realtime subscription + initial load ─────────────────────────────────
   useEffect(() => {

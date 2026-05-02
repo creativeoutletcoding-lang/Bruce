@@ -21,7 +21,7 @@ export default function ChatWindow({
   initialTitle,
 }: ChatWindowProps) {
   const { incognito } = useChatContext();
-  const [isClient, setIsClient] = useState(false);
+  const [isClient, setIsClient] = useState(() => typeof window !== "undefined");
   const [messages, setMessages] = useState<ChatMessage[]>(
     initialMessages.map((m) => ({
       id: m.id,

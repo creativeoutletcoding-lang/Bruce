@@ -37,7 +37,7 @@ export default function ProjectChatWindow({
       metadata: (m.metadata as Record<string, unknown>) ?? undefined,
     }))
   );
-  const [isClient, setIsClient] = useState(false);
+  const [isClient, setIsClient] = useState(() => typeof window !== "undefined");
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
