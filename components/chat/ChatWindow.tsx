@@ -173,6 +173,9 @@ export default function ChatWindow({
         .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
         .trim();
 
+      console.log(`[client] stream ended — finalText: '${finalText}' imageReqFound: ${!!imageReqSentinel}`);
+      console.log(`[client] isClient value when sentinel received: ${isClient}`);
+
       // Fire image generation — image appears first, text after
       if (imageReqSentinel && !incognito && isClient) {
         try {
@@ -182,6 +185,7 @@ export default function ChatWindow({
             chatId: string;
           };
           const skeletonId = `skeleton-${Date.now()}`;
+          console.log(`[client] insertSkeleton called — skeletonId: ${skeletonId}`);
           // Atomic: remove stream placeholder, insert skeleton first, text below
           setMessages((prev) => {
             const withoutStream = prev.filter((m) => m.id !== streamMsgId);

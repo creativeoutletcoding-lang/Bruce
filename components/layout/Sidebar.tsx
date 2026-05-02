@@ -266,6 +266,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     const { data } = await supabase
       .from("chats")
       .select(`id, title, type, project_id, last_message_at, messages (content, role, created_at)`)
+      .eq("owner_id", user.id)
       .is("project_id", null)
       .neq("type", "incognito")
       .neq("type", "family_group")
@@ -321,6 +322,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       const { data } = await supabase
         .from("chats")
         .select("id, title, owner_id, last_message_at, project_id")
+        .eq("owner_id", user.id)
         .not("project_id", "is", null)
         .order("last_message_at", { ascending: false });
 
