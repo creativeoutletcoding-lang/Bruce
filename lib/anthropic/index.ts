@@ -1,3 +1,4 @@
+// Anthropic helpers — memory assembly, system prompts, image generation block
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const MAX_CORE = 20;
