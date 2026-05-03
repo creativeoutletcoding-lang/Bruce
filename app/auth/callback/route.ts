@@ -213,6 +213,15 @@ async function handleCallback(request: NextRequest) {
       }
     }
 
+    const MEMBER_COLORS = ["#E67C73", "#4285F4", "#F6BF26", "#33B679", "#8E24AA", "#F4511E"];
+    const { count: userCount } = await adminSupabase
+      .from("users")
+      .select("id", { count: "exact", head: true });
+    const idx = (userCount ?? 0) < MEMBER_COLORS.length
+      ? (userCount ?? 0)
+      : 3 + (((userCount ?? 0) - 3) % 3);
+    const colorHex = MEMBER_COLORS[idx];
+
     console.log("[callback] step=insert_user");
     // Use service role for the insert: auth is already verified (OAuth + invite
     // token). The anon client's session can be unavailable during this callback
@@ -223,6 +232,7 @@ async function handleCallback(request: NextRequest) {
       name: (data.user.user_metadata.full_name as string) ?? data.user.email!,
       avatar_url: (data.user.user_metadata.avatar_url as string) ?? null,
       role: isAdmin ? "admin" : "member",
+      color_hex: colorHex,
     });
 
     if (insertErr) {
