@@ -10,6 +10,9 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   workingStatus?: string | null;
   bubbleColorHex?: string;
+  isOwn?: boolean;
+  senderName?: string;
+  senderColorHex?: string;
   imageUrl?: string;
   attachmentType?: string;
   attachmentFilename?: string;
@@ -30,12 +33,18 @@ export default function MessageBubble({
   isStreaming = false,
   workingStatus,
   bubbleColorHex,
+  isOwn,
+  senderName,
+  senderColorHex,
   imageUrl,
   attachmentType,
   attachmentFilename,
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
-  const isUser = role === "user";
+  // isOwn=undefined means standalone chat (fall back to role); isOwn=true/false means project group chat
+  const isUser = isOwn !== undefined ? isOwn : role === "user";
+  const isHumanMessage = role === "user";
+  const showSenderLabel = isOwn === false && isHumanMessage && Boolean(senderName);
   const showIndicator = isStreaming && !content;
 
   return (
@@ -45,6 +54,11 @@ export default function MessageBubble({
       onMouseLeave={() => setHovered(false)}
     >
       <div className="msg-group" style={styles.messageGroup}>
+        {showSenderLabel && (
+          <div style={{ fontSize: "0.6875rem", fontWeight: 500, color: senderColorHex ?? "var(--text-secondary)", padding: "0 2px", marginBottom: "1px" }}>
+            {senderName}
+          </div>
+        )}
         {showIndicator ? (
           <div style={styles.indicatorBubble}>
             <div style={styles.dotsRow}>
@@ -60,8 +74,13 @@ export default function MessageBubble({
           <div
             style={{
               ...styles.bubble,
-              ...(isUser
-                ? { ...styles.userBubble, backgroundColor: bubbleColorHex ?? "var(--accent)" }
+              ...(isHumanMessage
+                ? {
+                    ...styles.userBubble,
+                    backgroundColor: isUser
+                      ? (bubbleColorHex ?? "var(--accent)")
+                      : (senderColorHex ?? "var(--accent)"),
+                  }
                 : styles.assistantBubble),
             }}
           >

@@ -23,6 +23,9 @@ export interface ChatMessage {
   imageUrl?: string;
   attachmentType?: string;
   attachmentFilename?: string;
+  sender_id?: string | null;
+  senderName?: string;
+  senderColorHex?: string;
 }
 
 interface MessageListProps {
@@ -30,9 +33,10 @@ interface MessageListProps {
   onRefresh?: () => void | Promise<void>;
   userColorHex?: string;
   streamingStatus?: string | null;
+  currentUserId?: string;
 }
 
-export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus }: MessageListProps) {
+export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus, currentUserId }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -128,6 +132,13 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 isStreaming={msg.isStreaming}
                 workingStatus={msg.isStreaming ? streamingStatus : undefined}
                 bubbleColorHex={userColorHex}
+                isOwn={
+                  currentUserId !== undefined && msg.sender_id !== undefined
+                    ? msg.sender_id === currentUserId
+                    : undefined
+                }
+                senderName={msg.senderName}
+                senderColorHex={msg.senderColorHex}
                 imageUrl={msg.imageUrl ?? (msg.metadata?.image_url as string | undefined)}
                 attachmentType={msg.attachmentType}
                 attachmentFilename={msg.attachmentFilename}

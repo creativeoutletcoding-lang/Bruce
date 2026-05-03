@@ -8,7 +8,7 @@ import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
 import type { FileAttachment } from "@/components/chat/MessageInput";
 import type { ChatMessage } from "@/components/chat/MessageList";
-import type { Message, MessageRole } from "@/lib/types";
+import type { Message, MessageRole, ProjectMemberDetail } from "@/lib/types";
 import { modelLabel } from "@/lib/models";
 
 interface ProjectChatWindowProps {
@@ -21,6 +21,8 @@ interface ProjectChatWindowProps {
   initialInput?: string;
   userColorHex?: string;
   initialModel?: string;
+  currentUserId?: string;
+  members?: ProjectMemberDetail[];
 }
 
 export default function ProjectChatWindow({
@@ -32,19 +34,31 @@ export default function ProjectChatWindow({
   initialInput,
   userColorHex,
   initialModel,
+  currentUserId,
+  members,
 }: ProjectChatWindowProps) {
   const router = useRouter();
+  const memberMapRef = useRef<Record<string, { name: string; color_hex: string }>>(
+    Object.fromEntries((members ?? []).map((m) => [m.id, { name: m.name, color_hex: m.color_hex }]))
+  );
+  const isStreamingRef = useRef(false);
   const [messages, setMessages] = useState<ChatMessage[]>(
-    initialMessages.map((m) => ({
-      id: m.id,
-      role: m.role,
-      content: m.content,
-      created_at: m.created_at,
-      metadata: (m.metadata as Record<string, unknown>) ?? undefined,
-      imageUrl: (m.image_url as string | undefined) ?? undefined,
-      attachmentType: (m.attachment_type as string | undefined) ?? undefined,
-      attachmentFilename: (m.attachment_filename as string | undefined) ?? undefined,
-    }))
+    initialMessages.map((m) => {
+      const senderInfo = m.sender_id ? memberMapRef.current[m.sender_id] : null;
+      return {
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        created_at: m.created_at,
+        metadata: (m.metadata as Record<string, unknown>) ?? undefined,
+        imageUrl: (m.image_url as string | undefined) ?? undefined,
+        attachmentType: (m.attachment_type as string | undefined) ?? undefined,
+        attachmentFilename: (m.attachment_filename as string | undefined) ?? undefined,
+        sender_id: m.sender_id,
+        senderName: senderInfo?.name,
+        senderColorHex: senderInfo?.color_hex,
+      };
+    })
   );
   const [isClient, setIsClient] = useState(() => typeof window !== "undefined");
   const [input, setInput] = useState("");
@@ -62,14 +76,25 @@ export default function ProjectChatWindow({
     const supabase = createClient();
     const { data } = await supabase
       .from("messages")
-      .select("id, role, content, created_at, metadata, image_url, attachment_type, attachment_filename")
+      .select("id, sender_id, role, content, created_at, metadata, image_url, attachment_type, attachment_filename")
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true })
       .limit(100);
     if (!data) return;
     setMessages(
-      (data as Array<{ id: string; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null; image_url?: string | null; attachment_type?: string | null; attachment_filename?: string | null }>).map(
-        (m) => ({
+      (data as Array<{
+        id: string;
+        sender_id: string | null;
+        role: string;
+        content: string;
+        created_at: string;
+        metadata: Record<string, unknown> | null;
+        image_url?: string | null;
+        attachment_type?: string | null;
+        attachment_filename?: string | null;
+      }>).map((m) => {
+        const senderInfo = m.sender_id ? memberMapRef.current[m.sender_id] : null;
+        return {
           id: m.id,
           role: m.role as MessageRole,
           content: m.content,
@@ -78,8 +103,11 @@ export default function ProjectChatWindow({
           imageUrl: m.image_url ?? undefined,
           attachmentType: m.attachment_type ?? undefined,
           attachmentFilename: m.attachment_filename ?? undefined,
-        })
-      )
+          sender_id: m.sender_id,
+          senderName: senderInfo?.name,
+          senderColorHex: senderInfo?.color_hex,
+        };
+      })
     );
   }, [chatId]);
 
@@ -87,6 +115,60 @@ export default function ProjectChatWindow({
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
+  // Realtime: listen for messages from other members in this chat
+  useEffect(() => {
+    if (!currentUserId) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`project-chat-${chatId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` },
+        (payload) => {
+          const msg = payload.new as {
+            id: string;
+            sender_id: string | null;
+            role: string;
+            content: string;
+            created_at: string;
+            metadata: Record<string, unknown> | null;
+            image_url: string | null;
+            attachment_type: string | null;
+            attachment_filename: string | null;
+          };
+          // Skip own messages — handled optimistically, reconciled after stream
+          if (msg.sender_id === currentUserId) return;
+          // Skip Bruce's reply while we're streaming it — already in local state
+          if (msg.sender_id === null && isStreamingRef.current) return;
+          const senderInfo = msg.sender_id ? memberMapRef.current[msg.sender_id] : null;
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [
+              ...prev,
+              {
+                id: msg.id,
+                role: msg.role as MessageRole,
+                content: msg.content,
+                created_at: msg.created_at,
+                metadata: msg.metadata ?? undefined,
+                imageUrl: msg.image_url ?? undefined,
+                attachmentType: msg.attachment_type ?? undefined,
+                attachmentFilename: msg.attachment_filename ?? undefined,
+                sender_id: msg.sender_id,
+                senderName: senderInfo?.name,
+                senderColorHex: senderInfo?.color_hex,
+              },
+            ];
+          });
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [chatId, currentUserId]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
@@ -175,11 +257,13 @@ export default function ProjectChatWindow({
         imageUrl: fileToSend?.type === "image" ? fileToSend.previewUrl : undefined,
         attachmentType: fileToSend?.type,
         attachmentFilename: fileToSend?.filename,
+        sender_id: currentUserId ?? null,
       },
       { id: streamMsgId, role: "assistant", content: "", isStreaming: true },
     ]);
     setIsStreaming(true);
 
+    let hadImageReq = false;
     try {
       const res = await fetch(`/api/projects/${projectId}/chat`, {
         method: "POST",
@@ -246,6 +330,7 @@ export default function ProjectChatWindow({
 
       // Fire image generation — image appears first, text after
       if (imageReqSentinel && isClient) {
+        hadImageReq = true;
         try {
           const reqData = JSON.parse(imageReqSentinel.slice("IMAGE_REQ:".length)) as {
             prompt: string;
@@ -334,6 +419,10 @@ export default function ProjectChatWindow({
     } finally {
       setIsStreaming(false);
       setWorkingStatus(null);
+      // Reconcile tmp IDs with real DB IDs (skip during image gen — skeleton still pending)
+      if (!hadImageReq) {
+        await loadMessages();
+      }
     }
   }
 
@@ -360,7 +449,7 @@ export default function ProjectChatWindow({
         onModelChange={handleModelChange}
       />
 
-      <MessageList messages={messages} onRefresh={loadMessages} userColorHex={userColorHex} streamingStatus={workingStatus} />
+      <MessageList messages={messages} onRefresh={loadMessages} userColorHex={userColorHex} streamingStatus={workingStatus} currentUserId={currentUserId} />
 
       {error && (
         <div style={styles.errorRow}>

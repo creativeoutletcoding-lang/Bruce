@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import ProjectChatWindow from "@/components/project/ProjectChatWindow";
-import type { Message } from "@/lib/types";
+import type { Message, ProjectMemberDetail, ProjectMemberRole } from "@/lib/types";
 
 interface Props {
   params: Promise<{ id: string; chatId: string }>;
@@ -39,7 +39,7 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
 
   const { data: messages } = await supabase
     .from("messages")
-    .select("id, chat_id, sender_id, role, content, metadata, created_at")
+    .select("id, chat_id, sender_id, role, content, metadata, created_at, image_url, attachment_type, attachment_filename")
     .eq("chat_id", chatId)
     .order("created_at", { ascending: true });
 
@@ -50,6 +50,23 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
     .single();
   const userColorHex = (userProfile as { color_hex: string; preferred_model: string | null } | null)?.color_hex;
   const preferredModel = (userProfile as { color_hex: string; preferred_model: string | null } | null)?.preferred_model ?? "claude-sonnet-4-6";
+
+  const adminSupabase = createServiceRoleClient();
+  const { data: memberRows } = await adminSupabase
+    .from("project_members")
+    .select("user_id, role, users(id, name, color_hex)")
+    .eq("project_id", projectId);
+
+  const members: ProjectMemberDetail[] = (memberRows ?? []).map((pm) => {
+    const u = (pm.users as unknown) as { id: string; name: string; color_hex: string } | null;
+    return {
+      id: u?.id ?? pm.user_id,
+      name: u?.name ?? "Member",
+      avatar_url: null,
+      color_hex: u?.color_hex ?? "#0F6E56",
+      role: pm.role as ProjectMemberRole,
+    };
+  });
 
   return (
     <ProjectChatWindow
@@ -62,6 +79,8 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
       initialInput={initialInput}
       userColorHex={userColorHex}
       initialModel={preferredModel}
+      currentUserId={user.id}
+      members={members}
     />
   );
 }
