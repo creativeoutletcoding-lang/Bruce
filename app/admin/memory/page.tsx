@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 interface MemberSummary {
   user_id: string;
   name: string;
-  avatar_url: string | null;
+  color_hex: string;
   core_count: number;
   active_count: number;
   archive_count: number;
@@ -292,14 +292,9 @@ export default function MemoryPage() {
           <div key={m.user_id} className="admin-card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                {m.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={m.avatar_url} alt={m.name} referrerPolicy="no-referrer" style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover" }} />
-                ) : (
-                  <div style={{ width: 36, height: 36, borderRadius: "50%", backgroundColor: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600 }}>
-                    {m.name[0]}
-                  </div>
-                )}
+                <div style={{ width: 36, height: 36, borderRadius: "50%", backgroundColor: m.color_hex, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 500, fontSize: "0.75rem" }}>
+                  {m.name[0].toUpperCase()}
+                </div>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: "0.9375rem" }}>{m.name}</div>
                   <div style={{ fontSize: "0.8125rem", color: "var(--text-tertiary)" }}>

@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
   // Return summary per member
   const { data: users } = await admin
     .from("users")
-    .select("id, name, avatar_url")
+    .select("id, name, color_hex")
     .eq("status", "active")
     .order("name");
 
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
       return {
         user_id: u.id,
         name: u.name,
-        avatar_url: u.avatar_url,
+        color_hex: u.color_hex,
         core_count: tiers.core,
         active_count: tiers.active,
         archive_count: tiers.archive,

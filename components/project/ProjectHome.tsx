@@ -405,19 +405,9 @@ export default function ProjectHome({
                   }}
                   title={m.name}
                 >
-                  {m.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={m.avatar_url}
-                      alt=""
-                      style={styles.memberAvatarImg}
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <span style={styles.memberAvatarFallback}>
-                      {m.name.charAt(0).toUpperCase()}
-                    </span>
-                  )}
+                  <span style={styles.memberAvatarFallback}>
+                    {m.name.charAt(0).toUpperCase()}
+                  </span>
                 </div>
               );
             })}
@@ -532,19 +522,9 @@ export default function ProjectHome({
               return (
               <div key={m.id} style={styles.memberRow}>
                 <div style={{ ...styles.memberAvatarSmall, backgroundColor: m.color_hex }}>
-                  {m.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={m.avatar_url}
-                      alt=""
-                      style={styles.memberAvatarSmallImg}
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <span style={styles.memberAvatarSmallFallback}>
-                      {m.name.charAt(0).toUpperCase()}
-                    </span>
-                  )}
+                  <span style={styles.memberAvatarSmallFallback}>
+                    {m.name.charAt(0).toUpperCase()}
+                  </span>
                 </div>
                 <span style={styles.memberName}>{m.name}</span>
                 <span
@@ -904,19 +884,9 @@ export default function ProjectHome({
                       disabled={isAddingMember}
                     >
                       <div style={{ ...styles.memberAvatarSmall, backgroundColor: u.color_hex }}>
-                        {u.avatar_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={u.avatar_url}
-                            alt=""
-                            style={styles.memberAvatarSmallImg}
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <span style={styles.memberAvatarSmallFallback}>
-                            {u.name.charAt(0).toUpperCase()}
-                          </span>
-                        )}
+                        <span style={styles.memberAvatarSmallFallback}>
+                          {u.name.charAt(0).toUpperCase()}
+                        </span>
                       </div>
                       <span style={styles.userPickerName}>{u.name}</span>
                     </button>
@@ -983,8 +953,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     position: "relative",
   },
-  memberAvatarImg: { width: "100%", height: "100%", objectFit: "cover" },
-  memberAvatarFallback: { fontSize: "0.6875rem", fontWeight: "600", color: "#fff" },
+  memberAvatarFallback: { fontSize: "0.6875rem", fontWeight: "500", color: "#fff" },
   memberAvatarMore: {
     backgroundColor: "var(--bg-secondary)",
     border: "2px solid var(--border)",
@@ -1086,10 +1055,9 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     flexShrink: 0,
   },
-  memberAvatarSmallImg: { width: "100%", height: "100%", objectFit: "cover" },
   memberAvatarSmallFallback: {
     fontSize: "0.6875rem",
-    fontWeight: "600",
+    fontWeight: "500",
     color: "#fff",
   },
   memberName: {

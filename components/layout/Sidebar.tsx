@@ -100,30 +100,20 @@ function ThreadAvatarStack({ members }: { members: ThreadMemberSummary[] }) {
             flexShrink: 0,
           }}
         >
-          {m.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={m.avatar_url}
-              alt=""
-              referrerPolicy="no-referrer"
-              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-            />
-          ) : (
-            <div
-              style={{
-                width: "100%",
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "0.45rem",
-                fontWeight: "700",
-                color: "#fff",
-              }}
-            >
-              {m.name.charAt(0).toUpperCase()}
-            </div>
-          )}
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "0.45rem",
+              fontWeight: "700",
+              color: "#fff",
+            }}
+          >
+            {m.name.charAt(0).toUpperCase()}
+          </div>
         </div>
       ))}
       {overflow > 0 && (
@@ -1374,14 +1364,9 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       {/* User profile */}
       <div style={styles.userSection}>
         <div style={styles.userInfo}>
-          {user.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={user.avatar_url} alt="" style={styles.avatar} referrerPolicy="no-referrer" />
-          ) : (
-            <div style={{ ...styles.avatarFallback, backgroundColor: user.color_hex }}>
-              {user.name.charAt(0).toUpperCase()}
-            </div>
-          )}
+          <div style={{ ...styles.avatarFallback, backgroundColor: user.color_hex }}>
+            {user.name.charAt(0).toUpperCase()}
+          </div>
           <span style={styles.userName}>{user.name.split(" ")[0]}</span>
         </div>
         <div style={styles.userActions}>
@@ -2044,23 +2029,16 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "10px",
   },
-  avatar: {
-    width: "28px",
-    height: "28px",
-    borderRadius: "var(--radius-full)",
-    objectFit: "cover",
-  },
   avatarFallback: {
     width: "28px",
     height: "28px",
     borderRadius: "var(--radius-full)",
-    backgroundColor: "var(--accent)",
     color: "#fff",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     fontSize: "0.75rem",
-    fontWeight: "600",
+    fontWeight: "500",
   },
   userName: {
     fontSize: "0.875rem",

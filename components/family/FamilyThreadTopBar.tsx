@@ -111,30 +111,20 @@ export default function FamilyThreadTopBar({
                     flexShrink: 0,
                   }}
                 >
-                  {m.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={m.avatar_url}
-                      alt=""
-                      referrerPolicy="no-referrer"
-                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "0.5rem",
-                        fontWeight: "700",
-                        color: "#fff",
-                      }}
-                    >
-                      {m.name.charAt(0).toUpperCase()}
-                    </div>
-                  )}
+                  <div
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "0.5rem",
+                      fontWeight: "700",
+                      color: "#fff",
+                    }}
+                  >
+                    {m.name.charAt(0).toUpperCase()}
+                  </div>
                 </div>
               );
             })}
@@ -241,12 +231,7 @@ export default function FamilyThreadTopBar({
                       onClick={() => setSelectedUserId(member.id)}
                     >
                       <div style={{ ...styles.memberAvatar, backgroundColor: member.color_hex }}>
-                        {member.avatar_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={member.avatar_url} alt="" style={styles.avatarImg} referrerPolicy="no-referrer" />
-                        ) : (
-                          <span style={{ ...styles.avatarInitial, color: "#fff" }}>{member.name.charAt(0)}</span>
-                        )}
+                        <span style={styles.avatarInitial}>{member.name.charAt(0)}</span>
                       </div>
                       <span style={styles.memberName}>{member.name.split(" ")[0]}</span>
                       {selectedUserId === member.id && (
@@ -295,12 +280,7 @@ export default function FamilyThreadTopBar({
                 return (
                   <div key={m.id} style={styles.memberRow}>
                     <div style={{ ...styles.memberAvatar, backgroundColor: m.color_hex }}>
-                      {m.avatar_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={m.avatar_url} alt="" style={styles.avatarImg} referrerPolicy="no-referrer" />
-                      ) : (
-                        <span style={{ ...styles.avatarInitial, color: "#fff" }}>{m.name.charAt(0)}</span>
-                      )}
+                      <span style={styles.avatarInitial}>{m.name.charAt(0)}</span>
                     </div>
                     <span style={styles.memberName}>{m.name}</span>
                   </div>
@@ -508,11 +488,6 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-  },
-  avatarImg: {
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
   },
   avatarInitial: {
     fontSize: "0.75rem",
