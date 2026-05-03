@@ -1879,7 +1879,10 @@ const styles: Record<string, React.CSSProperties> = {
     borderLeft: "2px solid transparent",
   },
   chatItemActive: {
-    borderLeft: "2px solid var(--accent)",
+    backgroundColor: "rgba(15, 110, 86, 0.12)",
+    borderLeft: "2px solid #0F6E56",
+    color: "#fff",
+    fontWeight: "normal",
   },
   chatItemSelected: {
     backgroundColor: "rgba(15, 110, 86, 0.06)",
@@ -1976,7 +1979,10 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "background-color var(--transition)",
   },
   familyButtonActive: {
-    borderLeft: "2px solid var(--accent)",
+    backgroundColor: "rgba(15, 110, 86, 0.12)",
+    borderLeft: "2px solid #0F6E56",
+    color: "#fff",
+    fontWeight: "normal",
   },
   familyEmoji: {
     fontSize: "1.125rem",
@@ -2007,7 +2013,10 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "background-color var(--transition)",
   },
   threadItemActive: {
-    borderLeft: "2px solid var(--accent)",
+    backgroundColor: "rgba(15, 110, 86, 0.12)",
+    borderLeft: "2px solid #0F6E56",
+    color: "#fff",
+    fontWeight: "normal",
   },
   threadName: {
     fontSize: "0.8125rem",

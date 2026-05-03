@@ -213,14 +213,21 @@ async function handleCallback(request: NextRequest) {
       }
     }
 
-    const MEMBER_COLORS = ["#E67C73", "#4285F4", "#F6BF26", "#33B679", "#8E24AA", "#F4511E"];
-    const { count: userCount } = await adminSupabase
-      .from("users")
-      .select("id", { count: "exact", head: true });
-    const idx = (userCount ?? 0) < MEMBER_COLORS.length
-      ? (userCount ?? 0)
-      : 3 + (((userCount ?? 0) - 3) % 3);
-    const colorHex = MEMBER_COLORS[idx];
+    let colorHex: string;
+    if (isAdmin) {
+      colorHex = "#33B679";
+    } else {
+      const MEMBER_COLORS = ["#9E69AF", "#0B8043", "#C0CA33"];
+      const OVERFLOW_COLORS = ["#4285F4", "#F4511E", "#E67C73"];
+      const { count: memberCount } = await adminSupabase
+        .from("users")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "member");
+      const idx = memberCount ?? 0;
+      colorHex = idx < MEMBER_COLORS.length
+        ? MEMBER_COLORS[idx]
+        : OVERFLOW_COLORS[(idx - MEMBER_COLORS.length) % OVERFLOW_COLORS.length];
+    }
 
     console.log("[callback] step=insert_user");
     // Use service role for the insert: auth is already verified (OAuth + invite
