@@ -32,14 +32,14 @@ export async function POST(request: NextRequest, { params }: Props) {
   } = await supabase.auth.getUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  let body: { message: string; chatId: string | null; currentLocation?: string; image?: { base64: string; mediaType: string } };
+  let body: { message: string; chatId: string | null; currentLocation?: string; image?: { base64: string; mediaType: string }; document?: { base64: string; mediaType: string; filename: string } };
   try {
     body = await request.json();
   } catch {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const { message, chatId, currentLocation, image } = body;
+  const { message, chatId, currentLocation, image, document } = body;
   if (!message?.trim()) return new Response("Message required", { status: 400 });
 
   // Verify user is a project member (RLS will reject if not, belt-and-suspenders)
@@ -55,14 +55,15 @@ export async function POST(request: NextRequest, { params }: Props) {
 
   if (projectError || !project) return new Response("Project not found", { status: 404 });
 
-  // Get user's name and home location
+  // Get user's name, home location, and preferred model
   const { data: userProfile } = await supabase
     .from("users")
-    .select("name, home_location")
+    .select("name, home_location, preferred_model")
     .eq("id", user.id)
     .single();
-  const userName = (userProfile as { name: string; home_location: string | null } | null)?.name ?? "Unknown";
-  const homeLocation = (userProfile as { name: string; home_location: string | null } | null)?.home_location ?? "Arlington, Virginia";
+  const userName = (userProfile as { name: string; home_location: string | null; preferred_model: string | null } | null)?.name ?? "Unknown";
+  const homeLocation = (userProfile as { name: string; home_location: string | null; preferred_model: string | null } | null)?.home_location ?? "Arlington, Virginia";
+  const preferredModel = (userProfile as { name: string; home_location: string | null; preferred_model: string | null } | null)?.preferred_model ?? "claude-sonnet-4-6";
 
   // Fetch member names via service role (non-admin RLS limitation)
   const adminSupabase = createServiceRoleClient();
@@ -236,13 +237,35 @@ export async function POST(request: NextRequest, { params }: Props) {
     } catch { /* non-fatal — message still sends */ }
   }
 
+  let userDocUrl: string | undefined;
+  if (document) {
+    try {
+      const fileExt = document.filename.split(".").pop() ?? "bin";
+      const filePath = `${user.id}/${Date.now()}.${fileExt}`;
+      const { error: uploadErr } = await adminSupabase.storage
+        .from("message-images")
+        .upload(filePath, Buffer.from(document.base64, "base64"), {
+          contentType: document.mediaType,
+          upsert: false,
+        });
+      if (!uploadErr) {
+        const { data: urlData } = adminSupabase.storage
+          .from("message-images")
+          .getPublicUrl(filePath);
+        userDocUrl = urlData.publicUrl;
+      }
+    } catch { /* non-fatal — message still sends */ }
+  }
+
   // Insert user message
   const { error: msgError } = await adminSupabase.from("messages").insert({
     chat_id: currentChatId,
     sender_id: user.id,
     role: "user",
     content: message,
-    image_url: userImageUrl ?? null,
+    image_url: userImageUrl ?? userDocUrl ?? null,
+    attachment_type: image ? "image" : document ? "document" : null,
+    attachment_filename: document?.filename ?? null,
   });
 
   if (msgError) {
@@ -259,6 +282,17 @@ export async function POST(request: NextRequest, { params }: Props) {
             media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
             data: image.base64,
           },
+        },
+        { type: "text" as const, text: message },
+      ]
+    : document
+    ? [
+        {
+          type: "document" as const,
+          source: document.mediaType === "application/pdf"
+            ? { type: "base64" as const, media_type: "application/pdf" as const, data: document.base64 }
+            : { type: "text" as const, media_type: "text/plain" as const, data: document.base64 },
+          title: document.filename,
         },
         { type: "text" as const, text: message },
       ]
@@ -322,7 +356,7 @@ export async function POST(request: NextRequest, { params }: Props) {
 
         while (true) {
           const stream = anthropic.messages.stream({
-            model: "claude-sonnet-4-6",
+            model: preferredModel,
             max_tokens: 2048,
             system: systemPrompt,
             messages: currentMessages,

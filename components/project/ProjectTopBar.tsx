@@ -1,17 +1,22 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import ModelPicker from "@/components/ui/ModelPicker";
 
 interface ProjectTopBarProps {
   projectId: string;
   projectName: string;
   projectIcon: string;
+  model?: string;
+  onModelChange?: (id: string) => void;
 }
 
 export default function ProjectTopBar({
   projectId,
   projectName,
   projectIcon,
+  model,
+  onModelChange,
 }: ProjectTopBarProps) {
   const router = useRouter();
 
@@ -40,6 +45,10 @@ export default function ProjectTopBar({
         </span>
         <h1 style={styles.title}>{projectName}</h1>
       </div>
+
+      {model && onModelChange && (
+        <ModelPicker currentModel={model} onSelect={onModelChange} />
+      )}
     </div>
   );
 }

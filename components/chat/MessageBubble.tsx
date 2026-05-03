@@ -10,6 +10,8 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   bubbleColorHex?: string;
   imageUrl?: string;
+  attachmentType?: string;
+  attachmentFilename?: string;
 }
 
 function formatTimestamp(dateStr: string): string {
@@ -27,6 +29,8 @@ export default function MessageBubble({
   isStreaming = false,
   bubbleColorHex,
   imageUrl,
+  attachmentType,
+  attachmentFilename,
 }: MessageBubbleProps) {
   const [showTimestamp, setShowTimestamp] = useState(false);
   const isUser = role === "user";
@@ -46,7 +50,15 @@ export default function MessageBubble({
               : styles.assistantBubble),
           }}
         >
-          {imageUrl && (
+          {imageUrl && attachmentType === "document" ? (
+            <div style={styles.docChip}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+              <span style={styles.docChipName}>{attachmentFilename ?? "Document"}</span>
+            </div>
+          ) : imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={imageUrl}
@@ -59,7 +71,7 @@ export default function MessageBubble({
                 marginBottom: content ? "8px" : 0,
               }}
             />
-          )}
+          ) : null}
           {content && <span style={styles.content}>{content}</span>}
           {isStreaming && <span style={styles.cursor} aria-hidden="true" />}
         </div>
@@ -102,4 +114,21 @@ const styles: Record<string, React.CSSProperties> = {
     animation: "blink 1s step-end infinite",
   },
   timestamp: { fontSize: "0.6875rem", color: "var(--text-tertiary)", padding: "0 2px" },
+  docChip: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "6px 10px",
+    borderRadius: "var(--radius-sm)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    marginBottom: "6px",
+  },
+  docChipName: {
+    fontSize: "0.8125rem",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    maxWidth: "180px",
+  },
 };

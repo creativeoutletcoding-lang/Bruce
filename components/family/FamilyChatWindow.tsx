@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import MessageInput from "@/components/chat/MessageInput";
-import type { ImageAttachment } from "@/components/chat/MessageInput";
+import type { FileAttachment } from "@/components/chat/MessageInput";
 import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
@@ -59,7 +59,7 @@ export default function FamilyChatWindow({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
-  const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null);
+  const [attachedFile, setAttachedFile] = useState<FileAttachment | null>(null);
 
   const colorMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -232,11 +232,11 @@ export default function FamilyChatWindow({
   // ── Send ──────────────────────────────────────────────────────────────────
 
   async function sendMessage(text: string) {
-    if ((!text.trim() && !attachedImage) || bruceState !== "idle") return;
+    if ((!text.trim() && !attachedFile) || bruceState !== "idle") return;
 
-    const imageToSend = attachedImage;
+    const fileToSend = attachedFile;
     setInput("");
-    setAttachedImage(null);
+    setAttachedFile(null);
     setError(null);
     setContextMenu(null);
 
@@ -251,7 +251,7 @@ export default function FamilyChatWindow({
         sender_name: memberMap.current[currentUserId]?.name ?? null,
         sender_avatar: memberMap.current[currentUserId]?.avatar_url ?? null,
         created_at: new Date().toISOString(),
-        imageUrl: imageToSend?.previewUrl,
+        imageUrl: fileToSend?.type === "image" ? fileToSend.previewUrl : undefined,
       },
     ]);
 
@@ -265,7 +265,8 @@ export default function FamilyChatWindow({
           message: text,
           chatId,
           currentLocation,
-          image: imageToSend ? { base64: imageToSend.base64, mediaType: imageToSend.mediaType } : undefined,
+          image: fileToSend?.type === "image" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType } : undefined,
+          document: fileToSend?.type === "document" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType, filename: fileToSend.filename } : undefined,
         }),
       });
 
@@ -489,10 +490,10 @@ export default function FamilyChatWindow({
                           : { ...styles.memberBubble, borderColor: `${memberColor}50` }),
                       }}
                     >
-                      {msg.imageUrl && (
+                      {msg.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={msg.imageUrl} alt="" style={{ maxWidth: "240px", width: "100%", borderRadius: "var(--radius-md)", display: "block", marginBottom: msg.content ? "8px" : 0 }} />
-                      )}
+                      ) : null}
                       {msg.content}
                       {msg.isStreaming && <span style={styles.cursor} aria-hidden="true" />}
                     </div>
@@ -533,9 +534,9 @@ export default function FamilyChatWindow({
         onSend={handleSend}
         disabled={bruceState !== "idle"}
         placeholder={placeholder}
-        attachedImage={attachedImage}
-        onImageAttach={(img) => setAttachedImage(img)}
-        onImageClear={() => setAttachedImage(null)}
+        attachedFile={attachedFile}
+        onFileAttach={(f) => setAttachedFile(f)}
+        onFileClear={() => setAttachedFile(null)}
       />
 
       {contextMenu && (

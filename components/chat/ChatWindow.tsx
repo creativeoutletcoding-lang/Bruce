@@ -6,7 +6,7 @@ import { useChatContext } from "@/components/layout/ChatShell";
 import TopBar from "./TopBar";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
-import type { ImageAttachment } from "./MessageInput";
+import type { FileAttachment } from "./MessageInput";
 import type { ChatMessage } from "./MessageList";
 import type { Message, MessageRole } from "@/lib/types";
 
@@ -15,6 +15,7 @@ interface ChatWindowProps {
   initialMessages: Message[];
   initialTitle: string;
   userColorHex?: string;
+  initialModel?: string;
 }
 
 export default function ChatWindow({
@@ -22,6 +23,7 @@ export default function ChatWindow({
   initialMessages,
   initialTitle,
   userColorHex,
+  initialModel,
 }: ChatWindowProps) {
   const { incognito } = useChatContext();
   const [isClient, setIsClient] = useState(() => typeof window !== "undefined");
@@ -33,6 +35,8 @@ export default function ChatWindow({
       created_at: m.created_at,
       metadata: (m.metadata as Record<string, unknown>) ?? undefined,
       imageUrl: (m.image_url as string | undefined) ?? undefined,
+      attachmentType: (m.attachment_type as string | undefined) ?? undefined,
+      attachmentFilename: (m.attachment_filename as string | undefined) ?? undefined,
     }))
   );
   const [title, setTitle] = useState(initialTitle);
@@ -41,7 +45,8 @@ export default function ChatWindow({
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
-  const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null);
+  const [attachedFile, setAttachedFile] = useState<FileAttachment | null>(null);
+  const [model, setModel] = useState(initialModel ?? "claude-sonnet-4-6");
   const memoryFiredRef = useRef(false);
   const messagesRef = useRef(messages);
   const incognitoRef = useRef(incognito);
@@ -50,13 +55,13 @@ export default function ChatWindow({
     const supabase = createClient();
     const { data } = await supabase
       .from("messages")
-      .select("id, role, content, created_at, metadata, image_url")
+      .select("id, role, content, created_at, metadata, image_url, attachment_type, attachment_filename")
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true })
       .limit(100);
     if (!data) return;
     setMessages(
-      (data as Array<{ id: string; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null; image_url?: string | null }>).map(
+      (data as Array<{ id: string; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null; image_url?: string | null; attachment_type?: string | null; attachment_filename?: string | null }>).map(
         (m) => ({
           id: m.id,
           role: m.role as MessageRole,
@@ -64,6 +69,8 @@ export default function ChatWindow({
           created_at: m.created_at,
           metadata: m.metadata ?? undefined,
           imageUrl: m.image_url ?? undefined,
+          attachmentType: m.attachment_type ?? undefined,
+          attachmentFilename: m.attachment_filename ?? undefined,
         })
       )
     );
@@ -114,13 +121,22 @@ export default function ChatWindow({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  async function handleModelChange(newModel: string) {
+    setModel(newModel);
+    await fetch("/api/users/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_model: newModel }),
+    });
+  }
+
   async function handleSend() {
     const text = input.trim();
-    if ((!text && !attachedImage) || isStreaming) return;
+    if ((!text && !attachedFile) || isStreaming) return;
 
-    const imageToSend = attachedImage;
+    const fileToSend = attachedFile;
     setInput("");
-    setAttachedImage(null);
+    setAttachedFile(null);
     setError(null);
 
     const userMsgId = `tmp-user-${Date.now()}`;
@@ -131,7 +147,9 @@ export default function ChatWindow({
       role: "user",
       content: text,
       created_at: new Date().toISOString(),
-      imageUrl: imageToSend?.previewUrl,
+      imageUrl: fileToSend?.type === "image" ? fileToSend.previewUrl : undefined,
+      attachmentType: fileToSend?.type,
+      attachmentFilename: fileToSend?.filename,
     };
     const streamMsg: ChatMessage = {
       id: streamMsgId,
@@ -152,7 +170,8 @@ export default function ChatWindow({
           chatId,
           isIncognito: incognito,
           currentLocation,
-          image: imageToSend ? { base64: imageToSend.base64, mediaType: imageToSend.mediaType } : undefined,
+          image: fileToSend?.type === "image" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType } : undefined,
+          document: fileToSend?.type === "document" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType, filename: fileToSend.filename } : undefined,
         }),
       });
 
@@ -335,7 +354,7 @@ export default function ChatWindow({
         ...(incognito ? styles.incognitoFilter : {}),
       }}
     >
-      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} onRefresh={loadMessages} />
+      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} onRefresh={loadMessages} model={model} onModelChange={handleModelChange} />
 
       {incognito && (
         <div style={styles.incognitoNotice}>
@@ -363,9 +382,9 @@ export default function ChatWindow({
         onChange={setInput}
         onSend={handleSend}
         disabled={isStreaming}
-        attachedImage={attachedImage}
-        onImageAttach={(img) => setAttachedImage(img)}
-        onImageClear={() => setAttachedImage(null)}
+        attachedFile={attachedFile}
+        onFileAttach={(f) => setAttachedFile(f)}
+        onFileClear={() => setAttachedFile(null)}
       />
     </div>
   );

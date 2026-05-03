@@ -51,14 +51,14 @@ export async function POST(request: NextRequest) {
 
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  let body: { message: string; chatId: string; currentLocation?: string; image?: { base64: string; mediaType: string } };
+  let body: { message: string; chatId: string; currentLocation?: string; image?: { base64: string; mediaType: string }; document?: { base64: string; mediaType: string; filename: string } };
   try {
     body = await request.json();
   } catch {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const { message, chatId, currentLocation, image } = body;
+  const { message, chatId, currentLocation, image, document } = body;
 
   if (!message?.trim()) return new Response("Message required", { status: 400 });
   if (!chatId) return new Response("chatId required", { status: 400 });
@@ -112,13 +112,35 @@ export async function POST(request: NextRequest) {
     } catch { /* non-fatal — message still sends */ }
   }
 
+  let userDocUrl: string | undefined;
+  if (document) {
+    try {
+      const fileExt = document.filename.split(".").pop() ?? "bin";
+      const filePath = `${user.id}/${Date.now()}.${fileExt}`;
+      const { error: uploadErr } = await adminSupabase.storage
+        .from("message-images")
+        .upload(filePath, Buffer.from(document.base64, "base64"), {
+          contentType: document.mediaType,
+          upsert: false,
+        });
+      if (!uploadErr) {
+        const { data: urlData } = adminSupabase.storage
+          .from("message-images")
+          .getPublicUrl(filePath);
+        userDocUrl = urlData.publicUrl;
+      }
+    } catch { /* non-fatal — message still sends */ }
+  }
+
   // Save user message
   const { error: msgErr } = await adminSupabase.from("messages").insert({
     chat_id: chatId,
     sender_id: user.id,
     role: "user",
     content: message,
-    image_url: userImageUrl ?? null,
+    image_url: userImageUrl ?? userDocUrl ?? null,
+    attachment_type: image ? "image" : document ? "document" : null,
+    attachment_filename: document?.filename ?? null,
   });
 
   if (msgErr) {
@@ -222,6 +244,17 @@ export async function POST(request: NextRequest) {
             media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
             data: image.base64,
           },
+        },
+        { type: "text" as const, text: message },
+      ]
+    : document
+    ? [
+        {
+          type: "document" as const,
+          source: document.mediaType === "application/pdf"
+            ? { type: "base64" as const, media_type: "application/pdf" as const, data: document.base64 }
+            : { type: "text" as const, media_type: "text/plain" as const, data: document.base64 },
+          title: document.filename,
         },
         { type: "text" as const, text: message },
       ]

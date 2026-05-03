@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import ProjectTopBar from "./ProjectTopBar";
 import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
-import type { ImageAttachment } from "@/components/chat/MessageInput";
+import type { FileAttachment } from "@/components/chat/MessageInput";
 import type { ChatMessage } from "@/components/chat/MessageList";
 import type { Message, MessageRole } from "@/lib/types";
 
@@ -19,6 +19,7 @@ interface ProjectChatWindowProps {
   initialTitle: string;
   initialInput?: string;
   userColorHex?: string;
+  initialModel?: string;
 }
 
 export default function ProjectChatWindow({
@@ -29,6 +30,7 @@ export default function ProjectChatWindow({
   initialMessages,
   initialInput,
   userColorHex,
+  initialModel,
 }: ProjectChatWindowProps) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>(
@@ -39,6 +41,8 @@ export default function ProjectChatWindow({
       created_at: m.created_at,
       metadata: (m.metadata as Record<string, unknown>) ?? undefined,
       imageUrl: (m.image_url as string | undefined) ?? undefined,
+      attachmentType: (m.attachment_type as string | undefined) ?? undefined,
+      attachmentFilename: (m.attachment_filename as string | undefined) ?? undefined,
     }))
   );
   const [isClient, setIsClient] = useState(() => typeof window !== "undefined");
@@ -47,7 +51,8 @@ export default function ProjectChatWindow({
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
-  const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null);
+  const [attachedFile, setAttachedFile] = useState<FileAttachment | null>(null);
+  const [model, setModel] = useState(initialModel ?? "claude-sonnet-4-6");
   const instructionsFiredRef = useRef(false);
   const messagesRef = useRef(messages);
   const initialSentRef = useRef(false);
@@ -56,13 +61,13 @@ export default function ProjectChatWindow({
     const supabase = createClient();
     const { data } = await supabase
       .from("messages")
-      .select("id, role, content, created_at, metadata, image_url")
+      .select("id, role, content, created_at, metadata, image_url, attachment_type, attachment_filename")
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true })
       .limit(100);
     if (!data) return;
     setMessages(
-      (data as Array<{ id: string; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null; image_url?: string | null }>).map(
+      (data as Array<{ id: string; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null; image_url?: string | null; attachment_type?: string | null; attachment_filename?: string | null }>).map(
         (m) => ({
           id: m.id,
           role: m.role as MessageRole,
@@ -70,6 +75,8 @@ export default function ProjectChatWindow({
           created_at: m.created_at,
           metadata: m.metadata ?? undefined,
           imageUrl: m.image_url ?? undefined,
+          attachmentType: m.attachment_type ?? undefined,
+          attachmentFilename: m.attachment_filename ?? undefined,
         })
       )
     );
@@ -123,17 +130,26 @@ export default function ProjectChatWindow({
       initialSentRef.current = true;
       // Clean the URL so refresh doesn't re-send
       router.replace(`/projects/${projectId}/chat/${chatId}`, { scroll: false });
-      sendMessage(initialInput, null);
+      sendMessage(initialInput, undefined);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function sendMessage(text: string, imageOverride?: ImageAttachment | null) {
-    const imageToSend = imageOverride !== undefined ? imageOverride : attachedImage;
-    if ((!text && !imageToSend) || isStreaming) return;
+  async function handleModelChange(newModel: string) {
+    setModel(newModel);
+    await fetch("/api/users/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_model: newModel }),
+    });
+  }
+
+  async function sendMessage(text: string, fileOverride?: FileAttachment | null) {
+    const fileToSend = fileOverride !== undefined ? fileOverride : attachedFile;
+    if ((!text && !fileToSend) || isStreaming) return;
 
     setInput("");
-    setAttachedImage(null);
+    setAttachedFile(null);
     setError(null);
 
     const userMsgId = `tmp-user-${Date.now()}`;
@@ -141,7 +157,15 @@ export default function ProjectChatWindow({
 
     setMessages((prev) => [
       ...prev,
-      { id: userMsgId, role: "user", content: text, created_at: new Date().toISOString(), imageUrl: imageToSend?.previewUrl },
+      {
+        id: userMsgId,
+        role: "user",
+        content: text,
+        created_at: new Date().toISOString(),
+        imageUrl: fileToSend?.type === "image" ? fileToSend.previewUrl : undefined,
+        attachmentType: fileToSend?.type,
+        attachmentFilename: fileToSend?.filename,
+      },
       { id: streamMsgId, role: "assistant", content: "", isStreaming: true },
     ]);
     setIsStreaming(true);
@@ -154,7 +178,8 @@ export default function ProjectChatWindow({
           message: text,
           chatId,
           currentLocation,
-          image: imageToSend ? { base64: imageToSend.base64, mediaType: imageToSend.mediaType } : undefined,
+          image: fileToSend?.type === "image" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType } : undefined,
+          document: fileToSend?.type === "document" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType, filename: fileToSend.filename } : undefined,
         }),
       });
 
@@ -303,7 +328,7 @@ export default function ProjectChatWindow({
   }
 
   function handleSend() {
-    sendMessage(input.trim(), undefined);
+    sendMessage(input.trim());
   }
 
   function handleRetry() {
@@ -321,6 +346,8 @@ export default function ProjectChatWindow({
         projectId={projectId}
         projectName={projectName}
         projectIcon={projectIcon}
+        model={model}
+        onModelChange={handleModelChange}
       />
 
       <MessageList messages={messages} onRefresh={loadMessages} userColorHex={userColorHex} />
@@ -343,9 +370,9 @@ export default function ProjectChatWindow({
         onChange={setInput}
         onSend={handleSend}
         disabled={isStreaming}
-        attachedImage={attachedImage}
-        onImageAttach={(img) => setAttachedImage(img)}
-        onImageClear={() => setAttachedImage(null)}
+        attachedFile={attachedFile}
+        onFileAttach={(f) => setAttachedFile(f)}
+        onFileClear={() => setAttachedFile(null)}
       />
     </div>
   );

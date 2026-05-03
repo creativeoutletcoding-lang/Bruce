@@ -45,10 +45,11 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
 
   const { data: userProfile } = await supabase
     .from("users")
-    .select("color_hex")
+    .select("color_hex, preferred_model")
     .eq("id", user.id)
     .single();
-  const userColorHex = (userProfile as { color_hex: string } | null)?.color_hex;
+  const userColorHex = (userProfile as { color_hex: string; preferred_model: string | null } | null)?.color_hex;
+  const preferredModel = (userProfile as { color_hex: string; preferred_model: string | null } | null)?.preferred_model ?? "claude-sonnet-4-6";
 
   return (
     <ProjectChatWindow
@@ -60,6 +61,7 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
       initialTitle={chat.title ?? "New conversation"}
       initialInput={initialInput}
       userColorHex={userColorHex}
+      initialModel={preferredModel}
     />
   );
 }
