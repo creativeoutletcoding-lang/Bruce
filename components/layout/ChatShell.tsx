@@ -234,7 +234,7 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
   },
   bottomNav: {
-    display: "none", // shown only on mobile via media query applied via className in globals.css
+    display: "none", // shown only on mobile via media query in globals.css
     position: "fixed",
     bottom: 0,
     left: 0,
@@ -242,7 +242,8 @@ const styles: Record<string, React.CSSProperties> = {
     height: "calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px))",
     paddingBottom: "env(safe-area-inset-bottom, 0px)",
     backgroundColor: "var(--bg-primary)",
-    borderTop: "1px solid var(--border)",
+    borderTop: "1px solid #27272a",
+    borderRadius: 0,
     flexDirection: "row",
     alignItems: "stretch",
     zIndex: 100,

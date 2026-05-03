@@ -181,7 +181,7 @@ export default function MessageInput({
   const canSend = !disabled && (value.trim().length > 0 || !!attachment);
 
   return (
-    <div style={styles.container}>
+    <div className="msg-input-container" style={styles.container}>
       {attachmentError && (
         <p style={styles.attachError}>{attachmentError}</p>
       )}
@@ -206,7 +206,7 @@ export default function MessageInput({
           )}
         </div>
       )}
-      <div style={styles.inputRow}>
+      <div className="msg-input-row" style={styles.inputRow}>
         {onAttach && (
           <div style={{ position: "relative", flexShrink: 0 }}>
             {showAttachMenu && (
