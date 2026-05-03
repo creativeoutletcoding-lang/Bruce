@@ -1754,7 +1754,7 @@ const styles: Record<string, React.CSSProperties> = {
   content: {
     flex: 1,
     overflowY: "auto",
-    padding: "8px 6px",
+    padding: "8px 10px 8px 16px",
     display: "flex",
     flexDirection: "column",
   },
@@ -1819,9 +1819,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "background-color var(--transition)",
   },
   projectItemActive: {
-    backgroundColor: "rgba(15, 110, 86, 0.08)",
     borderLeft: "2px solid var(--accent)",
-    color: "var(--accent)",
   },
   projectItemIcon: {
     fontSize: "1rem",
@@ -1881,9 +1879,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderLeft: "2px solid transparent",
   },
   chatItemActive: {
-    backgroundColor: "rgba(15, 110, 86, 0.08)",
     borderLeft: "2px solid var(--accent)",
-    color: "var(--accent)",
   },
   chatItemSelected: {
     backgroundColor: "rgba(15, 110, 86, 0.06)",
@@ -1980,9 +1976,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "background-color var(--transition)",
   },
   familyButtonActive: {
-    backgroundColor: "rgba(15, 110, 86, 0.08)",
     borderLeft: "2px solid var(--accent)",
-    color: "var(--accent)",
   },
   familyEmoji: {
     fontSize: "1.125rem",
@@ -2013,9 +2007,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "background-color var(--transition)",
   },
   threadItemActive: {
-    backgroundColor: "rgba(15, 110, 86, 0.08)",
     borderLeft: "2px solid var(--accent)",
-    color: "var(--accent)",
   },
   threadName: {
     fontSize: "0.8125rem",

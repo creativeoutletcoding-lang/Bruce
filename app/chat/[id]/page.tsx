@@ -38,11 +38,19 @@ export default async function ChatIdPage({ params }: Props) {
     .eq("chat_id", id)
     .order("created_at", { ascending: true });
 
+  const { data: userProfile } = await supabase
+    .from("users")
+    .select("color_hex")
+    .eq("id", user.id)
+    .single();
+  const userColorHex = (userProfile as { color_hex: string } | null)?.color_hex;
+
   return (
     <ChatWindow
       chatId={id}
       initialMessages={(messages as Message[]) ?? []}
       initialTitle={chat.title ?? "Chat"}
+      userColorHex={userColorHex}
     />
   );
 }

@@ -29,24 +29,26 @@ export default function TopBar({ title, hasMessages, onRefresh }: TopBarProps) {
 
   return (
     <div style={styles.topBar}>
-      {/* Hamburger — mobile only */}
-      <button
-        onClick={openDrawer}
-        style={styles.hamburger}
-        aria-label="Open menu"
-        className="mobile-only"
-      >
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-          <path
-            d="M2 4h14M2 9h14M2 14h14"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
-      </button>
+      {/* Hamburger — mobile only, welcome screen only */}
+      {!hasMessages && (
+        <button
+          onClick={openDrawer}
+          style={styles.hamburger}
+          aria-label="Open menu"
+          className="mobile-only"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <path
+              d="M2 4h14M2 9h14M2 14h14"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      )}
 
-      {/* Back button — mobile only, hidden on landing/welcome state */}
+      {/* Back button — mobile only, inside an open chat */}
       {hasMessages && (
         <button
           onClick={() => router.push("/chat")}
@@ -169,6 +171,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   title: {
     flex: 1,
+    minWidth: 0,
     fontSize: "0.9375rem",
     fontWeight: "500",
     color: "var(--text-primary)",

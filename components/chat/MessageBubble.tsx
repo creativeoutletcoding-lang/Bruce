@@ -8,6 +8,7 @@ interface MessageBubbleProps {
   content: string;
   timestamp?: string;
   isStreaming?: boolean;
+  bubbleColorHex?: string;
 }
 
 function formatTimestamp(dateStr: string): string {
@@ -23,6 +24,7 @@ export default function MessageBubble({
   content,
   timestamp,
   isStreaming = false,
+  bubbleColorHex,
 }: MessageBubbleProps) {
   const [showTimestamp, setShowTimestamp] = useState(false);
   const isUser = role === "user";
@@ -36,11 +38,13 @@ export default function MessageBubble({
       onMouseEnter={() => setShowTimestamp(true)}
       onMouseLeave={() => setShowTimestamp(false)}
     >
-      <div style={styles.messageGroup}>
+      <div className="msg-group" style={styles.messageGroup}>
         <div
           style={{
             ...styles.bubble,
-            ...(isUser ? styles.userBubble : styles.assistantBubble),
+            ...(isUser
+              ? { ...styles.userBubble, backgroundColor: bubbleColorHex ?? "var(--accent)" }
+              : styles.assistantBubble),
           }}
         >
           <span style={styles.content}>{content}</span>
@@ -70,7 +74,6 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: "3px",
-    maxWidth: "78%",
   },
   bubble: {
     padding: "10px 14px",
@@ -81,15 +84,14 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "pre-wrap",
   },
   userBubble: {
-    backgroundColor: "var(--accent)",
     color: "#ffffff",
     borderBottomRightRadius: "4px",
   },
   assistantBubble: {
-    backgroundColor: "var(--bg-secondary)",
+    backgroundColor: "transparent",
     color: "var(--text-primary)",
     borderBottomLeftRadius: "4px",
-    border: "1px solid var(--border)",
+    border: "1px solid #2a2a2a",
   },
   content: {
     display: "inline",

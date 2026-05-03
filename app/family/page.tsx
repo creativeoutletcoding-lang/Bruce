@@ -45,7 +45,7 @@ export default async function FamilyPage() {
   // Load all active members for the sender map
   const { data: membersRaw } = await adminSupabase
     .from("users")
-    .select("id, name, avatar_url, role")
+    .select("id, name, avatar_url, role, color_hex")
     .eq("status", "active");
 
   const members: UserSummary[] = (membersRaw ?? []) as UserSummary[];

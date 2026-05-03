@@ -83,6 +83,7 @@ CREATE TABLE users (
   google_drive_root_id      TEXT,           -- Drive folder: "Bruce" root
   google_drive_personal_id  TEXT,           -- Drive folder: "Personal" under root
   google_drive_projects_id  TEXT,           -- Drive folder: "Projects" under root
+  color_hex                 TEXT NOT NULL DEFAULT '#6B7280',  -- bubble color (Google Calendar palette)
   deactivated_at            TIMESTAMPTZ,
   purge_at                  TIMESTAMPTZ,    -- 30 days after deactivation
   created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),

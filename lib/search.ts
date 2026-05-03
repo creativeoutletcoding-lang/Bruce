@@ -5,7 +5,10 @@ export interface SearchResult {
 }
 
 export async function webSearch(query: string): Promise<SearchResult> {
-  console.log("PERPLEXITY_API_KEY present:", !!process.env.PERPLEXITY_API_KEY);
+  if (!process.env.PERPLEXITY_API_KEY) {
+    throw new Error("PERPLEXITY_API_KEY is not configured");
+  }
+  console.log("Perplexity search triggered:", query);
   const response = await fetch("https://api.perplexity.ai/chat/completions", {
     method: "POST",
     headers: {

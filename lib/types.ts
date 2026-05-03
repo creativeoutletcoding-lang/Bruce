@@ -64,6 +64,7 @@ export interface User {
   email: string;
   name: string;
   avatar_url: string | null;
+  color_hex: string;
   role: UserRole;
   status: UserStatus;
   morning_summary_time: string;
@@ -229,6 +230,7 @@ export interface UserSummary {
   id: string;
   name: string;
   avatar_url: string | null;
+  color_hex: string;
   role: UserRole;
 }
 

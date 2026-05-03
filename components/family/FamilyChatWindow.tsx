@@ -1,26 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import MessageInput from "@/components/chat/MessageInput";
 import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
 import type { UserSummary } from "@/lib/types";
-
-// ── Member color palette ──────────────────────────────────────────────────────
-
-const MEMBER_COLORS: Record<string, string> = {
-  Jake: "#0F6E56",
-  Laurianne: "#7C5CFC",
-  Jocelynn: "#E8607A",
-  Nana: "#D97706",
-};
-
-function getMemberColor(name: string | null): string {
-  if (!name) return "var(--accent)"; // Bruce
-  return MEMBER_COLORS[name.split(" ")[0]] ?? "#6B7280";
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -70,6 +56,12 @@ export default function FamilyChatWindow({
   const [bruceState, setBruceState] = useState<BruceState>("idle");
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const colorMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    members.forEach((mbr) => { m[mbr.id] = mbr.color_hex; });
+    return m;
+  }, [members]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -411,7 +403,8 @@ export default function FamilyChatWindow({
             const isSameSender = prevMsg?.sender_id === msg.sender_id;
             const isMe = msg.sender_id === currentUserId;
             const isBruce = msg.sender_id === null && msg.role === "assistant";
-            const color = getMemberColor(msg.sender_name);
+            const memberColor = msg.sender_id ? (colorMap[msg.sender_id] ?? "#6B7280") : "#6B7280";
+            const myColor = colorMap[currentUserId] ?? "#6B7280";
 
             return (
               <div
@@ -426,12 +419,11 @@ export default function FamilyChatWindow({
                 onTouchMove={handleTouchEnd}
                 onContextMenu={(e) => handleContextMenu(e, msg)}
               >
-                <div style={{ ...styles.messageGroup, alignItems: isMe ? "flex-end" : "flex-start" }}>
+                <div className="msg-group" style={{ ...styles.messageGroup, alignItems: isMe ? "flex-end" : "flex-start" }}>
                   {!isSameSender && (
                     <div
                       style={{
                         ...styles.senderName,
-                        color: isBruce ? "var(--accent)" : color,
                         paddingLeft: isMe ? 0 : "2px",
                         paddingRight: isMe ? "2px" : 0,
                       }}
@@ -457,10 +449,10 @@ export default function FamilyChatWindow({
                       style={{
                         ...styles.bubble,
                         ...(isMe
-                          ? styles.meBubble
+                          ? { ...styles.meBubble, backgroundColor: myColor }
                           : isBruce
                           ? styles.bruceBubble
-                          : { ...styles.memberBubble, borderColor: `${color}30` }),
+                          : { ...styles.memberBubble, borderColor: `${memberColor}50` }),
                       }}
                     >
                       {msg.content}
@@ -542,11 +534,11 @@ const styles: Record<string, React.CSSProperties> = {
   spacer: { flex: 1 },
   bottomPad: { height: "8px" },
   messageRow: { display: "flex", padding: "0 14px" },
-  messageGroup: { display: "flex", flexDirection: "column", gap: "3px", maxWidth: "78%" },
-  senderName: { fontSize: "0.6875rem", fontWeight: "600", letterSpacing: "0.01em", marginBottom: "1px" },
+  messageGroup: { display: "flex", flexDirection: "column", gap: "3px" },
+  senderName: { fontSize: "0.6875rem", fontWeight: "400", letterSpacing: "0.01em", marginBottom: "1px", color: "var(--text-tertiary)" },
   bubble: { padding: "10px 14px", borderRadius: "var(--radius-lg)", fontSize: "0.9375rem", lineHeight: "1.55", wordBreak: "break-word", whiteSpace: "pre-wrap", userSelect: "text" },
-  meBubble: { backgroundColor: "var(--accent)", color: "#ffffff", borderBottomRightRadius: "4px" },
-  bruceBubble: { backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", border: "1px solid var(--border)", borderBottomLeftRadius: "4px" },
+  meBubble: { color: "#ffffff", borderBottomRightRadius: "4px" },
+  bruceBubble: { backgroundColor: "transparent", color: "var(--text-primary)", border: "1px solid #2a2a2a", borderBottomLeftRadius: "4px" },
   memberBubble: { backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", border: "1px solid", borderBottomLeftRadius: "4px" },
   indicatorBubble: { padding: "10px 14px", borderRadius: "var(--radius-lg)", borderBottomLeftRadius: "4px", backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)", display: "flex", alignItems: "center", minHeight: "42px" },
   typingDots: { display: "flex", alignItems: "center", gap: "4px" },

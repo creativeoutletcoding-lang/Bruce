@@ -52,7 +52,7 @@ export default async function FamilyThreadPage({
   // Load all active household members
   const { data: allMembersRaw } = await adminSupabase
     .from("users")
-    .select("id, name, avatar_url, role")
+    .select("id, name, avatar_url, role, color_hex")
     .eq("status", "active");
 
   const allMembers: UserSummary[] = (allMembersRaw ?? []) as UserSummary[];

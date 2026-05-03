@@ -17,7 +17,7 @@ export async function GET() {
   const adminSupabase = createServiceRoleClient();
   const { data: users, error } = await adminSupabase
     .from("users")
-    .select("id, name, avatar_url, role")
+    .select("id, name, avatar_url, role, color_hex")
     .eq("status", "active")
     .order("name");
 

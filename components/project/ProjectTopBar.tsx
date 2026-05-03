@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useChatContext } from "@/components/layout/ChatShell";
 
 interface ProjectTopBarProps {
   projectId: string;
@@ -15,27 +14,9 @@ export default function ProjectTopBar({
   projectIcon,
 }: ProjectTopBarProps) {
   const router = useRouter();
-  const { openDrawer } = useChatContext();
 
   return (
     <div style={styles.topBar}>
-      {/* Hamburger — mobile only */}
-      <button
-        onClick={openDrawer}
-        style={styles.hamburger}
-        aria-label="Open menu"
-        className="mobile-only"
-      >
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-          <path
-            d="M2 4h14M2 9h14M2 14h14"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
-      </button>
-
       {/* Back to project */}
       <button
         onClick={() => router.push(`/projects/${projectId}`)}
@@ -72,17 +53,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid var(--border)",
     gap: "8px",
     flexShrink: 0,
-  },
-  hamburger: {
-    display: "none",
-    flexShrink: 0,
-    width: "32px",
-    height: "32px",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "var(--text-secondary)",
-    borderRadius: "var(--radius-sm)",
-    cursor: "pointer",
   },
   backButton: {
     display: "flex",

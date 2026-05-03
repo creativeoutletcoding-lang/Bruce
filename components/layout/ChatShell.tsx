@@ -211,7 +211,7 @@ const styles: Record<string, React.CSSProperties> = {
     top: 0,
     left: 0,
     bottom: 0,
-    width: "var(--sidebar-width)",
+    width: "100vw",
     zIndex: 200,
     backgroundColor: "var(--bg-sidebar)",
     borderRight: "1px solid var(--border)",

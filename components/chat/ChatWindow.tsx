@@ -13,12 +13,14 @@ interface ChatWindowProps {
   chatId: string;
   initialMessages: Message[];
   initialTitle: string;
+  userColorHex?: string;
 }
 
 export default function ChatWindow({
   chatId,
   initialMessages,
   initialTitle,
+  userColorHex,
 }: ChatWindowProps) {
   const { incognito } = useChatContext();
   const [isClient, setIsClient] = useState(() => typeof window !== "undefined");
@@ -34,6 +36,7 @@ export default function ChatWindow({
   const [title, setTitle] = useState(initialTitle);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const memoryFiredRef = useRef(false);
   const messagesRef = useRef(messages);
@@ -137,26 +140,35 @@ export default function ChatWindow({
       const decoder = new TextDecoder();
       let accumulated = "";
       let sentinelSeen = false;
+      const STATUS_RE = /\x1eSTATUS:[^\x1e]*\x1e/g;
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         accumulated += decoder.decode(value, { stream: true });
+
+        // Parse status sentinel — update indicator, never show in bubble
+        const statusMatch = /\x1eSTATUS:([^\x1e]*)\x1e/.exec(accumulated);
+        if (statusMatch) setWorkingStatus(statusMatch[1]);
+
         if (sentinelSeen) continue;
         const sentinelIdx = accumulated.indexOf("\x1f");
         if (sentinelIdx !== -1) {
           sentinelSeen = true;
           const display = accumulated.slice(0, sentinelIdx)
+            .replace(STATUS_RE, "")
             .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
             .trim();
+          if (display) setWorkingStatus(null);
           setMessages((prev) =>
             prev.map((m) => m.id === streamMsgId ? { ...m, content: display } : m)
           );
         } else {
-          // Strip image tag from display; IMAGE_MSG sentinel lives after \x1f
           const display = accumulated
+            .replace(STATUS_RE, "")
             .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
             .trimStart();
+          if (display.trim()) setWorkingStatus(null);
           setMessages((prev) =>
             prev.map((m) =>
               m.id === streamMsgId ? { ...m, content: display } : m
@@ -165,11 +177,14 @@ export default function ChatWindow({
         }
       }
 
+      setWorkingStatus(null);
+
       // Parse sentinel
       const sentinelParts = accumulated.split("\x1f");
       const imageReqSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_REQ:"));
 
       const finalText = sentinelParts[0]
+        .replace(STATUS_RE, "")
         .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
         .trim();
 
@@ -259,12 +274,12 @@ export default function ChatWindow({
     } catch (err) {
       console.error("[ChatWindow] Send error:", err);
       setError("Something went wrong. Tap to retry.");
-      // Remove the streaming placeholder on error
       setMessages((prev) =>
         prev.filter((m) => m.id !== streamMsgId)
       );
     } finally {
       setIsStreaming(false);
+      setWorkingStatus(null);
     }
   }
 
@@ -293,7 +308,11 @@ export default function ChatWindow({
         </div>
       )}
 
-      <MessageList messages={messages} onRefresh={loadMessages} />
+      <MessageList messages={messages} onRefresh={loadMessages} userColorHex={userColorHex} />
+
+      {workingStatus && (
+        <div style={styles.workingStatus}>{workingStatus}</div>
+      )}
 
       {error && (
         <div style={styles.errorRow}>
@@ -349,5 +368,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: "500",
     color: "var(--accent)",
     cursor: "pointer",
+  },
+  workingStatus: {
+    padding: "4px 16px 6px",
+    fontSize: "0.8125rem",
+    color: "var(--text-tertiary)",
+    fontStyle: "italic",
+    flexShrink: 0,
   },
 };

@@ -43,6 +43,13 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
     .eq("chat_id", chatId)
     .order("created_at", { ascending: true });
 
+  const { data: userProfile } = await supabase
+    .from("users")
+    .select("color_hex")
+    .eq("id", user.id)
+    .single();
+  const userColorHex = (userProfile as { color_hex: string } | null)?.color_hex;
+
   return (
     <ProjectChatWindow
       chatId={chatId}
@@ -52,6 +59,7 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
       initialMessages={(messages as Message[]) ?? []}
       initialTitle={chat.title ?? "New conversation"}
       initialInput={initialInput}
+      userColorHex={userColorHex}
     />
   );
 }
