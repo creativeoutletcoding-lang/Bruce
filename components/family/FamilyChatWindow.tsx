@@ -469,14 +469,13 @@ export default function FamilyChatWindow({
 
                   {msg.isStreaming && bruceState !== "streaming" ? (
                     <div style={styles.indicatorBubble}>
-                      {bruceState === "working" ? (
-                        <span style={styles.workingText}>Bruce is working on it…</span>
-                      ) : (
-                        <span style={styles.typingDots}>
-                          <span style={styles.dot1} />
-                          <span style={styles.dot2} />
-                          <span style={styles.dot3} />
-                        </span>
+                      <div style={styles.dotsRow}>
+                        <span style={styles.dot1} />
+                        <span style={styles.dot2} />
+                        <span style={styles.dot3} />
+                      </div>
+                      {bruceState === "working" && (
+                        <div style={styles.indicatorStatus}>Working on it…</div>
                       )}
                     </div>
                   ) : (
@@ -495,7 +494,6 @@ export default function FamilyChatWindow({
                         <img src={msg.imageUrl} alt="" style={{ maxWidth: "240px", width: "100%", borderRadius: "var(--radius-md)", display: "block", marginBottom: msg.content ? "8px" : 0 }} />
                       ) : null}
                       {msg.content}
-                      {msg.isStreaming && <span style={styles.cursor} aria-hidden="true" />}
                     </div>
                   )}
                 </div>
@@ -582,13 +580,12 @@ const styles: Record<string, React.CSSProperties> = {
   meBubble: { color: "#ffffff", borderBottomRightRadius: "4px" },
   bruceBubble: { backgroundColor: "transparent", color: "var(--text-primary)", border: "1px solid #2a2a2a", borderBottomLeftRadius: "4px" },
   memberBubble: { backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", border: "1px solid", borderBottomLeftRadius: "4px" },
-  indicatorBubble: { padding: "10px 14px", borderRadius: "var(--radius-lg)", borderBottomLeftRadius: "4px", backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)", display: "flex", alignItems: "center", minHeight: "42px" },
-  typingDots: { display: "flex", alignItems: "center", gap: "4px" },
-  dot1: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "typing-bounce 1.2s ease-in-out infinite", animationDelay: "0s" },
-  dot2: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "typing-bounce 1.2s ease-in-out infinite", animationDelay: "0.2s" },
-  dot3: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "typing-bounce 1.2s ease-in-out infinite", animationDelay: "0.4s" },
-  workingText: { fontSize: "0.875rem", color: "var(--text-secondary)", fontStyle: "italic" },
-  cursor: { display: "inline-block", width: "2px", height: "1em", backgroundColor: "currentColor", marginLeft: "1px", verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" },
+  indicatorBubble: { display: "inline-flex", flexDirection: "column", gap: "6px", padding: "12px 16px", borderRadius: "var(--radius-lg)", borderBottomLeftRadius: "4px", backgroundColor: "transparent", border: "1px solid #2a2a2a" },
+  dotsRow: { display: "flex", alignItems: "center", gap: "4px" },
+  dot1: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "0ms" },
+  dot2: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "150ms" },
+  dot3: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "300ms" },
+  indicatorStatus: { fontSize: "0.6875rem", color: "var(--text-tertiary)", lineHeight: 1.3 },
   scrollButton: { position: "absolute", bottom: "16px", left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", justifyContent: "center", width: "36px", height: "36px", backgroundColor: "var(--bg-primary)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-full)", color: "var(--text-secondary)", cursor: "pointer", boxShadow: "var(--shadow-md)" },
   errorRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", padding: "8px 16px", flexShrink: 0 },
   errorText: { fontSize: "0.8125rem", color: "var(--text-secondary)" },

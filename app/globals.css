@@ -230,6 +230,11 @@ a {
   40%           { transform: translateY(-4px); opacity: 1; }
 }
 
+@keyframes dotFade {
+  0%, 100% { opacity: 0.2; }
+  50%       { opacity: 1; }
+}
+
 /* Typing indicator dots */
 span[class*="typingDots"] > span,
 .typing-dot {
@@ -279,6 +284,13 @@ span[class*="typingDots"] > span:nth-child(3),
 @media (max-width: 768px) {
   .msg-group {
     max-width: 85%;
+  }
+}
+
+/* Timestamp: hidden by default, always visible on touch devices */
+@media (max-width: 768px) {
+  .msg-timestamp {
+    visibility: visible !important;
   }
 }
 

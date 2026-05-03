@@ -97,24 +97,59 @@ export default function MessageInput({
     const file = e.target.files?.[0];
     if (!file || !onAttach) return;
     e.target.value = "";
+
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    const isHeic = file.type === "image/heic" || file.type === "image/heif" || ext === "heic" || ext === "heif";
+    if (isHeic) {
+      setAttachmentError("Please use JPEG or PNG — HEIC format is not supported.");
+      return;
+    }
+
     if (file.size > MAX_FILE_SIZE) {
       setAttachmentError("File too large — maximum 10MB");
       return;
     }
+
     setAttachmentError(null);
     const previewUrl = URL.createObjectURL(file);
+    const mediaType = file.type || "image/jpeg";
+
+    console.log("[MessageInput] file selected: mediaType=%s size=%d", mediaType, file.size);
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
       const base64 = dataUrl.split(",")[1];
+      console.log("[MessageInput] FileReader done: base64Length=%d", base64?.length ?? 0);
       onAttach({
         type: "image",
         base64,
-        mediaType: file.type || "image/jpeg",
+        mediaType,
         filename: file.name,
         fileSize: file.size,
         previewUrl,
       });
+    };
+    reader.onerror = async () => {
+      // Fallback for iOS Safari FileReader quirks
+      try {
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let binary = "";
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        const base64 = btoa(binary);
+        console.log("[MessageInput] arrayBuffer fallback: base64Length=%d", base64.length);
+        onAttach({
+          type: "image",
+          base64,
+          mediaType,
+          filename: file.name,
+          fileSize: file.size,
+          previewUrl,
+        });
+      } catch {
+        setAttachmentError("Could not read file. Please try again.");
+      }
     };
     reader.readAsDataURL(file);
   }

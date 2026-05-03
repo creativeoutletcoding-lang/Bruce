@@ -7,6 +7,7 @@ import WelcomeScreen from "./WelcomeScreen";
 import TopBar from "./TopBar";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
+import type { FileAttachment } from "./MessageInput";
 import type { ChatMessage } from "./MessageList";
 
 interface NewChatOrchestratorProps {
@@ -25,6 +26,7 @@ export default function NewChatOrchestrator({
   const [isStreaming, setIsStreaming] = useState(false);
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attachedFile, setAttachedFile] = useState<FileAttachment | null>(null);
 
   function handleSuggestion(text: string) {
     setInput(text);
@@ -32,9 +34,11 @@ export default function NewChatOrchestrator({
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || isStreaming) return;
+    if ((!text && !attachedFile) || isStreaming) return;
 
+    const fileToSend = attachedFile;
     setInput("");
+    setAttachedFile(null);
     setError(null);
 
     const userMsgId = `tmp-user-${Date.now()}`;
@@ -45,6 +49,9 @@ export default function NewChatOrchestrator({
       role: "user",
       content: text,
       created_at: new Date().toISOString(),
+      imageUrl: fileToSend?.type === "image" ? fileToSend.previewUrl : undefined,
+      attachmentType: fileToSend?.type,
+      attachmentFilename: fileToSend?.filename,
     };
     const streamMsg: ChatMessage = {
       id: streamMsgId,
@@ -57,10 +64,20 @@ export default function NewChatOrchestrator({
     setIsStreaming(true);
 
     try {
+      if (fileToSend?.type === "image") {
+        console.log("[NewChatOrchestrator] sending image: mediaType=%s base64Length=%d", fileToSend.mediaType, fileToSend.base64.length);
+      }
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, chatId: null, isIncognito: incognito }),
+        body: JSON.stringify({
+          message: text,
+          chatId: null,
+          isIncognito: incognito,
+          image: fileToSend?.type === "image" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType } : undefined,
+          document: fileToSend?.type === "document" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType, filename: fileToSend.filename } : undefined,
+        }),
       });
 
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
@@ -159,7 +176,7 @@ export default function NewChatOrchestrator({
       setIsStreaming(false);
       setWorkingStatus(null);
     }
-  }, [input, isStreaming, incognito, router, refreshChats]);
+  }, [input, attachedFile, isStreaming, incognito, router, refreshChats]);
 
   // Show welcome screen until the user sends their first message
   if (messages.length === 0) {
@@ -172,6 +189,9 @@ export default function NewChatOrchestrator({
           onChange={setInput}
           onSend={handleSend}
           disabled={isStreaming}
+          attachedFile={attachedFile}
+          onFileAttach={(f) => setAttachedFile(f)}
+          onFileClear={() => setAttachedFile(null)}
         />
       </div>
     );
@@ -192,11 +212,7 @@ export default function NewChatOrchestrator({
         </div>
       )}
 
-      <MessageList messages={messages} />
-
-      {workingStatus && (
-        <div style={styles.workingStatus}>{workingStatus}</div>
-      )}
+      <MessageList messages={messages} streamingStatus={workingStatus} />
 
       {error && (
         <div style={styles.errorRow}>
@@ -222,6 +238,9 @@ export default function NewChatOrchestrator({
         onChange={setInput}
         onSend={handleSend}
         disabled={isStreaming}
+        attachedFile={attachedFile}
+        onFileAttach={(f) => setAttachedFile(f)}
+        onFileClear={() => setAttachedFile(null)}
       />
     </div>
   );
@@ -262,12 +281,5 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: "500",
     color: "var(--accent)",
     cursor: "pointer",
-  },
-  workingStatus: {
-    padding: "4px 16px 6px",
-    fontSize: "0.8125rem",
-    color: "var(--text-tertiary)",
-    fontStyle: "italic",
-    flexShrink: 0,
   },
 };

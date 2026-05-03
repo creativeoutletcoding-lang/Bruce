@@ -360,11 +360,7 @@ export default function ProjectChatWindow({
         onModelChange={handleModelChange}
       />
 
-      <MessageList messages={messages} onRefresh={loadMessages} userColorHex={userColorHex} />
-
-      {workingStatus && (
-        <div style={styles.workingStatus}>{workingStatus}</div>
-      )}
+      <MessageList messages={messages} onRefresh={loadMessages} userColorHex={userColorHex} streamingStatus={workingStatus} />
 
       {error && (
         <div style={styles.errorRow}>
@@ -412,12 +408,5 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: "500",
     color: "var(--accent)",
     cursor: "pointer",
-  },
-  workingStatus: {
-    padding: "4px 16px 6px",
-    fontSize: "0.8125rem",
-    color: "var(--text-tertiary)",
-    fontStyle: "italic",
-    flexShrink: 0,
   },
 };

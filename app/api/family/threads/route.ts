@@ -86,12 +86,12 @@ export async function GET() {
   const { data: userRows } = allMemberUserIds.length > 0
     ? await adminSupabase
         .from("users")
-        .select("id, name, avatar_url")
+        .select("id, name, avatar_url, color_hex")
         .in("id", allMemberUserIds)
     : { data: [] };
 
-  const userMap: Record<string, { id: string; name: string; avatar_url: string | null }> = {};
-  (userRows ?? []).forEach((u: { id: string; name: string; avatar_url: string | null }) => {
+  const userMap: Record<string, { id: string; name: string; avatar_url: string | null; color_hex: string }> = {};
+  (userRows ?? []).forEach((u: { id: string; name: string; avatar_url: string | null; color_hex: string }) => {
     userMap[u.id] = u;
   });
 

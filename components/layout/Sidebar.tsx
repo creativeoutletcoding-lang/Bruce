@@ -15,6 +15,7 @@ interface ThreadMemberSummary {
   id: string;
   name: string;
   avatar_url: string | null;
+  color_hex: string;
 }
 
 interface FamilyThread {
@@ -95,7 +96,7 @@ function ThreadAvatarStack({ members }: { members: ThreadMemberSummary[] }) {
             overflow: "hidden",
             marginLeft: i === 0 ? 0 : -5,
             zIndex: shown.length - i,
-            backgroundColor: "var(--accent)",
+            backgroundColor: m.color_hex,
             flexShrink: 0,
           }}
         >
