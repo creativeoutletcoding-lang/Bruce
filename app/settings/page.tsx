@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import BackButton from "./BackButton";
+import ModelPreference from "./ModelPreference";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -12,7 +13,7 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("name, email, avatar_url")
+    .select("name, email, avatar_url, preferred_model")
     .eq("id", user.id)
     .single();
 
@@ -37,6 +38,11 @@ export default async function SettingsPage() {
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Notifications</h2>
           <p style={styles.placeholder}>Notification preferences coming in a future phase.</p>
+        </div>
+
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>AI Model</h2>
+          <ModelPreference initialModel={(profile as { name: string; email: string; avatar_url: string | null; preferred_model: string | null } | null)?.preferred_model ?? "claude-sonnet-4-6"} />
         </div>
       </div>
     </div>

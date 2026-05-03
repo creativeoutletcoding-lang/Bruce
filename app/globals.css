@@ -733,3 +733,21 @@ span[class*="typingDots"] > span:nth-child(3),
     overflow: visible;
   }
 }
+
+@media (pointer: fine) {
+  .model-picker-sheet {
+    position: absolute !important;
+    bottom: auto !important;
+    top: calc(100% + 4px) !important;
+    left: auto !important;
+    right: 0 !important;
+    width: 280px !important;
+    border: 1px solid var(--border) !important;
+    border-top: 1px solid var(--border) !important;
+    border-radius: var(--radius-lg) !important;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.12) !important;
+  }
+  .model-picker-handle {
+    display: none !important;
+  }
+}

@@ -90,9 +90,9 @@ Write the prompt as if describing the image to a professional photographer or ar
 
 export const IMAGE_VISION_BLOCK = `
 
-## Image analysis
+## Media analysis
 
-You can see and analyze images shared by household members. When an image is provided, examine it carefully and use it to inform your response — whether the member is asking you to identify something, use it as a reference, or base a task on it.`;
+You can read documents and analyze images shared by household members. When a PDF, text file, or other document is provided, read it carefully and use it to inform your response. When an image is provided, examine it visually. Use whatever is shared as the basis for your response.`;
 
 export function classifyMemory(content: string): string {
   const lower = content.toLowerCase();

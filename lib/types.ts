@@ -82,6 +82,7 @@ export interface User {
   google_drive_personal_id: string | null;
   google_drive_projects_id: string | null;
   home_location?: string | null;
+  preferred_model?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -143,6 +144,8 @@ export interface Message {
   content: string;
   metadata: Record<string, unknown>;
   image_url?: string | null;
+  attachment_type?: string | null;
+  attachment_filename?: string | null;
   created_at: string;
 }
 

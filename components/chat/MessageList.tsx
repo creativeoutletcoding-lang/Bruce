@@ -21,6 +21,8 @@ export interface ChatMessage {
   isStreaming?: boolean;
   metadata?: Record<string, unknown>;
   imageUrl?: string;
+  attachmentType?: string;
+  attachmentFilename?: string;
 }
 
 interface MessageListProps {
@@ -116,6 +118,8 @@ export default function MessageList({ messages, onRefresh, userColorHex }: Messa
                 isStreaming={msg.isStreaming}
                 bubbleColorHex={userColorHex}
                 imageUrl={msg.imageUrl ?? (msg.metadata?.image_url as string | undefined)}
+                attachmentType={msg.attachmentType}
+                attachmentFilename={msg.attachmentFilename}
               />
             );
           })}

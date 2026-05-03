@@ -2,14 +2,17 @@
 
 import { useRouter } from "next/navigation";
 import { useChatContext } from "@/components/layout/ChatShell";
+import ModelPicker from "@/components/ui/ModelPicker";
 
 interface TopBarProps {
   title: string;
   hasMessages: boolean;
   onRefresh?: () => void | Promise<void>;
+  model?: string;
+  onModelChange?: (id: string) => void;
 }
 
-export default function TopBar({ title, hasMessages, onRefresh }: TopBarProps) {
+export default function TopBar({ title, hasMessages, onRefresh, model, onModelChange }: TopBarProps) {
   const router = useRouter();
   const { openDrawer, incognito, setIncognito } = useChatContext();
 
@@ -79,6 +82,10 @@ export default function TopBar({ title, hasMessages, onRefresh }: TopBarProps) {
         >
           <RefreshIcon />
         </button>
+      )}
+
+      {model && onModelChange && (
+        <ModelPicker currentModel={model} onSelect={onModelChange} />
       )}
 
       <button
