@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import ProjectTopBar from "./ProjectTopBar";
 import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
+import type { ImageAttachment } from "@/components/chat/MessageInput";
 import type { ChatMessage } from "@/components/chat/MessageList";
 import type { Message, MessageRole } from "@/lib/types";
 
@@ -37,6 +38,7 @@ export default function ProjectChatWindow({
       content: m.content,
       created_at: m.created_at,
       metadata: (m.metadata as Record<string, unknown>) ?? undefined,
+      imageUrl: (m.image_url as string | undefined) ?? undefined,
     }))
   );
   const [isClient, setIsClient] = useState(() => typeof window !== "undefined");
@@ -44,6 +46,8 @@ export default function ProjectChatWindow({
   const [isStreaming, setIsStreaming] = useState(false);
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
+  const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null);
   const instructionsFiredRef = useRef(false);
   const messagesRef = useRef(messages);
   const initialSentRef = useRef(false);
@@ -52,19 +56,20 @@ export default function ProjectChatWindow({
     const supabase = createClient();
     const { data } = await supabase
       .from("messages")
-      .select("id, role, content, created_at, metadata")
+      .select("id, role, content, created_at, metadata, image_url")
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true })
       .limit(100);
     if (!data) return;
     setMessages(
-      (data as Array<{ id: string; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null }>).map(
+      (data as Array<{ id: string; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null; image_url?: string | null }>).map(
         (m) => ({
           id: m.id,
           role: m.role as MessageRole,
           content: m.content,
           created_at: m.created_at,
           metadata: m.metadata ?? undefined,
+          imageUrl: m.image_url ?? undefined,
         })
       )
     );
@@ -74,6 +79,27 @@ export default function ProjectChatWindow({
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
+            { headers: { "User-Agent": "BruceHouseholdAI/1.0" } }
+          );
+          const data = await res.json() as { address?: { city?: string; town?: string; village?: string; state?: string } };
+          const city = data.address?.city ?? data.address?.town ?? data.address?.village;
+          const state = data.address?.state;
+          if (city && state) setCurrentLocation(`${city}, ${state}`);
+          else if (state) setCurrentLocation(state);
+        } catch { /* silent */ }
+      },
+      () => { /* permission denied — silent */ },
+      { timeout: 5000 }
+    );
+  }, []);
 
   // Fire living instructions update on unmount
   useEffect(() => {
@@ -97,15 +123,17 @@ export default function ProjectChatWindow({
       initialSentRef.current = true;
       // Clean the URL so refresh doesn't re-send
       router.replace(`/projects/${projectId}/chat/${chatId}`, { scroll: false });
-      sendMessage(initialInput);
+      sendMessage(initialInput, null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function sendMessage(text: string) {
-    if (!text || isStreaming) return;
+  async function sendMessage(text: string, imageOverride?: ImageAttachment | null) {
+    const imageToSend = imageOverride !== undefined ? imageOverride : attachedImage;
+    if ((!text && !imageToSend) || isStreaming) return;
 
     setInput("");
+    setAttachedImage(null);
     setError(null);
 
     const userMsgId = `tmp-user-${Date.now()}`;
@@ -113,7 +141,7 @@ export default function ProjectChatWindow({
 
     setMessages((prev) => [
       ...prev,
-      { id: userMsgId, role: "user", content: text, created_at: new Date().toISOString() },
+      { id: userMsgId, role: "user", content: text, created_at: new Date().toISOString(), imageUrl: imageToSend?.previewUrl },
       { id: streamMsgId, role: "assistant", content: "", isStreaming: true },
     ]);
     setIsStreaming(true);
@@ -122,7 +150,12 @@ export default function ProjectChatWindow({
       const res = await fetch(`/api/projects/${projectId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, chatId }),
+        body: JSON.stringify({
+          message: text,
+          chatId,
+          currentLocation,
+          image: imageToSend ? { base64: imageToSend.base64, mediaType: imageToSend.mediaType } : undefined,
+        }),
       });
 
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
@@ -270,7 +303,7 @@ export default function ProjectChatWindow({
   }
 
   function handleSend() {
-    sendMessage(input.trim());
+    sendMessage(input.trim(), undefined);
   }
 
   function handleRetry() {
@@ -310,6 +343,9 @@ export default function ProjectChatWindow({
         onChange={setInput}
         onSend={handleSend}
         disabled={isStreaming}
+        attachedImage={attachedImage}
+        onImageAttach={(img) => setAttachedImage(img)}
+        onImageClear={() => setAttachedImage(null)}
       />
     </div>
   );

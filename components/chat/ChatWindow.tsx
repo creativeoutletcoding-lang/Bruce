@@ -6,6 +6,7 @@ import { useChatContext } from "@/components/layout/ChatShell";
 import TopBar from "./TopBar";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
+import type { ImageAttachment } from "./MessageInput";
 import type { ChatMessage } from "./MessageList";
 import type { Message, MessageRole } from "@/lib/types";
 
@@ -31,6 +32,7 @@ export default function ChatWindow({
       content: m.content,
       created_at: m.created_at,
       metadata: (m.metadata as Record<string, unknown>) ?? undefined,
+      imageUrl: (m.image_url as string | undefined) ?? undefined,
     }))
   );
   const [title, setTitle] = useState(initialTitle);
@@ -38,6 +40,8 @@ export default function ChatWindow({
   const [isStreaming, setIsStreaming] = useState(false);
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
+  const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null);
   const memoryFiredRef = useRef(false);
   const messagesRef = useRef(messages);
   const incognitoRef = useRef(incognito);
@@ -46,19 +50,20 @@ export default function ChatWindow({
     const supabase = createClient();
     const { data } = await supabase
       .from("messages")
-      .select("id, role, content, created_at, metadata")
+      .select("id, role, content, created_at, metadata, image_url")
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true })
       .limit(100);
     if (!data) return;
     setMessages(
-      (data as Array<{ id: string; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null }>).map(
+      (data as Array<{ id: string; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null; image_url?: string | null }>).map(
         (m) => ({
           id: m.id,
           role: m.role as MessageRole,
           content: m.content,
           created_at: m.created_at,
           metadata: m.metadata ?? undefined,
+          imageUrl: m.image_url ?? undefined,
         })
       )
     );
@@ -67,6 +72,27 @@ export default function ChatWindow({
   useEffect(() => { setIsClient(true); }, []);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { incognitoRef.current = incognito; }, [incognito]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
+            { headers: { "User-Agent": "BruceHouseholdAI/1.0" } }
+          );
+          const data = await res.json() as { address?: { city?: string; town?: string; village?: string; state?: string } };
+          const city = data.address?.city ?? data.address?.town ?? data.address?.village;
+          const state = data.address?.state;
+          if (city && state) setCurrentLocation(`${city}, ${state}`);
+          else if (state) setCurrentLocation(state);
+        } catch { /* silent */ }
+      },
+      () => { /* permission denied — silent */ },
+      { timeout: 5000 }
+    );
+  }, []);
 
   // Fire memory generation on unmount only (empty deps)
   useEffect(() => {
@@ -90,9 +116,11 @@ export default function ChatWindow({
 
   async function handleSend() {
     const text = input.trim();
-    if (!text || isStreaming) return;
+    if ((!text && !attachedImage) || isStreaming) return;
 
+    const imageToSend = attachedImage;
     setInput("");
+    setAttachedImage(null);
     setError(null);
 
     const userMsgId = `tmp-user-${Date.now()}`;
@@ -103,6 +131,7 @@ export default function ChatWindow({
       role: "user",
       content: text,
       created_at: new Date().toISOString(),
+      imageUrl: imageToSend?.previewUrl,
     };
     const streamMsg: ChatMessage = {
       id: streamMsgId,
@@ -118,7 +147,13 @@ export default function ChatWindow({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, chatId, isIncognito: incognito }),
+        body: JSON.stringify({
+          message: text,
+          chatId,
+          isIncognito: incognito,
+          currentLocation,
+          image: imageToSend ? { base64: imageToSend.base64, mediaType: imageToSend.mediaType } : undefined,
+        }),
       });
 
       if (!res.ok) {
@@ -328,6 +363,9 @@ export default function ChatWindow({
         onChange={setInput}
         onSend={handleSend}
         disabled={isStreaming}
+        attachedImage={attachedImage}
+        onImageAttach={(img) => setAttachedImage(img)}
+        onImageClear={() => setAttachedImage(null)}
       />
     </div>
   );

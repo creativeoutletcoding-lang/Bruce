@@ -9,6 +9,7 @@ interface MessageBubbleProps {
   timestamp?: string;
   isStreaming?: boolean;
   bubbleColorHex?: string;
+  imageUrl?: string;
 }
 
 function formatTimestamp(dateStr: string): string {
@@ -25,16 +26,14 @@ export default function MessageBubble({
   timestamp,
   isStreaming = false,
   bubbleColorHex,
+  imageUrl,
 }: MessageBubbleProps) {
   const [showTimestamp, setShowTimestamp] = useState(false);
   const isUser = role === "user";
 
   return (
     <div
-      style={{
-        ...styles.wrapper,
-        justifyContent: isUser ? "flex-end" : "flex-start",
-      }}
+      style={{ ...styles.wrapper, justifyContent: isUser ? "flex-end" : "flex-start" }}
       onMouseEnter={() => setShowTimestamp(true)}
       onMouseLeave={() => setShowTimestamp(false)}
     >
@@ -47,16 +46,25 @@ export default function MessageBubble({
               : styles.assistantBubble),
           }}
         >
-          <span style={styles.content}>{content}</span>
+          {imageUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imageUrl}
+              alt=""
+              style={{
+                maxWidth: "240px",
+                width: "100%",
+                borderRadius: "var(--radius-md)",
+                display: "block",
+                marginBottom: content ? "8px" : 0,
+              }}
+            />
+          )}
+          {content && <span style={styles.content}>{content}</span>}
           {isStreaming && <span style={styles.cursor} aria-hidden="true" />}
         </div>
         {timestamp && showTimestamp && (
-          <div
-            style={{
-              ...styles.timestamp,
-              textAlign: isUser ? "right" : "left",
-            }}
-          >
+          <div style={{ ...styles.timestamp, textAlign: isUser ? "right" : "left" }}>
             {formatTimestamp(timestamp)}
           </div>
         )}
@@ -66,15 +74,8 @@ export default function MessageBubble({
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  wrapper: {
-    display: "flex",
-    padding: "2px 16px",
-  },
-  messageGroup: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "3px",
-  },
+  wrapper: { display: "flex", padding: "2px 16px" },
+  messageGroup: { display: "flex", flexDirection: "column", gap: "3px" },
   bubble: {
     padding: "10px 14px",
     borderRadius: "var(--radius-lg)",
@@ -83,19 +84,14 @@ const styles: Record<string, React.CSSProperties> = {
     wordBreak: "break-word",
     whiteSpace: "pre-wrap",
   },
-  userBubble: {
-    color: "#ffffff",
-    borderBottomRightRadius: "4px",
-  },
+  userBubble: { color: "#ffffff", borderBottomRightRadius: "4px" },
   assistantBubble: {
     backgroundColor: "transparent",
     color: "var(--text-primary)",
     borderBottomLeftRadius: "4px",
     border: "1px solid #2a2a2a",
   },
-  content: {
-    display: "inline",
-  },
+  content: { display: "inline" },
   cursor: {
     display: "inline-block",
     width: "2px",
@@ -105,9 +101,5 @@ const styles: Record<string, React.CSSProperties> = {
     verticalAlign: "text-bottom",
     animation: "blink 1s step-end infinite",
   },
-  timestamp: {
-    fontSize: "0.6875rem",
-    color: "var(--text-tertiary)",
-    padding: "0 2px",
-  },
+  timestamp: { fontSize: "0.6875rem", color: "var(--text-tertiary)", padding: "0 2px" },
 };

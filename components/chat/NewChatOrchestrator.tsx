@@ -23,6 +23,7 @@ export default function NewChatOrchestrator({
   const [input, setInput] = useState(initialInput);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function handleSuggestion(text: string) {
@@ -69,16 +70,22 @@ export default function NewChatOrchestrator({
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
+      const STATUS_RE = /\x1eSTATUS:[^\x1e]*\x1e/g;
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         accumulated += decoder.decode(value, { stream: true });
-        // Strip image tag and sentinel from live display
+
+        const statusMatch = /\x1eSTATUS:([^\x1e]*)\x1e/.exec(accumulated);
+        if (statusMatch) setWorkingStatus(statusMatch[1]);
+
         const sentinelIdx = accumulated.indexOf("\x1f");
         const displayText = (sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated)
+          .replace(STATUS_RE, "")
           .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
           .trimStart();
+        if (displayText.trim()) setWorkingStatus(null);
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId ? { ...m, content: displayText } : m
@@ -86,10 +93,13 @@ export default function NewChatOrchestrator({
         );
       }
 
+      setWorkingStatus(null);
+
       // Parse sentinel
       const sentinelParts = accumulated.split("\x1f");
       const imageReqSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_REQ:"));
       const finalText = sentinelParts[0]
+        .replace(STATUS_RE, "")
         .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
         .trim();
 
@@ -147,6 +157,7 @@ export default function NewChatOrchestrator({
       setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
     } finally {
       setIsStreaming(false);
+      setWorkingStatus(null);
     }
   }, [input, isStreaming, incognito, router, refreshChats]);
 
@@ -182,6 +193,10 @@ export default function NewChatOrchestrator({
       )}
 
       <MessageList messages={messages} />
+
+      {workingStatus && (
+        <div style={styles.workingStatus}>{workingStatus}</div>
+      )}
 
       {error && (
         <div style={styles.errorRow}>
@@ -247,5 +262,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: "500",
     color: "var(--accent)",
     cursor: "pointer",
+  },
+  workingStatus: {
+    padding: "4px 16px 6px",
+    fontSize: "0.8125rem",
+    color: "var(--text-tertiary)",
+    fontStyle: "italic",
+    flexShrink: 0,
   },
 };

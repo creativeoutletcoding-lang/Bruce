@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import MessageInput from "@/components/chat/MessageInput";
+import type { ImageAttachment } from "@/components/chat/MessageInput";
 import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
@@ -19,6 +20,7 @@ export interface FamilyMessage {
   sender_avatar: string | null;
   created_at: string;
   isStreaming?: boolean;
+  imageUrl?: string;
 }
 
 interface ContextMenuState {
@@ -56,6 +58,8 @@ export default function FamilyChatWindow({
   const [bruceState, setBruceState] = useState<BruceState>("idle");
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
+  const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null);
 
   const colorMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -101,6 +105,27 @@ export default function FamilyChatWindow({
     }).catch(() => {});
   }, [chatId]);
 
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
+            { headers: { "User-Agent": "BruceHouseholdAI/1.0" } }
+          );
+          const data = await res.json() as { address?: { city?: string; town?: string; village?: string; state?: string } };
+          const city = data.address?.city ?? data.address?.town ?? data.address?.village;
+          const state = data.address?.state;
+          if (city && state) setCurrentLocation(`${city}, ${state}`);
+          else if (state) setCurrentLocation(state);
+        } catch { /* silent */ }
+      },
+      () => { /* permission denied — silent */ },
+      { timeout: 5000 }
+    );
+  }, []);
+
   // Member map for enriching realtime messages
   const memberMap = useRef<Record<string, { name: string; avatar_url: string | null }>>({});
   useEffect(() => {
@@ -133,14 +158,14 @@ export default function FamilyChatWindow({
     const supabase = createClient();
     const { data } = await supabase
       .from("messages")
-      .select("id, role, content, created_at, sender_id")
+      .select("id, role, content, created_at, sender_id, image_url")
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true })
       .limit(100);
 
     if (!data) return;
     setMessages(
-      (data as Array<{ id: string; role: string; content: string; created_at: string; sender_id: string | null }>).map(
+      (data as Array<{ id: string; role: string; content: string; created_at: string; sender_id: string | null; image_url?: string | null }>).map(
         (m) => ({
           id: m.id,
           role: m.role as MessageRole,
@@ -149,6 +174,7 @@ export default function FamilyChatWindow({
           sender_id: m.sender_id,
           sender_name: m.sender_id ? (memberMap.current[m.sender_id]?.name ?? null) : null,
           sender_avatar: m.sender_id ? (memberMap.current[m.sender_id]?.avatar_url ?? null) : null,
+          imageUrl: m.image_url ?? undefined,
         })
       )
     );
@@ -206,9 +232,11 @@ export default function FamilyChatWindow({
   // ── Send ──────────────────────────────────────────────────────────────────
 
   async function sendMessage(text: string) {
-    if (!text.trim() || bruceState !== "idle") return;
+    if ((!text.trim() && !attachedImage) || bruceState !== "idle") return;
 
+    const imageToSend = attachedImage;
     setInput("");
+    setAttachedImage(null);
     setError(null);
     setContextMenu(null);
 
@@ -223,6 +251,7 @@ export default function FamilyChatWindow({
         sender_name: memberMap.current[currentUserId]?.name ?? null,
         sender_avatar: memberMap.current[currentUserId]?.avatar_url ?? null,
         created_at: new Date().toISOString(),
+        imageUrl: imageToSend?.previewUrl,
       },
     ]);
 
@@ -232,7 +261,12 @@ export default function FamilyChatWindow({
       const res = await fetch("/api/family/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, chatId }),
+        body: JSON.stringify({
+          message: text,
+          chatId,
+          currentLocation,
+          image: imageToSend ? { base64: imageToSend.base64, mediaType: imageToSend.mediaType } : undefined,
+        }),
       });
 
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
@@ -455,6 +489,10 @@ export default function FamilyChatWindow({
                           : { ...styles.memberBubble, borderColor: `${memberColor}50` }),
                       }}
                     >
+                      {msg.imageUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={msg.imageUrl} alt="" style={{ maxWidth: "240px", width: "100%", borderRadius: "var(--radius-md)", display: "block", marginBottom: msg.content ? "8px" : 0 }} />
+                      )}
                       {msg.content}
                       {msg.isStreaming && <span style={styles.cursor} aria-hidden="true" />}
                     </div>
@@ -495,6 +533,9 @@ export default function FamilyChatWindow({
         onSend={handleSend}
         disabled={bruceState !== "idle"}
         placeholder={placeholder}
+        attachedImage={attachedImage}
+        onImageAttach={(img) => setAttachedImage(img)}
+        onImageClear={() => setAttachedImage(null)}
       />
 
       {contextMenu && (

@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import {
   assembleMemoryBlock,
   buildFamilyChatSystemPrompt,
+  IMAGE_VISION_BLOCK,
 } from "@/lib/anthropic";
 import { notifyUser } from "@/lib/notifications";
 import {
@@ -29,9 +30,10 @@ export const runtime = "nodejs";
 function isDirectlyAddressed(message: string): boolean {
   return (
     /@bruce\b/i.test(message) ||
-    /\bbruce\s*[,!?]|\bbruce\s+(can|could|please|help|tell|show|find|what|how|why|when|where|who)\b/i.test(
-      message
-    )
+    /\bbruce\s*[,!?:]/.test(message) ||
+    /\bbruce\s+(can|could|please|help|tell|show|find|what|how|why|when|where|who|do|did|is|are|will|would|should|that|this)\b/i.test(message) ||
+    /\b(hey|hi|ok|okay)\s+bruce\b/i.test(message) ||
+    /\bbruce\b.{0,40}(for you|that's for you|meant for you|asking you|directed at you)\b/i.test(message)
   );
 }
 
@@ -49,28 +51,29 @@ export async function POST(request: NextRequest) {
 
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  let body: { message: string; chatId: string };
+  let body: { message: string; chatId: string; currentLocation?: string; image?: { base64: string; mediaType: string } };
   try {
     body = await request.json();
   } catch {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const { message, chatId } = body;
+  const { message, chatId, currentLocation, image } = body;
 
   if (!message?.trim()) return new Response("Message required", { status: 400 });
   if (!chatId) return new Response("chatId required", { status: 400 });
 
   const adminSupabase = createServiceRoleClient();
 
-  // Load sender name
+  // Load sender name and home location
   const { data: senderProfile } = await adminSupabase
     .from("users")
-    .select("name")
+    .select("name, home_location")
     .eq("id", user.id)
     .single();
 
-  const senderName = senderProfile?.name ?? "Someone";
+  const senderName = (senderProfile as { name: string; home_location: string | null } | null)?.name ?? "Someone";
+  const homeLocation = (senderProfile as { name: string; home_location: string | null } | null)?.home_location ?? "Arlington, Virginia";
 
   // Load conversation history (before saving current message)
   const { data: msgs } = await adminSupabase
@@ -88,12 +91,34 @@ export async function POST(request: NextRequest) {
 
   const willRespond = shouldBruceRespond(message);
 
+  // Upload image if present
+  let userImageUrl: string | undefined;
+  if (image) {
+    try {
+      const fileExt = image.mediaType.split("/")[1] ?? "jpg";
+      const filePath = `${user.id}/${Date.now()}.${fileExt}`;
+      const { error: uploadErr } = await adminSupabase.storage
+        .from("message-images")
+        .upload(filePath, Buffer.from(image.base64, "base64"), {
+          contentType: image.mediaType,
+          upsert: false,
+        });
+      if (!uploadErr) {
+        const { data: urlData } = adminSupabase.storage
+          .from("message-images")
+          .getPublicUrl(filePath);
+        userImageUrl = urlData.publicUrl;
+      }
+    } catch { /* non-fatal — message still sends */ }
+  }
+
   // Save user message
   const { error: msgErr } = await adminSupabase.from("messages").insert({
     chat_id: chatId,
     sender_id: user.id,
     role: "user",
     content: message,
+    image_url: userImageUrl ?? null,
   });
 
   if (msgErr) {
@@ -173,14 +198,34 @@ export async function POST(request: NextRequest) {
     hour12: true,
   });
 
+  const locationContext = currentLocation
+    ? `${senderName}'s current location right now is ${currentLocation}.`
+    : `${senderName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;
+
   const systemPrompt =
     buildFamilyChatSystemPrompt(senderName, memoryBlock, dateStr, timeStr) +
+    `\n\n${locationContext}` +
     CALENDAR_SYSTEM_BLOCK +
+    IMAGE_VISION_BLOCK +
     SEARCH_SYSTEM_BLOCK;
 
   const tools = [...CALENDAR_TOOLS, SEARCH_TOOL];
   console.log('tools loaded:', tools.map(t => t.name));
   console.log('system prompt includes search:', systemPrompt.includes('web_search'));
+
+  const userContent: Anthropic.Messages.MessageParam["content"] = image
+    ? [
+        {
+          type: "image" as const,
+          source: {
+            type: "base64" as const,
+            media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+            data: image.base64,
+          },
+        },
+        { type: "text" as const, text: message },
+      ]
+    : message;
 
   const anthropicMessages: Anthropic.Messages.MessageParam[] = [
     ...history
@@ -189,7 +234,7 @@ export async function POST(request: NextRequest) {
         role: m.role as "user" | "assistant",
         content: m.content,
       })),
-    { role: "user" as const, content: message },
+    { role: "user" as const, content: userContent },
   ];
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });

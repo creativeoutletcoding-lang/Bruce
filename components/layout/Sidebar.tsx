@@ -1377,7 +1377,9 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={user.avatar_url} alt="" style={styles.avatar} referrerPolicy="no-referrer" />
           ) : (
-            <div style={styles.avatarFallback}>{user.name.charAt(0).toUpperCase()}</div>
+            <div style={{ ...styles.avatarFallback, backgroundColor: user.color_hex }}>
+              {user.name.charAt(0).toUpperCase()}
+            </div>
           )}
           <span style={styles.userName}>{user.name.split(" ")[0]}</span>
         </div>

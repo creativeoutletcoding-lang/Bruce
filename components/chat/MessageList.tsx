@@ -20,6 +20,7 @@ export interface ChatMessage {
   created_at?: string;
   isStreaming?: boolean;
   metadata?: Record<string, unknown>;
+  imageUrl?: string;
 }
 
 interface MessageListProps {
@@ -114,6 +115,7 @@ export default function MessageList({ messages, onRefresh, userColorHex }: Messa
                 timestamp={msg.created_at}
                 isStreaming={msg.isStreaming}
                 bubbleColorHex={userColorHex}
+                imageUrl={msg.imageUrl ?? (msg.metadata?.image_url as string | undefined)}
               />
             );
           })}

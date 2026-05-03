@@ -6,6 +6,7 @@ import {
   buildSystemPrompt,
   generateChatTitle,
   IMAGE_SYSTEM_BLOCK,
+  IMAGE_VISION_BLOCK,
 } from "@/lib/anthropic";
 import {
   CALENDAR_TOOLS,
@@ -34,14 +35,14 @@ export async function POST(request: NextRequest) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  let body: { message: string; chatId: string | null; isIncognito: boolean };
+  let body: { message: string; chatId: string | null; isIncognito: boolean; currentLocation?: string; image?: { base64: string; mediaType: string } };
   try {
     body = await request.json();
   } catch {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const { message, chatId, isIncognito } = body;
+  const { message, chatId, isIncognito, currentLocation, image } = body;
 
   if (!message?.trim()) {
     return new Response("Message required", { status: 400 });
@@ -78,6 +79,15 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // Fetch user profile for name and home location
+  const { data: userProfile } = await supabase
+    .from("users")
+    .select("name, home_location")
+    .eq("id", user.id)
+    .single();
+  const userName = (userProfile as { name: string; home_location: string | null } | null)?.name ?? "Member";
+  const homeLocation = (userProfile as { name: string; home_location: string | null } | null)?.home_location ?? "Arlington, Virginia";
+
   // Build system prompt
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", {
@@ -91,10 +101,17 @@ export async function POST(request: NextRequest) {
     minute: "2-digit",
     hour12: true,
   });
+
+  const locationContext = currentLocation
+    ? `${userName}'s current location right now is ${currentLocation}.`
+    : `${userName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;
+
   const systemPrompt =
-    buildSystemPrompt(memoryBlock, dateStr, timeStr) +
+    buildSystemPrompt(userName, memoryBlock, dateStr, timeStr) +
+    `\n\n${locationContext}` +
     CALENDAR_SYSTEM_BLOCK +
     IMAGE_SYSTEM_BLOCK +
+    IMAGE_VISION_BLOCK +
     SEARCH_SYSTEM_BLOCK;
 
   const tools = [...CALENDAR_TOOLS, SEARCH_TOOL];
@@ -104,6 +121,26 @@ export async function POST(request: NextRequest) {
   const adminSupabase = createServiceRoleClient();
   let currentChatId = chatId;
   let chatTitle: string | undefined;
+
+  let userImageUrl: string | undefined;
+  if (image && !isIncognito) {
+    try {
+      const fileExt = image.mediaType.split("/")[1] ?? "jpg";
+      const filePath = `${user.id}/${Date.now()}.${fileExt}`;
+      const { error: uploadErr } = await adminSupabase.storage
+        .from("message-images")
+        .upload(filePath, Buffer.from(image.base64, "base64"), {
+          contentType: image.mediaType,
+          upsert: false,
+        });
+      if (!uploadErr) {
+        const { data: urlData } = adminSupabase.storage
+          .from("message-images")
+          .getPublicUrl(filePath);
+        userImageUrl = urlData.publicUrl;
+      }
+    } catch { /* non-fatal — message still sends */ }
+  }
 
   if (!isIncognito) {
     if (!currentChatId) {
@@ -132,12 +169,27 @@ export async function POST(request: NextRequest) {
       sender_id: user.id,
       role: "user",
       content: message,
+      image_url: userImageUrl ?? null,
     });
 
     if (msgError) {
       console.error("[api/chat] Failed to insert user message:", msgError);
     }
   }
+
+  const userContent: Anthropic.Messages.MessageParam["content"] = image
+    ? [
+        {
+          type: "image" as const,
+          source: {
+            type: "base64" as const,
+            media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+            data: image.base64,
+          },
+        },
+        { type: "text" as const, text: message },
+      ]
+    : message;
 
   const anthropicMessages: Anthropic.Messages.MessageParam[] = [
     ...history
@@ -146,7 +198,7 @@ export async function POST(request: NextRequest) {
         role: m.role as "user" | "assistant",
         content: m.content,
       })),
-    { role: "user" as const, content: message },
+    { role: "user" as const, content: userContent },
   ];
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });

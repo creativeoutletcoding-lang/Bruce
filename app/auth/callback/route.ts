@@ -240,6 +240,7 @@ async function handleCallback(request: NextRequest) {
       avatar_url: (data.user.user_metadata.avatar_url as string) ?? null,
       role: isAdmin ? "admin" : "member",
       color_hex: colorHex,
+      home_location: "Arlington, Virginia",
     });
 
     if (insertErr) {

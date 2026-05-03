@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { assembleMemoryBlock, buildProjectSystemPrompt, generateChatTitle, IMAGE_SYSTEM_BLOCK } from "@/lib/anthropic";
+import { assembleMemoryBlock, buildProjectSystemPrompt, generateChatTitle, IMAGE_SYSTEM_BLOCK, IMAGE_VISION_BLOCK } from "@/lib/anthropic";
 import { getFileContent } from "@/lib/google/drive";
 import { type ImageQuality } from "@/lib/images/generate";
 import {
@@ -32,14 +32,14 @@ export async function POST(request: NextRequest, { params }: Props) {
   } = await supabase.auth.getUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  let body: { message: string; chatId: string | null };
+  let body: { message: string; chatId: string | null; currentLocation?: string; image?: { base64: string; mediaType: string } };
   try {
     body = await request.json();
   } catch {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const { message, chatId } = body;
+  const { message, chatId, currentLocation, image } = body;
   if (!message?.trim()) return new Response("Message required", { status: 400 });
 
   // Verify user is a project member (RLS will reject if not, belt-and-suspenders)
@@ -55,13 +55,14 @@ export async function POST(request: NextRequest, { params }: Props) {
 
   if (projectError || !project) return new Response("Project not found", { status: 404 });
 
-  // Get user's name
+  // Get user's name and home location
   const { data: userProfile } = await supabase
     .from("users")
-    .select("name")
+    .select("name, home_location")
     .eq("id", user.id)
     .single();
-  const userName = userProfile?.name ?? "Unknown";
+  const userName = (userProfile as { name: string; home_location: string | null } | null)?.name ?? "Unknown";
+  const homeLocation = (userProfile as { name: string; home_location: string | null } | null)?.home_location ?? "Arlington, Virginia";
 
   // Fetch member names via service role (non-admin RLS limitation)
   const adminSupabase = createServiceRoleClient();
@@ -152,6 +153,10 @@ export async function POST(request: NextRequest, { params }: Props) {
     hour12: true,
   });
 
+  const locationContext = currentLocation
+    ? `${userName}'s current location right now is ${currentLocation}.`
+    : `${userName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;
+
   const systemPrompt =
     buildProjectSystemPrompt(userName, memoryBlock, dateStr, timeStr, {
       name: project.name as string,
@@ -159,7 +164,12 @@ export async function POST(request: NextRequest, { params }: Props) {
       memberNames,
       fileNames,
       fileContentBlock: fileContentBlock || undefined,
-    }) + CALENDAR_SYSTEM_BLOCK + IMAGE_SYSTEM_BLOCK + SEARCH_SYSTEM_BLOCK;
+    }) +
+    `\n\n${locationContext}` +
+    CALENDAR_SYSTEM_BLOCK +
+    IMAGE_SYSTEM_BLOCK +
+    IMAGE_VISION_BLOCK +
+    SEARCH_SYSTEM_BLOCK;
 
   const tools = [...CALENDAR_TOOLS, SEARCH_TOOL];
   console.log('tools loaded:', tools.map(t => t.name));
@@ -205,12 +215,34 @@ export async function POST(request: NextRequest, { params }: Props) {
     }
   }
 
+  // Upload image if present
+  let userImageUrl: string | undefined;
+  if (image) {
+    try {
+      const fileExt = image.mediaType.split("/")[1] ?? "jpg";
+      const filePath = `${user.id}/${Date.now()}.${fileExt}`;
+      const { error: uploadErr } = await adminSupabase.storage
+        .from("message-images")
+        .upload(filePath, Buffer.from(image.base64, "base64"), {
+          contentType: image.mediaType,
+          upsert: false,
+        });
+      if (!uploadErr) {
+        const { data: urlData } = adminSupabase.storage
+          .from("message-images")
+          .getPublicUrl(filePath);
+        userImageUrl = urlData.publicUrl;
+      }
+    } catch { /* non-fatal — message still sends */ }
+  }
+
   // Insert user message
   const { error: msgError } = await adminSupabase.from("messages").insert({
     chat_id: currentChatId,
     sender_id: user.id,
     role: "user",
     content: message,
+    image_url: userImageUrl ?? null,
   });
 
   if (msgError) {
@@ -218,11 +250,25 @@ export async function POST(request: NextRequest, { params }: Props) {
   }
 
   // Build Anthropic messages
+  const userContent: Anthropic.Messages.MessageParam["content"] = image
+    ? [
+        {
+          type: "image" as const,
+          source: {
+            type: "base64" as const,
+            media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+            data: image.base64,
+          },
+        },
+        { type: "text" as const, text: message },
+      ]
+    : message;
+
   const anthropicMessages: Anthropic.Messages.MessageParam[] = [
     ...history
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-    { role: "user", content: message },
+    { role: "user" as const, content: userContent },
   ];
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
