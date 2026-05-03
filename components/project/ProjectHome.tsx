@@ -266,7 +266,7 @@ export default function ProjectHome({
         if (added) {
           setMemberList((prev) => [
             ...prev,
-            { id: added.id, name: added.name, avatar_url: added.avatar_url, role: "member" },
+            { id: added.id, name: added.name, avatar_url: added.avatar_url, color_hex: added.color_hex, role: "member" },
           ]);
         }
         setShowMemberPicker(false);
@@ -392,31 +392,35 @@ export default function ProjectHome({
             <h1 style={styles.projectName}>{projectName}</h1>
           </div>
           <div style={styles.memberAvatars}>
-            {visibleMemberAvatars.map((m, i) => (
-              <div
-                key={m.id}
-                style={{
-                  ...styles.memberAvatar,
-                  zIndex: 10 - i,
-                  marginLeft: i > 0 ? "-8px" : "0",
-                }}
-                title={m.name}
-              >
-                {m.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={m.avatar_url}
-                    alt=""
-                    style={styles.memberAvatarImg}
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <span style={styles.memberAvatarFallback}>
-                    {m.name.charAt(0).toUpperCase()}
-                  </span>
-                )}
-              </div>
-            ))}
+            {visibleMemberAvatars.map((m, i) => {
+              console.log('avatar rendering, color_hex:', m.color_hex);
+              return (
+                <div
+                  key={m.id}
+                  style={{
+                    ...styles.memberAvatar,
+                    backgroundColor: m.color_hex,
+                    zIndex: 10 - i,
+                    marginLeft: i > 0 ? "-8px" : "0",
+                  }}
+                  title={m.name}
+                >
+                  {m.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={m.avatar_url}
+                      alt=""
+                      style={styles.memberAvatarImg}
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <span style={styles.memberAvatarFallback}>
+                      {m.name.charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
             {memberList.length > 4 && (
               <div
                 style={{
@@ -523,9 +527,11 @@ export default function ProjectHome({
             )}
           </div>
           <div style={styles.memberList}>
-            {memberList.map((m) => (
+            {memberList.map((m) => {
+              console.log('avatar rendering, color_hex:', m.color_hex);
+              return (
               <div key={m.id} style={styles.memberRow}>
-                <div style={styles.memberAvatarSmall}>
+                <div style={{ ...styles.memberAvatarSmall, backgroundColor: m.color_hex }}>
                   {m.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -559,7 +565,7 @@ export default function ProjectHome({
                   </button>
                 )}
               </div>
-            ))}
+              ); })}
           </div>
         </section>
 
@@ -888,31 +894,34 @@ export default function ProjectHome({
               </p>
             ) : (
               <div style={styles.tabContent}>
-                {nonMembers.map((u) => (
-                  <button
-                    key={u.id}
-                    style={styles.userPickerRow}
-                    onClick={() => handleAddMember(u.id)}
-                    disabled={isAddingMember}
-                  >
-                    <div style={styles.memberAvatarSmall}>
-                      {u.avatar_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={u.avatar_url}
-                          alt=""
-                          style={styles.memberAvatarSmallImg}
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <span style={styles.memberAvatarSmallFallback}>
-                          {u.name.charAt(0).toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-                    <span style={styles.userPickerName}>{u.name}</span>
-                  </button>
-                ))}
+                {nonMembers.map((u) => {
+                  console.log('avatar rendering, color_hex:', u.color_hex);
+                  return (
+                    <button
+                      key={u.id}
+                      style={styles.userPickerRow}
+                      onClick={() => handleAddMember(u.id)}
+                      disabled={isAddingMember}
+                    >
+                      <div style={{ ...styles.memberAvatarSmall, backgroundColor: u.color_hex }}>
+                        {u.avatar_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={u.avatar_url}
+                            alt=""
+                            style={styles.memberAvatarSmallImg}
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <span style={styles.memberAvatarSmallFallback}>
+                            {u.name.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <span style={styles.userPickerName}>{u.name}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -969,7 +978,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-full)",
     border: "2px solid var(--bg-primary)",
     overflow: "hidden",
-    backgroundColor: "var(--accent)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -1073,7 +1081,6 @@ const styles: Record<string, React.CSSProperties> = {
     height: "28px",
     borderRadius: "var(--radius-full)",
     overflow: "hidden",
-    backgroundColor: "var(--accent)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",

@@ -39,7 +39,7 @@ export default async function ProjectPage({ params }: Props) {
   const adminSupabase = createServiceRoleClient();
   const { data: userProfiles } = await adminSupabase
     .from("users")
-    .select("id, name, avatar_url")
+    .select("id, name, avatar_url, color_hex")
     .in("id", userIds);
 
   const profileMap = new Map((userProfiles ?? []).map((u) => [u.id, u]));
@@ -50,6 +50,7 @@ export default async function ProjectPage({ params }: Props) {
       id: pm.user_id,
       name: profile?.name ?? "Unknown",
       avatar_url: profile?.avatar_url ?? null,
+      color_hex: profile?.color_hex ?? "#0F6E56",
       role: pm.role as "owner" | "member",
     };
   });

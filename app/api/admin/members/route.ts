@@ -24,7 +24,7 @@ export async function GET() {
 
   const { data: users, error } = await admin
     .from("users")
-    .select("id, name, email, role, status, avatar_url, created_at, updated_at, deactivated_at, purge_at")
+    .select("id, name, email, role, status, avatar_url, color_hex, created_at, updated_at, deactivated_at, purge_at")
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -65,6 +65,7 @@ export async function GET() {
     role: u.role,
     status: u.status,
     avatar_url: u.avatar_url,
+    color_hex: u.color_hex,
     created_at: u.created_at,
     deactivated_at: u.deactivated_at,
     purge_at: u.purge_at,

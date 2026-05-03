@@ -93,48 +93,51 @@ export default function FamilyThreadTopBar({
             style={styles.avatarStackButton}
             aria-label="View members"
           >
-            {threadMembers.slice(0, 3).map((m, i) => (
-              <div
-                key={m.id}
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: "var(--radius-full)",
-                  border: "1.5px solid var(--bg-primary)",
-                  overflow: "hidden",
-                  marginLeft: i === 0 ? 0 : -7,
-                  zIndex: 3 - i,
-                  position: "relative",
-                  backgroundColor: "var(--accent)",
-                  flexShrink: 0,
-                }}
-              >
-                {m.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={m.avatar_url}
-                    alt=""
-                    referrerPolicy="no-referrer"
-                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "0.5rem",
-                      fontWeight: "700",
-                      color: "#fff",
-                    }}
-                  >
-                    {m.name.charAt(0).toUpperCase()}
-                  </div>
-                )}
-              </div>
-            ))}
+            {threadMembers.slice(0, 3).map((m, i) => {
+              console.log('avatar rendering, color_hex:', m.color_hex);
+              return (
+                <div
+                  key={m.id}
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: "var(--radius-full)",
+                    border: "1.5px solid var(--bg-primary)",
+                    overflow: "hidden",
+                    marginLeft: i === 0 ? 0 : -7,
+                    zIndex: 3 - i,
+                    position: "relative",
+                    backgroundColor: m.color_hex,
+                    flexShrink: 0,
+                  }}
+                >
+                  {m.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={m.avatar_url}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "0.5rem",
+                        fontWeight: "700",
+                        color: "#fff",
+                      }}
+                    >
+                      {m.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             {threadMembers.length > 3 && (
               <div
                 style={{
@@ -226,7 +229,9 @@ export default function FamilyThreadTopBar({
               <>
                 <p style={styles.modalBody}>Choose a household member to add.</p>
                 <div style={styles.memberList}>
-                  {addableMembers.map((member) => (
+                  {addableMembers.map((member) => {
+                    console.log('avatar rendering, color_hex:', member.color_hex);
+                    return (
                     <button
                       key={member.id}
                       style={{
@@ -235,12 +240,12 @@ export default function FamilyThreadTopBar({
                       }}
                       onClick={() => setSelectedUserId(member.id)}
                     >
-                      <div style={styles.memberAvatar}>
+                      <div style={{ ...styles.memberAvatar, backgroundColor: member.color_hex }}>
                         {member.avatar_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={member.avatar_url} alt="" style={styles.avatarImg} referrerPolicy="no-referrer" />
                         ) : (
-                          <span style={styles.avatarInitial}>{member.name.charAt(0)}</span>
+                          <span style={{ ...styles.avatarInitial, color: "#fff" }}>{member.name.charAt(0)}</span>
                         )}
                       </div>
                       <span style={styles.memberName}>{member.name.split(" ")[0]}</span>
@@ -250,7 +255,7 @@ export default function FamilyThreadTopBar({
                         </svg>
                       )}
                     </button>
-                  ))}
+                  ); })}
                 </div>
               </>
             )}
@@ -285,19 +290,22 @@ export default function FamilyThreadTopBar({
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <p style={styles.modalTitle}>Members</p>
             <div style={styles.memberList}>
-              {threadMembers.map((m) => (
-                <div key={m.id} style={styles.memberRow}>
-                  <div style={styles.memberAvatar}>
-                    {m.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={m.avatar_url} alt="" style={styles.avatarImg} referrerPolicy="no-referrer" />
-                    ) : (
-                      <span style={styles.avatarInitial}>{m.name.charAt(0)}</span>
-                    )}
+              {threadMembers.map((m) => {
+                console.log('avatar rendering, color_hex:', m.color_hex);
+                return (
+                  <div key={m.id} style={styles.memberRow}>
+                    <div style={{ ...styles.memberAvatar, backgroundColor: m.color_hex }}>
+                      {m.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={m.avatar_url} alt="" style={styles.avatarImg} referrerPolicy="no-referrer" />
+                      ) : (
+                        <span style={{ ...styles.avatarInitial, color: "#fff" }}>{m.name.charAt(0)}</span>
+                      )}
+                    </div>
+                    <span style={styles.memberName}>{m.name}</span>
                   </div>
-                  <span style={styles.memberName}>{m.name}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <div style={styles.modalActions}>
               <button style={styles.cancelButton} onClick={() => setMemberSheetOpen(false)}>
@@ -497,7 +505,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-full)",
     flexShrink: 0,
     overflow: "hidden",
-    backgroundColor: "var(--bg-secondary)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -510,7 +517,7 @@ const styles: Record<string, React.CSSProperties> = {
   avatarInitial: {
     fontSize: "0.75rem",
     fontWeight: "600",
-    color: "var(--accent)",
+    color: "#fff",
   },
   memberName: {
     flex: 1,

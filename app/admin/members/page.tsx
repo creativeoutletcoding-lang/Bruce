@@ -9,6 +9,7 @@ interface Member {
   role: string;
   status: string;
   avatar_url: string | null;
+  color_hex: string;
   created_at: string;
   deactivated_at: string | null;
   purge_at: string | null;
@@ -16,7 +17,8 @@ interface Member {
   message_count: number;
 }
 
-function Avatar({ name, url }: { name: string; url: string | null }) {
+function Avatar({ name, url, colorHex }: { name: string; url: string | null; colorHex: string }) {
+  console.log('avatar rendering, color_hex:', colorHex);
   if (url) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
@@ -34,7 +36,7 @@ function Avatar({ name, url }: { name: string; url: string | null }) {
         width: 32,
         height: 32,
         borderRadius: "50%",
-        backgroundColor: "var(--accent)",
+        backgroundColor: colorHex,
         color: "#fff",
         display: "flex",
         alignItems: "center",
@@ -175,7 +177,7 @@ export default function MembersPage() {
                 <tr key={m.id}>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <Avatar name={m.name} url={m.avatar_url} />
+                      <Avatar name={m.name} url={m.avatar_url} colorHex={m.color_hex} />
                       <span style={{ fontWeight: 500 }}>{m.name}</span>
                     </div>
                   </td>

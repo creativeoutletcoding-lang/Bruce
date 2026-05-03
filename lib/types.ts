@@ -223,6 +223,7 @@ export interface ProjectMemberDetail {
   id: string;
   name: string;
   avatar_url: string | null;
+  color_hex: string;
   role: ProjectMemberRole;
 }
 
