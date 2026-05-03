@@ -9,6 +9,7 @@ import MessageInput from "./MessageInput";
 import type { FileAttachment } from "./MessageInput";
 import type { ChatMessage } from "./MessageList";
 import type { Message, MessageRole } from "@/lib/types";
+import { modelLabel } from "@/lib/models";
 
 interface ChatWindowProps {
   chatId: string;
@@ -123,6 +124,15 @@ export default function ChatWindow({
 
   async function handleModelChange(newModel: string) {
     setModel(newModel);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `model-switch-${Date.now()}`,
+        role: "system" as MessageRole,
+        content: `Switched to ${modelLabel(newModel)}`,
+        created_at: new Date().toISOString(),
+      },
+    ]);
     await fetch("/api/users/me", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -162,6 +172,10 @@ export default function ChatWindow({
     setIsStreaming(true);
 
     try {
+      if (fileToSend?.type === "image") {
+        console.log("[ChatWindow] sending image: mediaType=%s base64Length=%d", fileToSend.mediaType, fileToSend.base64.length);
+      }
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -176,6 +190,8 @@ export default function ChatWindow({
       });
 
       if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        console.error("[ChatWindow] request failed: status=%d body=%s", res.status, errText);
         throw new Error(`Request failed: ${res.status}`);
       }
 

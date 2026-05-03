@@ -9,6 +9,7 @@ import MessageInput from "@/components/chat/MessageInput";
 import type { FileAttachment } from "@/components/chat/MessageInput";
 import type { ChatMessage } from "@/components/chat/MessageList";
 import type { Message, MessageRole } from "@/lib/types";
+import { modelLabel } from "@/lib/models";
 
 interface ProjectChatWindowProps {
   chatId: string;
@@ -137,6 +138,15 @@ export default function ProjectChatWindow({
 
   async function handleModelChange(newModel: string) {
     setModel(newModel);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `model-switch-${Date.now()}`,
+        role: "system" as MessageRole,
+        content: `Switched to ${modelLabel(newModel)}`,
+        created_at: new Date().toISOString(),
+      },
+    ]);
     await fetch("/api/users/me", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

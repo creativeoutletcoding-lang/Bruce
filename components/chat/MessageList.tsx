@@ -102,6 +102,15 @@ export default function MessageList({ messages, onRefresh, userColorHex }: Messa
         <div style={styles.inner}>
           <div style={styles.spacer} />
           {messages.map((msg) => {
+            if (msg.role === "system") {
+              return (
+                <div key={msg.id} style={styles.systemDivider}>
+                  <div style={styles.systemLine} />
+                  <span style={styles.systemText}>{msg.content}</span>
+                  <div style={styles.systemLine} />
+                </div>
+              );
+            }
             if (msg.metadata?.content_type === "image") {
               const url = msg.metadata.image_url as string;
               const prompt = (msg.metadata.prompt as string) ?? msg.content;
@@ -194,5 +203,22 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-secondary)",
     cursor: "pointer",
     boxShadow: "var(--shadow-md)",
+  },
+  systemDivider: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    padding: "10px 16px",
+  },
+  systemLine: {
+    flex: 1,
+    height: "1px",
+    backgroundColor: "var(--border)",
+  },
+  systemText: {
+    fontSize: "0.6875rem",
+    color: "var(--text-tertiary)",
+    flexShrink: 0,
+    letterSpacing: "0.01em",
   },
 };

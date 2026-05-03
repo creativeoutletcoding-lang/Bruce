@@ -60,7 +60,14 @@ export async function POST(request: NextRequest) {
 
   const { message, chatId, currentLocation, image, document } = body;
 
-  if (!message?.trim()) return new Response("Message required", { status: 400 });
+  if (image) {
+    console.log('[api/family/chat] image attachment: mediaType=%s base64Length=%d', image.mediaType, image.base64?.length ?? 0);
+  }
+  if (document) {
+    console.log('[api/family/chat] document attachment: filename=%s mediaType=%s base64Length=%d', document.filename, document.mediaType, document.base64?.length ?? 0);
+  }
+
+  if (!message?.trim() && !image && !document) return new Response("Message required", { status: 400 });
   if (!chatId) return new Response("chatId required", { status: 400 });
 
   const adminSupabase = createServiceRoleClient();
@@ -235,30 +242,38 @@ export async function POST(request: NextRequest) {
   console.log('tools loaded:', tools.map(t => t.name));
   console.log('system prompt includes search:', systemPrompt.includes('web_search'));
 
-  const userContent: Anthropic.Messages.MessageParam["content"] = image
-    ? [
-        {
-          type: "image" as const,
-          source: {
-            type: "base64" as const,
-            media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-            data: image.base64,
+  console.log('[api/family/chat] building content block — hasImage=%s hasDocument=%s messageLen=%d', !!image, !!document, message.length);
+
+  let userContent: Anthropic.Messages.MessageParam["content"];
+  try {
+    userContent = image
+      ? [
+          {
+            type: "image" as const,
+            source: {
+              type: "base64" as const,
+              media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+              data: image.base64,
+            },
           },
-        },
-        { type: "text" as const, text: message },
-      ]
-    : document
-    ? [
-        {
-          type: "document" as const,
-          source: document.mediaType === "application/pdf"
-            ? { type: "base64" as const, media_type: "application/pdf" as const, data: document.base64 }
-            : { type: "text" as const, media_type: "text/plain" as const, data: document.base64 },
-          title: document.filename,
-        },
-        { type: "text" as const, text: message },
-      ]
-    : message;
+          ...(message.trim() ? [{ type: "text" as const, text: message }] : []),
+        ]
+      : document
+      ? [
+          {
+            type: "document" as const,
+            source: document.mediaType === "application/pdf"
+              ? { type: "base64" as const, media_type: "application/pdf" as const, data: document.base64 }
+              : { type: "text" as const, media_type: "text/plain" as const, data: document.base64 },
+            title: document.filename,
+          },
+          ...(message.trim() ? [{ type: "text" as const, text: message }] : []),
+        ]
+      : message;
+  } catch (contentErr) {
+    console.error('[api/family/chat] content block construction failed:', contentErr);
+    return new Response("Content processing failed", { status: 500 });
+  }
 
   const anthropicMessages: Anthropic.Messages.MessageParam[] = [
     ...history
@@ -279,6 +294,7 @@ export async function POST(request: NextRequest) {
 
       try {
         let currentMessages = [...anthropicMessages];
+        console.log('[api/family/chat] anthropic call starting — model=claude-sonnet-4-6 messages=%d', currentMessages.length);
 
         while (true) {
           const stream = anthropic.messages.stream({
