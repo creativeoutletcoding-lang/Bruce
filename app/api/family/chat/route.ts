@@ -11,6 +11,11 @@ import {
   CALENDAR_SYSTEM_BLOCK,
   executeCalendarTool,
 } from "@/lib/google/calendarTools";
+import {
+  SEARCH_TOOL,
+  SEARCH_SYSTEM_BLOCK,
+  executeSearchTool,
+} from "@/lib/searchTools";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -170,7 +175,12 @@ export async function POST(request: NextRequest) {
 
   const systemPrompt =
     buildFamilyChatSystemPrompt(senderName, memoryBlock, dateStr, timeStr) +
-    CALENDAR_SYSTEM_BLOCK;
+    CALENDAR_SYSTEM_BLOCK +
+    SEARCH_SYSTEM_BLOCK;
+
+  const tools = [...CALENDAR_TOOLS, SEARCH_TOOL];
+  console.log('tools loaded:', tools.map(t => t.name));
+  console.log('system prompt includes search:', systemPrompt.includes('web_search'));
 
   const anthropicMessages: Anthropic.Messages.MessageParam[] = [
     ...history
@@ -198,7 +208,7 @@ export async function POST(request: NextRequest) {
             max_tokens: 2048,
             system: systemPrompt,
             messages: currentMessages,
-            tools: CALENDAR_TOOLS,
+            tools,
           });
 
           stream.on("text", (text) => {
@@ -219,10 +229,17 @@ export async function POST(request: NextRequest) {
             toolCalls.map(async (tc) => {
               let result: string;
               try {
-                result = await executeCalendarTool(
-                  tc.name,
-                  tc.input as Record<string, unknown>
-                );
+                if (tc.name === "web_search") {
+                  result = await executeSearchTool(
+                    tc.name,
+                    tc.input as Record<string, unknown>
+                  );
+                } else {
+                  result = await executeCalendarTool(
+                    tc.name,
+                    tc.input as Record<string, unknown>
+                  );
+                }
               } catch (err) {
                 result = `Error: ${err instanceof Error ? err.message : String(err)}`;
               }

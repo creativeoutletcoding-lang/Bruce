@@ -5,6 +5,7 @@ export interface SearchResult {
 }
 
 export async function webSearch(query: string): Promise<SearchResult> {
+  console.log('webSearch called, key present:', !!process.env.PERPLEXITY_API_KEY, 'key length:', process.env.PERPLEXITY_API_KEY?.length ?? 0);
   if (!process.env.PERPLEXITY_API_KEY) {
     throw new Error("PERPLEXITY_API_KEY is not configured");
   }

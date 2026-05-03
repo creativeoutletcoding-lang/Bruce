@@ -4,6 +4,17 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import { assembleMemoryBlock, buildProjectSystemPrompt, generateChatTitle, IMAGE_SYSTEM_BLOCK } from "@/lib/anthropic";
 import { getFileContent } from "@/lib/google/drive";
 import { type ImageQuality } from "@/lib/images/generate";
+import {
+  CALENDAR_TOOLS,
+  CALENDAR_SYSTEM_BLOCK,
+  executeCalendarTool,
+} from "@/lib/google/calendarTools";
+import {
+  SEARCH_TOOL,
+  SEARCH_SYSTEM_BLOCK,
+  SEARCH_STATUS_SENTINEL,
+  executeSearchTool,
+} from "@/lib/searchTools";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -148,7 +159,11 @@ export async function POST(request: NextRequest, { params }: Props) {
       memberNames,
       fileNames,
       fileContentBlock: fileContentBlock || undefined,
-    }) + IMAGE_SYSTEM_BLOCK;
+    }) + CALENDAR_SYSTEM_BLOCK + IMAGE_SYSTEM_BLOCK + SEARCH_SYSTEM_BLOCK;
+
+  const tools = [...CALENDAR_TOOLS, SEARCH_TOOL];
+  console.log('tools loaded:', tools.map(t => t.name));
+  console.log('system prompt includes search:', systemPrompt.includes('web_search'));
 
   // Create or use existing chat
   let currentChatId = chatId;
@@ -203,7 +218,7 @@ export async function POST(request: NextRequest, { params }: Props) {
   }
 
   // Build Anthropic messages
-  const anthropicMessages: Array<{ role: "user" | "assistant"; content: string }> = [
+  const anthropicMessages: Anthropic.Messages.MessageParam[] = [
     ...history
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
@@ -257,22 +272,66 @@ export async function POST(request: NextRequest, { params }: Props) {
       }
 
       try {
-        const stream = anthropic.messages.stream({
-          model: "claude-sonnet-4-6",
-          max_tokens: 2048,
-          system: systemPrompt,
-          messages: anthropicMessages,
-        });
+        let currentMessages = [...anthropicMessages];
 
-        for await (const event of stream) {
-          if (
-            event.type === "content_block_delta" &&
-            event.delta.type === "text_delta"
-          ) {
-            const text = event.delta.text;
+        while (true) {
+          const stream = anthropic.messages.stream({
+            model: "claude-sonnet-4-6",
+            max_tokens: 2048,
+            system: systemPrompt,
+            messages: currentMessages,
+            tools,
+          });
+
+          stream.on("text", (text) => {
             fullResponse += text;
             handleText(text);
+          });
+
+          const finalMsg = await stream.finalMessage();
+
+          if (finalMsg.stop_reason !== "tool_use") break;
+
+          const toolCalls = finalMsg.content.filter(
+            (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
+          );
+          if (toolCalls.length === 0) break;
+
+          if (toolCalls.some((tc) => tc.name === "web_search")) {
+            controller.enqueue(encoder.encode(SEARCH_STATUS_SENTINEL));
           }
+
+          const toolResults = await Promise.all(
+            toolCalls.map(async (tc) => {
+              let result: string;
+              try {
+                if (tc.name === "web_search") {
+                  result = await executeSearchTool(
+                    tc.name,
+                    tc.input as Record<string, unknown>
+                  );
+                } else {
+                  result = await executeCalendarTool(
+                    tc.name,
+                    tc.input as Record<string, unknown>
+                  );
+                }
+              } catch (err) {
+                result = `Error: ${err instanceof Error ? err.message : String(err)}`;
+              }
+              return {
+                type: "tool_result" as const,
+                tool_use_id: tc.id,
+                content: result,
+              };
+            })
+          );
+
+          currentMessages = [
+            ...currentMessages,
+            { role: "assistant" as const, content: finalMsg.content },
+            { role: "user" as const, content: toolResults },
+          ];
         }
 
         flushPending();

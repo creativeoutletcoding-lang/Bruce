@@ -12,6 +12,12 @@ import {
   CALENDAR_SYSTEM_BLOCK,
   executeCalendarTool,
 } from "@/lib/google/calendarTools";
+import {
+  SEARCH_TOOL,
+  SEARCH_SYSTEM_BLOCK,
+  SEARCH_STATUS_SENTINEL,
+  executeSearchTool,
+} from "@/lib/searchTools";
 import { type ImageQuality } from "@/lib/images/generate";
 import { NextRequest } from "next/server";
 
@@ -88,7 +94,12 @@ export async function POST(request: NextRequest) {
   const systemPrompt =
     buildSystemPrompt(memoryBlock, dateStr, timeStr) +
     CALENDAR_SYSTEM_BLOCK +
-    IMAGE_SYSTEM_BLOCK;
+    IMAGE_SYSTEM_BLOCK +
+    SEARCH_SYSTEM_BLOCK;
+
+  const tools = [...CALENDAR_TOOLS, SEARCH_TOOL];
+  console.log('tools loaded:', tools.map(t => t.name));
+  console.log('system prompt includes search:', systemPrompt.includes('web_search'));
 
   const adminSupabase = createServiceRoleClient();
   let currentChatId = chatId;
@@ -204,7 +215,7 @@ export async function POST(request: NextRequest) {
             max_tokens: 2048,
             system: systemPrompt,
             messages: currentMessages,
-            tools: CALENDAR_TOOLS,
+            tools,
           });
 
           stream.on("text", (text) => {
@@ -221,14 +232,25 @@ export async function POST(request: NextRequest) {
           );
           if (toolCalls.length === 0) break;
 
+          if (toolCalls.some((tc) => tc.name === "web_search")) {
+            controller.enqueue(encoder.encode(SEARCH_STATUS_SENTINEL));
+          }
+
           const toolResults = await Promise.all(
             toolCalls.map(async (tc) => {
               let result: string;
               try {
-                result = await executeCalendarTool(
-                  tc.name,
-                  tc.input as Record<string, unknown>
-                );
+                if (tc.name === "web_search") {
+                  result = await executeSearchTool(
+                    tc.name,
+                    tc.input as Record<string, unknown>
+                  );
+                } else {
+                  result = await executeCalendarTool(
+                    tc.name,
+                    tc.input as Record<string, unknown>
+                  );
+                }
               } catch (err) {
                 result = `Error: ${err instanceof Error ? err.message : String(err)}`;
               }
