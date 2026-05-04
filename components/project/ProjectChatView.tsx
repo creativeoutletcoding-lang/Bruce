@@ -114,8 +114,12 @@ export default function ProjectChatView({
 
   useEffect(() => {
     const supabase = createClient();
+    const topic = `project-chat-${chatId}`;
+    const existing = supabase.getChannels().find((c) => c.topic === `realtime:${topic}`);
+    if (existing) supabase.removeChannel(existing);
+
     const channel = supabase
-      .channel(`project-chat-${chatId}`)
+      .channel(topic)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` },
