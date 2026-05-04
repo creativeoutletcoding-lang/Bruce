@@ -580,7 +580,7 @@ const styles: Record<string, React.CSSProperties> = {
   bubble: { padding: "10px 14px", borderRadius: "var(--radius-lg)", fontSize: "0.9375rem", lineHeight: "1.55", wordBreak: "break-word", whiteSpace: "pre-wrap", userSelect: "text" },
   meBubble: { color: "#ffffff", borderBottomRightRadius: "4px" },
   bruceBubble: { backgroundColor: "transparent", color: "var(--text-primary)", border: "1px solid #2a2a2a", borderBottomLeftRadius: "4px" },
-  memberBubble: { backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", border: "1px solid", borderBottomLeftRadius: "4px" },
+  memberBubble: { backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", border: "2px solid", borderBottomLeftRadius: "4px" },
   indicatorBubble: { display: "inline-flex", flexDirection: "column", gap: "6px", padding: "12px 16px", borderRadius: "var(--radius-lg)", borderBottomLeftRadius: "4px", backgroundColor: "transparent", border: "1px solid #2a2a2a" },
   dotsRow: { display: "flex", alignItems: "center", gap: "4px" },
   dot1: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "0ms" },
