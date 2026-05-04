@@ -844,6 +844,52 @@ span[class*="typingDots"] > span:nth-child(3),
   display: none;
 }
 
+/* ============================================================
+   PROJECT HOME LAYOUT
+   Two-column on desktop, stacked on mobile
+   ============================================================ */
+
+.ph-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.ph-left {
+  flex: 1;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.ph-right {
+  width: 280px;
+  flex-shrink: 0;
+  border-left: 0.5px solid var(--border);
+  background-color: var(--bg-primary);
+  overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+  .ph-body {
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .ph-left {
+    overflow: visible;
+    flex: none;
+  }
+
+  .ph-right {
+    width: 100%;
+    border-left: none;
+    border-top: 0.5px solid var(--border);
+    overflow: visible;
+    flex-shrink: 0;
+  }
+}
+
 @media (pointer: fine) {
   .model-picker-sheet {
     position: absolute !important;
