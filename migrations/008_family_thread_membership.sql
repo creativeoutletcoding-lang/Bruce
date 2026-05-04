@@ -1,6 +1,7 @@
 -- ============================================================
--- MIGRATION 007: Family Thread Membership (chat_members-based RLS)
--- Run in Supabase SQL editor after 006
+-- MIGRATION 008: Family Thread Membership (chat_members-based RLS)
+-- Applied after 007_family_threads.sql
+-- Run in Supabase SQL editor after 007
 -- Replaces the type-based thread policies from 006 with
 -- membership-gated policies so users only see threads they're in.
 -- ============================================================

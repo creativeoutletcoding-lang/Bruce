@@ -1,4 +1,5 @@
--- Migration 008: user_presence
+-- Migration 009: user_presence
+-- Applied after 008_family_thread_membership.sql
 -- Tracks which chat a user has open so push notifications can be suppressed
 -- when the recipient already has that conversation visible.
 --

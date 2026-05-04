@@ -1,6 +1,7 @@
 -- ============================================================
--- MIGRATION 006: Family Threads
--- Run in Supabase SQL editor after 005
+-- MIGRATION 007: Family Threads
+-- Applied after 006_family_group.sql
+-- Run in Supabase SQL editor after 006
 -- ============================================================
 
 -- 1. Expand the chats.type CHECK constraint to include 'family_thread'

@@ -1,3 +1,6 @@
+-- Migration 013: fix member colors
+-- Applied after 012_preferred_model.sql
+
 -- Fix member profile colors to match Google Calendar palette.
 -- Matches on first name (case-insensitive) since emails are not available
 -- in the migration context. Names are unique across the household.

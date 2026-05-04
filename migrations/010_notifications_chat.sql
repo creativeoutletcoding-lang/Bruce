@@ -1,4 +1,5 @@
--- Migration 009: notifications — add chat_id and read_at
+-- Migration 010: notifications — add chat_id and read_at
+-- Applied after 009_user_presence.sql
 --
 -- chat_id: links a notification to the specific chat it was generated from.
 --   Used to compute per-chat unread counts for sidebar indicators and to mark

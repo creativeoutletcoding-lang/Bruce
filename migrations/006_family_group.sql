@@ -1,5 +1,6 @@
 -- ============================================================
--- MIGRATION 005: Family Group Chat
+-- MIGRATION 006: Family Group Chat
+-- Applied after 005_color_hex.sql
 -- Run in Supabase SQL editor
 -- ============================================================
 

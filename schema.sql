@@ -1,7 +1,9 @@
 -- ============================================================
 -- BRUCE HOUSEHOLD AI — SUPABASE SCHEMA
--- Phase 1 — Foundation
--- Run this in full in the Supabase SQL editor
+-- Synced through migration 013 (2026-05-03)
+-- This file reflects the full current database state.
+-- Run this in full in the Supabase SQL editor for a fresh install.
+-- For incremental changes, run the numbered files in migrations/.
 -- ============================================================
 
 -- Extensions
@@ -84,6 +86,8 @@ CREATE TABLE users (
   google_drive_personal_id  TEXT,           -- Drive folder: "Personal" under root
   google_drive_projects_id  TEXT,           -- Drive folder: "Projects" under root
   color_hex                 TEXT NOT NULL DEFAULT '#6B7280',  -- bubble color (Google Calendar palette)
+  home_location             TEXT NOT NULL DEFAULT 'Arlington, Virginia',
+  preferred_model           TEXT DEFAULT 'claude-sonnet-4-6',
   deactivated_at            TIMESTAMPTZ,
   purge_at                  TIMESTAMPTZ,    -- 30 days after deactivation
   created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -219,8 +223,11 @@ CREATE TABLE messages (
   sender_id   UUID REFERENCES users(id) ON DELETE SET NULL,  -- NULL for Bruce
   role        TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
   content     TEXT NOT NULL,
-  metadata    JSONB NOT NULL DEFAULT '{}'::jsonb,  -- tool_use, citations, etc.
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  metadata            JSONB NOT NULL DEFAULT '{}'::jsonb,  -- tool_use, citations, etc.
+  image_url           TEXT,                                 -- user-uploaded image or document URL
+  attachment_type     TEXT,                                 -- 'image' or 'document'
+  attachment_filename TEXT,                                 -- original filename for documents
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_messages_chat ON messages(chat_id);
@@ -287,11 +294,14 @@ CREATE TABLE notifications (
   content     TEXT NOT NULL,
   metadata    JSONB NOT NULL DEFAULT '{}'::jsonb,
   read        BOOLEAN NOT NULL DEFAULT FALSE,
+  chat_id     UUID REFERENCES chats(id) ON DELETE SET NULL,  -- chat that generated this notification
+  read_at     TIMESTAMPTZ,                                    -- when marked read (alongside boolean read)
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_notifications_user ON notifications(user_id);
 CREATE INDEX idx_notifications_unread ON notifications(user_id, read) WHERE read = FALSE;
+CREATE INDEX idx_notifications_chat_unread ON notifications(user_id, chat_id) WHERE read = FALSE;
 
 
 -- ============================================================
@@ -306,6 +316,21 @@ CREATE TABLE pending_memory (
   status        TEXT NOT NULL DEFAULT 'pending'
                   CHECK (status IN ('pending', 'approved', 'rejected')),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+-- ============================================================
+-- TABLE: user_presence
+-- Tracks which chat each user has open for push notification suppression.
+-- One row per (user_id, chat_id). Upserted on a heartbeat while a chat window
+-- is mounted. Accessed exclusively via service role — no RLS needed.
+-- ============================================================
+
+CREATE TABLE user_presence (
+  user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  chat_id    UUID        NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, chat_id)
 );
 
 
@@ -327,6 +352,7 @@ ALTER TABLE files            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE memory           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pending_memory   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_presence    ENABLE ROW LEVEL SECURITY;  -- service role only; no user-facing policies
 
 
 -- ============================================================
@@ -429,6 +455,13 @@ CREATE POLICY "invite_tokens_admin_all"
   TO authenticated
   USING (is_admin())
   WITH CHECK (is_admin());
+
+-- Public anon policy — required for /join page to validate tokens without a session.
+-- Only exposes unused, non-expired tokens. No sensitive data leakage.
+CREATE POLICY "invite_tokens_public_validate"
+  ON invite_tokens FOR SELECT
+  TO anon
+  USING (used = false AND expires_at > NOW());
 
 
 -- ============================================================
@@ -537,6 +570,26 @@ CREATE POLICY "chats_delete_owner"
   TO authenticated
   USING (owner_id = auth.uid() OR is_admin());
 
+-- Family group: the one permanent household chat is visible to all authenticated members.
+CREATE POLICY "family_group_chat_select"
+  ON chats FOR SELECT
+  TO authenticated
+  USING (type = 'family_group');
+
+-- Family threads: membership-gated via chat_members.
+CREATE POLICY "family_thread_chat_select"
+  ON chats FOR SELECT
+  TO authenticated
+  USING (
+    type = 'family_thread'
+    AND deleted_at IS NULL
+    AND EXISTS (
+      SELECT 1 FROM chat_members cm
+      WHERE cm.chat_id = id
+        AND cm.user_id = auth.uid()
+    )
+  );
+
 
 -- ============================================================
 -- RLS POLICIES — chat_members
@@ -573,6 +626,25 @@ CREATE POLICY "chat_members_delete_owner"
       WHERE c.id = chat_id AND c.owner_id = auth.uid()
     )
     OR is_admin()
+  );
+
+-- Thread member enumeration: allows any thread member to see who else is in their threads
+-- (needed for sidebar member avatars and topbar). The self-referential EXISTS is intentional —
+-- Postgres resolves it via the SECURITY DEFINER is_chat_member path in chat_members_select.
+CREATE POLICY "family_thread_members_select"
+  ON chat_members FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM chats c
+      WHERE c.id = chat_id
+        AND c.type = 'family_thread'
+        AND c.deleted_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM chat_members cm2
+          WHERE cm2.chat_id = c.id AND cm2.user_id = auth.uid()
+        )
+    )
   );
 
 
@@ -613,6 +685,36 @@ CREATE POLICY "messages_insert"
   );
 
 -- Messages are never updated or deleted by users
+
+-- Family thread message access: membership-gated (replaces type-only policies from mig 007).
+CREATE POLICY "family_thread_messages_select"
+  ON messages FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM chats c
+      JOIN chat_members cm ON cm.chat_id = c.id
+      WHERE c.id = chat_id
+        AND c.type = 'family_thread'
+        AND c.deleted_at IS NULL
+        AND cm.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "family_thread_messages_insert"
+  ON messages FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    sender_id = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM chats c
+      JOIN chat_members cm ON cm.chat_id = c.id
+      WHERE c.id = chat_id
+        AND c.type = 'family_thread'
+        AND c.deleted_at IS NULL
+        AND cm.user_id = auth.uid()
+    )
+  );
 
 
 -- ============================================================
