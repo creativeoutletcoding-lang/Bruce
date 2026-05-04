@@ -14,14 +14,14 @@ export async function GET() {
 
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  // Use service role to bypass RLS, then filter to threads where the
-  // authenticated user has a chat_members row. The anon client's RLS policy on
-  // chat_members is self-referential and blocks newly-created rows before the
-  // policy's own EXISTS subquery can see them.
+  // Service role needed for: cross-user user-profile lookups and the
+  // thread-members batch fetch (chat_members policy is self-referential on
+  // that query pattern). Family group and notifications queries use the
+  // authenticated anon client — RLS handles those correctly.
   const adminSupabase = createServiceRoleClient();
 
-  // Family group chat — needed for its ID and unread count in sidebar.
-  const { data: familyGroupChat } = await adminSupabase
+  // Family group chat — any authenticated user can read this via RLS policy.
+  const { data: familyGroupChat } = await supabase
     .from("chats")
     .select("id")
     .eq("type", "family_group")
@@ -52,7 +52,7 @@ export async function GET() {
 
   const unreadByChatId: Record<string, number> = {};
   if (allFamilyChatIds.length > 0) {
-    const { data: unreadRows } = await adminSupabase
+    const { data: unreadRows } = await supabase
       .from("notifications")
       .select("chat_id")
       .eq("user_id", user.id)

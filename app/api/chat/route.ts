@@ -45,13 +45,6 @@ export async function POST(request: NextRequest) {
   const { message, chatId, isIncognito, currentLocation, userTimestamp: rawTimestamp, image, document } = body;
   const userTimestamp = rawTimestamp ?? new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
-  if (image) {
-    console.log('[api/chat] image attachment: mediaType=%s base64Length=%d', image.mediaType, image.base64?.length ?? 0);
-  }
-  if (document) {
-    console.log('[api/chat] document attachment: filename=%s mediaType=%s base64Length=%d', document.filename, document.mediaType, document.base64?.length ?? 0);
-  }
-
   if (!message?.trim() && !image && !document) {
     return new Response("Message required", { status: 400 });
   }
@@ -111,8 +104,6 @@ export async function POST(request: NextRequest) {
     SEARCH_SYSTEM_BLOCK;
 
   const tools = [...CALENDAR_TOOLS, SEARCH_TOOL];
-  console.log('tools loaded:', tools.map(t => t.name));
-  console.log('system prompt includes search:', systemPrompt.includes('web_search'));
 
   const adminSupabase = createServiceRoleClient();
   let currentChatId = chatId;
@@ -135,7 +126,7 @@ export async function POST(request: NextRequest) {
           .getPublicUrl(filePath);
         userImageUrl = urlData.publicUrl;
       }
-    } catch { /* non-fatal — message still sends */ }
+    } catch (err) { console.error('[image-upload]', err); }
   }
 
   let userDocUrl: string | undefined;
@@ -155,7 +146,7 @@ export async function POST(request: NextRequest) {
           .getPublicUrl(filePath);
         userDocUrl = urlData.publicUrl;
       }
-    } catch { /* non-fatal — message still sends */ }
+    } catch (err) { console.error('[document-upload]', err); }
   }
 
   if (!isIncognito) {
@@ -194,8 +185,6 @@ export async function POST(request: NextRequest) {
       console.error("[api/chat] Failed to insert user message:", msgError);
     }
   }
-
-  console.log('[api/chat] building content block — hasImage=%s hasDocument=%s messageLen=%d', !!image, !!document, message.length);
 
   let userContent: Anthropic.Messages.MessageParam["content"];
   try {
@@ -297,7 +286,6 @@ export async function POST(request: NextRequest) {
 
       try {
         let currentMessages = [...anthropicMessages];
-        console.log('[api/chat] anthropic call starting — model=%s messages=%d', preferredModel, currentMessages.length);
 
         while (true) {
           const stream = anthropic.messages.stream({

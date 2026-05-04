@@ -95,7 +95,7 @@ export default function ChatWindow({
           const state = data.address?.state;
           if (city && state) setCurrentLocation(`${city}, ${state}`);
           else if (state) setCurrentLocation(state);
-        } catch { /* silent */ }
+        } catch (err) { console.error('[geolocation]', err); }
       },
       () => { /* permission denied — silent */ },
       { timeout: 5000 }

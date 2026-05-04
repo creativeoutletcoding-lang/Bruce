@@ -1,5 +1,7 @@
 "use client";
 
+import { ACCENT_COLOR } from "@/lib/utils/constants";
+
 interface PullProgressBarProps {
   pullProgress: number; // 0 to 1
   refreshing: boolean;
@@ -28,7 +30,7 @@ export default function PullProgressBar({ pullProgress, refreshing }: PullProgre
             top: 0,
             height: "100%",
             width: "40%",
-            backgroundColor: "#0F6E56",
+            backgroundColor: ACCENT_COLOR,
           }}
         />
       ) : (
@@ -36,7 +38,7 @@ export default function PullProgressBar({ pullProgress, refreshing }: PullProgre
           style={{
             height: "100%",
             width: `${pullProgress * 100}%`,
-            backgroundColor: "#0F6E56",
+            backgroundColor: ACCENT_COLOR,
             transition: "width 50ms linear",
           }}
         />

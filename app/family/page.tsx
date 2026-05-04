@@ -21,13 +21,14 @@ export default async function FamilyPage() {
 
   if (!authUser) redirect("/login");
 
-  const adminSupabase = createServiceRoleClient();
-
-  const { data: existingChat } = await adminSupabase
+  // family_group chat is readable by all authenticated users via RLS.
+  const { data: existingChat } = await supabase
     .from("chats")
     .select("id")
     .eq("type", "family_group")
     .maybeSingle();
+
+  const adminSupabase = createServiceRoleClient();
 
   if (!existingChat) {
     return (

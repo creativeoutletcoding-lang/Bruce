@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { ACCENT_COLOR } from "@/lib/utils/constants";
 
 export const metadata: Metadata = {
   title: "Bruce",
@@ -20,7 +21,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  themeColor: "#0F6E56",
+  themeColor: ACCENT_COLOR,
   viewportFit: "cover",
 };
 

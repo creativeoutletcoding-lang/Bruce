@@ -54,13 +54,6 @@ export async function POST(request: NextRequest, { params }: Props) {
   const { message, chatId, currentLocation, userTimestamp: rawTimestamp, image, document } = body;
   const userTimestamp = rawTimestamp ?? new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
-  if (image) {
-    console.log('[api/projects/chat] image attachment: mediaType=%s base64Length=%d', image.mediaType, image.base64?.length ?? 0);
-  }
-  if (document) {
-    console.log('[api/projects/chat] document attachment: filename=%s mediaType=%s base64Length=%d', document.filename, document.mediaType, document.base64?.length ?? 0);
-  }
-
   if (!message?.trim() && !image && !document) return new Response("Message required", { status: 400 });
 
   // Verify user is a project member (RLS will reject if not, belt-and-suspenders)
@@ -181,8 +174,6 @@ export async function POST(request: NextRequest, { params }: Props) {
     SEARCH_SYSTEM_BLOCK;
 
   const tools = [...CALENDAR_TOOLS, SEARCH_TOOL];
-  console.log('tools loaded:', tools.map(t => t.name));
-  console.log('system prompt includes search:', systemPrompt.includes('web_search'));
 
   // Create or use existing chat
   let currentChatId = chatId;
@@ -294,9 +285,6 @@ export async function POST(request: NextRequest, { params }: Props) {
     return new Response(null, { status: 200, headers: earlyHeaders });
   }
 
-  // Build Anthropic messages
-  console.log('[api/projects/chat] building content block — hasImage=%s hasDocument=%s messageLen=%d', !!image, !!document, message.length);
-
   let userContent: Anthropic.Messages.MessageParam["content"];
   try {
     userContent = image
@@ -383,7 +371,6 @@ export async function POST(request: NextRequest, { params }: Props) {
 
       try {
         let currentMessages = [...anthropicMessages];
-        console.log('[api/projects/chat] anthropic call starting — model=%s messages=%d', preferredModel, currentMessages.length);
 
         while (true) {
           const stream = anthropic.messages.stream({
