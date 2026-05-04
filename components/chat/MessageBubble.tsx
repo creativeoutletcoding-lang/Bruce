@@ -45,7 +45,8 @@ export default function MessageBubble({
   const isUser = isOwn !== undefined ? isOwn : role === "user";
   const isHumanMessage = role === "user";
   const showSenderLabel = isOwn === false && isHumanMessage && Boolean(senderName);
-  const showIndicator = isStreaming && !content;
+  // Show dots inside the same bubble element — never swap elements, which causes flash/remount
+  const showDots = isStreaming && !content;
 
   return (
     <div
@@ -59,56 +60,58 @@ export default function MessageBubble({
             {senderName}
           </div>
         )}
-        {showIndicator ? (
-          <div style={styles.indicatorBubble}>
-            <div style={styles.dotsRow}>
-              <span style={styles.dot1} />
-              <span style={styles.dot2} />
-              <span style={styles.dot3} />
-            </div>
-            {workingStatus && (
-              <div style={styles.indicatorStatus}>{workingStatus}</div>
-            )}
-          </div>
-        ) : (
-          <div
-            style={{
-              ...styles.bubble,
-              ...(isHumanMessage
-                ? {
-                    ...styles.userBubble,
-                    backgroundColor: isUser
-                      ? (bubbleColorHex ?? "var(--accent)")
-                      : (senderColorHex ?? "var(--accent)"),
-                  }
-                : styles.assistantBubble),
-            }}
-          >
-            {imageUrl && attachmentType === "document" ? (
-              <div style={styles.docChip}>
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                  <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-                  <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                </svg>
-                <span style={styles.docChipName}>{attachmentFilename ?? "Document"}</span>
+        <div
+          style={{
+            ...styles.bubble,
+            ...(isHumanMessage
+              ? {
+                  ...styles.userBubble,
+                  backgroundColor: isUser
+                    ? (bubbleColorHex ?? "var(--accent)")
+                    : (senderColorHex ?? "var(--accent)"),
+                }
+              : styles.assistantBubble),
+          }}
+        >
+          {showDots ? (
+            <>
+              <div style={styles.dotsRow}>
+                <span style={styles.dot1} />
+                <span style={styles.dot2} />
+                <span style={styles.dot3} />
               </div>
-            ) : imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={imageUrl}
-                alt=""
-                style={{
-                  maxWidth: "240px",
-                  width: "100%",
-                  borderRadius: "var(--radius-md)",
-                  display: "block",
-                  marginBottom: content ? "8px" : 0,
-                }}
-              />
-            ) : null}
-            {content && <span style={styles.content}>{content}</span>}
-          </div>
-        )}
+              {workingStatus && (
+                <div style={styles.indicatorStatus}>{workingStatus}</div>
+              )}
+            </>
+          ) : (
+            <>
+              {imageUrl && attachmentType === "document" ? (
+                <div style={styles.docChip}>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                    <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                    <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                  </svg>
+                  <span style={styles.docChipName}>{attachmentFilename ?? "Document"}</span>
+                </div>
+              ) : imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={imageUrl}
+                  alt=""
+                  style={{
+                    maxWidth: "240px",
+                    width: "100%",
+                    borderRadius: "var(--radius-md)",
+                    display: "block",
+                    marginBottom: content ? "8px" : 0,
+                  }}
+                />
+              ) : null}
+              {content && <span style={styles.content}>{content}</span>}
+            </>
+          )}
+        </div>
         {timestamp && (
           <div
             className="msg-timestamp"
@@ -142,16 +145,6 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "transparent",
     color: "var(--text-primary)",
     borderBottomLeftRadius: "4px",
-    border: "1px solid #2a2a2a",
-  },
-  indicatorBubble: {
-    display: "inline-flex",
-    flexDirection: "column",
-    gap: "6px",
-    padding: "12px 16px",
-    borderRadius: "var(--radius-lg)",
-    borderBottomLeftRadius: "4px",
-    backgroundColor: "transparent",
     border: "1px solid #2a2a2a",
   },
   dotsRow: {

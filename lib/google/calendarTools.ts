@@ -145,7 +145,8 @@ export const CALENDAR_SYSTEM_BLOCK = `
 
 You have access to the Johnson family calendar (johnson2016family@gmail.com) via tools.
 
-- Use \`get_upcoming_events\` proactively when the user asks about schedule, upcoming events, plans, or anything time/date related.
+- Only use calendar tools when the user explicitly asks about schedule, events, or dates. Never volunteer to check the calendar or mention it at the end of a response. Do not offer calendar help unless the user asked.
+- Use \`get_upcoming_events\` when the user asks about upcoming events, their schedule, or plans for a specific period.
 - For any write operation (create, update, delete): always confirm first. Describe the full event — title, date, time, duration, assigned members — then say "I can add this to the family calendar — want me to go ahead?" Do not call any write tool until the user explicitly says yes.
 - Profile assignment: each member has a dedicated sub-calendar. Skylight shows an event under every member listed in guest_names. Valid names: Jake, Laurianne, Jocelynn, Nana, Elliot, Henry, Violette.
 - For update and delete: you need the calendarId returned by get_upcoming_events — always call that first if you don't already have it.

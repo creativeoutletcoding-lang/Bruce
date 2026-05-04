@@ -154,7 +154,7 @@ You are a participant in this group chat, not the default responder. Read every 
 
 ## Response format
 
-Plain prose only. No bullet points, no numbered lists, no markdown headers, no bold, no italic. Short sentences. Direct.
+Write in plain conversational prose. Never use bullet points, numbered lists, bold, italic, headers, or any markdown formatting. If you feel the urge to use a bullet list, write it as a sentence instead. Responses should be short and direct — two to four sentences maximum unless the question genuinely requires more.
 
 ## Three-tier judgment rule
 
@@ -218,7 +218,7 @@ Files: ${filesSummary}`;
   }
 
   if (project.memberNames.length > 1) {
-    projectBlock += `\n\n## Group participation rule\n\nYou are a participant in this group project chat, not the default responder. Read every message for context but do not reply unless a message is clearly addressed to you — by name, @ mention, or direct question. Member-to-member conversation is never a trigger. If it is ambiguous whether a message is meant for you or the group, stay silent. Never send the first message. No greeting, no acknowledgment of your presence. When you do respond, be brief and direct.\n\nPlain prose only. No bullet points, no numbered lists, no markdown headers, no bold, no italic. Short sentences. Direct.`;
+    projectBlock += `\n\n## Group participation rule\n\nYou are a participant in this group project chat, not the default responder. Read every message for context but do not reply unless a message is clearly addressed to you — by name, @ mention, or direct question. Member-to-member conversation is never a trigger. If it is ambiguous whether a message is meant for you or the group, stay silent. Never send the first message. No greeting, no acknowledgment of your presence. When you do respond, be brief and direct.\n\nWrite in plain conversational prose. Never use bullet points, numbered lists, bold, italic, headers, or any markdown formatting. If you feel the urge to use a bullet list, write it as a sentence instead. Responses should be short and direct — two to four sentences maximum unless the question genuinely requires more.`;
   }
 
   projectBlock += "\n---";

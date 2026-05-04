@@ -468,35 +468,37 @@ export default function FamilyChatWindow({
                     </div>
                   )}
 
-                  {msg.isStreaming && bruceState !== "streaming" ? (
-                    <div style={styles.indicatorBubble}>
-                      <div style={styles.dotsRow}>
-                        <span style={styles.dot1} />
-                        <span style={styles.dot2} />
-                        <span style={styles.dot3} />
-                      </div>
-                      {bruceState === "working" && (
-                        <div style={styles.indicatorStatus}>Working on it…</div>
-                      )}
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        ...styles.bubble,
-                        ...(isMe
-                          ? { ...styles.meBubble, backgroundColor: myColor }
-                          : isBruce
-                          ? styles.bruceBubble
-                          : { ...styles.memberBubble, borderColor: `${memberColor}50` }),
-                      }}
-                    >
-                      {msg.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={msg.imageUrl} alt="" style={{ maxWidth: "240px", width: "100%", borderRadius: "var(--radius-md)", display: "block", marginBottom: msg.content ? "8px" : 0 }} />
-                      ) : null}
-                      {msg.content}
-                    </div>
-                  )}
+                  <div
+                    style={{
+                      ...styles.bubble,
+                      ...(isMe
+                        ? { ...styles.meBubble, backgroundColor: myColor }
+                        : isBruce
+                        ? styles.bruceBubble
+                        : { ...styles.memberBubble, borderColor: `${memberColor}50` }),
+                    }}
+                  >
+                    {msg.isStreaming && !msg.content ? (
+                      <>
+                        <div style={styles.dotsRow}>
+                          <span style={styles.dot1} />
+                          <span style={styles.dot2} />
+                          <span style={styles.dot3} />
+                        </div>
+                        {bruceState === "working" && (
+                          <div style={styles.indicatorStatus}>Working on it…</div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {msg.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={msg.imageUrl} alt="" style={{ maxWidth: "240px", width: "100%", borderRadius: "var(--radius-md)", display: "block", marginBottom: msg.content ? "8px" : 0 }} />
+                        ) : null}
+                        {msg.content}
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -581,7 +583,6 @@ const styles: Record<string, React.CSSProperties> = {
   meBubble: { color: "#ffffff", borderBottomRightRadius: "4px" },
   bruceBubble: { backgroundColor: "transparent", color: "var(--text-primary)", border: "1px solid #2a2a2a", borderBottomLeftRadius: "4px" },
   memberBubble: { backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", border: "2px solid", borderBottomLeftRadius: "4px" },
-  indicatorBubble: { display: "inline-flex", flexDirection: "column", gap: "6px", padding: "12px 16px", borderRadius: "var(--radius-lg)", borderBottomLeftRadius: "4px", backgroundColor: "transparent", border: "1px solid #2a2a2a" },
   dotsRow: { display: "flex", alignItems: "center", gap: "4px" },
   dot1: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "0ms" },
   dot2: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "150ms" },
