@@ -23,22 +23,27 @@ export const runtime = "nodejs";
 
 // ── Bruce engagement logic (server-side, hard gate) ──────────────────────────
 //
-// Bruce responds ONLY when the current message directly addresses him.
-// No engagement window — if nobody mentions Bruce, no Anthropic call is made.
-// @mention (case-insensitive) or natural-language address ("Bruce, …") triggers.
+// Bruce responds when:
+//   1. His name appears anywhere in the message (beginning, middle, or end), or
+//   2. His last message in the chat was a question (the reply is directed at him).
 
 function isDirectlyAddressed(message: string): boolean {
-  return (
-    /@bruce\b/i.test(message) ||
-    /\bbruce\s*[,!?:]/.test(message) ||
-    /\bbruce\s+(can|could|please|help|tell|show|find|what|how|why|when|where|who|do|did|is|are|will|would|should|that|this)\b/i.test(message) ||
-    /\b(hey|hi|ok|okay)\s+bruce\b/i.test(message) ||
-    /\bbruce\b.{0,40}(for you|that's for you|meant for you|asking you|directed at you)\b/i.test(message)
-  );
+  // \b matches the word boundary before "bruce" regardless of position or surrounding
+  // punctuation, so "Bruce", "Bruce,", "@Bruce", "asking Bruce", "Bruce?" all match.
+  return /\bbruce\b/i.test(message);
 }
 
-function shouldBruceRespond(currentMessage: string): boolean {
-  return isDirectlyAddressed(currentMessage);
+function bruceAskedQuestion(history: Array<{ role: string; content: string }>): boolean {
+  if (history.length === 0) return false;
+  const last = history[history.length - 1];
+  return last.role === "assistant" && last.content.includes("?");
+}
+
+function shouldBruceRespond(
+  currentMessage: string,
+  history: Array<{ role: string; content: string }>
+): boolean {
+  return isDirectlyAddressed(currentMessage) || bruceAskedQuestion(history);
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -97,7 +102,7 @@ export async function POST(request: NextRequest) {
     sender_id: string | null;
   }>;
 
-  const willRespond = shouldBruceRespond(message);
+  const willRespond = shouldBruceRespond(message, history);
 
   // Upload image if present
   let userImageUrl: string | undefined;

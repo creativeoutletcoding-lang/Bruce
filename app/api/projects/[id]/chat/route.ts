@@ -20,15 +20,16 @@ import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// Gate: only respond in group project chats when Bruce is directly addressed.
+// Gate: only respond in group project chats when Bruce is directly addressed
+// or when his last message was a question (the reply is directed at him).
 function isDirectlyAddressed(message: string): boolean {
-  return (
-    /@bruce\b/i.test(message) ||
-    /\bbruce\s*[,!?:]/.test(message) ||
-    /\bbruce\s+(can|could|please|help|tell|show|find|what|how|why|when|where|who|do|did|is|are|will|would|should|that|this)\b/i.test(message) ||
-    /\b(hey|hi|ok|okay)\s+bruce\b/i.test(message) ||
-    /\bbruce\b.{0,40}(for you|that's for you|meant for you|asking you|directed at you)\b/i.test(message)
-  );
+  return /\bbruce\b/i.test(message);
+}
+
+function bruceAskedQuestion(history: Array<{ role: string; content: string }>): boolean {
+  if (history.length === 0) return false;
+  const last = history[history.length - 1];
+  return last.role === "assistant" && last.content.includes("?");
 }
 
 interface Props {
@@ -279,9 +280,10 @@ export async function POST(request: NextRequest, { params }: Props) {
     console.error("[api/projects/chat] Failed to insert user message:", msgError);
   }
 
-  // Group chat gate: if project has multiple members, only call Anthropic when Bruce is directly addressed.
+  // Group chat gate: if project has multiple members, only call Anthropic when Bruce is
+  // directly addressed or when his last message was a question.
   const isGroupChat = memberNames.length > 1;
-  const willRespond = !isGroupChat || isDirectlyAddressed(message ?? "");
+  const willRespond = !isGroupChat || isDirectlyAddressed(message ?? "") || bruceAskedQuestion(history);
 
   if (!willRespond) {
     const earlyHeaders: Record<string, string> = {
