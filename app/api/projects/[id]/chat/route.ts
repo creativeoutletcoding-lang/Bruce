@@ -20,6 +20,17 @@ import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+// Gate: only respond in group project chats when Bruce is directly addressed.
+function isDirectlyAddressed(message: string): boolean {
+  return (
+    /@bruce\b/i.test(message) ||
+    /\bbruce\s*[,!?:]/.test(message) ||
+    /\bbruce\s+(can|could|please|help|tell|show|find|what|how|why|when|where|who|do|did|is|are|will|would|should|that|this)\b/i.test(message) ||
+    /\b(hey|hi|ok|okay)\s+bruce\b/i.test(message) ||
+    /\bbruce\b.{0,40}(for you|that's for you|meant for you|asking you|directed at you)\b/i.test(message)
+  );
+}
+
 interface Props {
   params: Promise<{ id: string }>;
 }
@@ -266,6 +277,19 @@ export async function POST(request: NextRequest, { params }: Props) {
 
   if (msgError) {
     console.error("[api/projects/chat] Failed to insert user message:", msgError);
+  }
+
+  // Group chat gate: if project has multiple members, only call Anthropic when Bruce is directly addressed.
+  const isGroupChat = memberNames.length > 1;
+  const willRespond = !isGroupChat || isDirectlyAddressed(message ?? "");
+
+  if (!willRespond) {
+    const earlyHeaders: Record<string, string> = {
+      "X-Chat-Id": currentChatId!,
+      "X-Bruce-Responded": "false",
+    };
+    if (chatTitle) earlyHeaders["X-Chat-Title"] = encodeURIComponent(chatTitle);
+    return new Response(null, { status: 200, headers: earlyHeaders });
   }
 
   // Build Anthropic messages
