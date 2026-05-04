@@ -15,7 +15,17 @@ export async function DELETE(
 
   const { id } = await params;
 
-  // Any authenticated member can soft-delete a family thread
+  // Verify the requesting user is a member of this thread before deleting.
+  // Prevents any authenticated user from deleting threads by guessing a UUID.
+  const { data: membership } = await supabase
+    .from("chat_members")
+    .select("id")
+    .eq("chat_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!membership) return new Response("Forbidden", { status: 403 });
+
   const adminSupabase = createServiceRoleClient();
 
   const { error } = await adminSupabase

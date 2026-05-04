@@ -4,47 +4,49 @@ import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 export async function DELETE(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  console.log("[DELETE /api/chats] userId:", user?.id ?? "(unauthenticated)");
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
   const ids: unknown = body.ids;
-  console.log("[DELETE /api/chats] ids received:", JSON.stringify(ids));
   if (!Array.isArray(ids) || ids.length === 0) {
-    console.log("[DELETE /api/chats] rejected: ids missing or empty");
     return NextResponse.json({ error: "ids required" }, { status: 400 });
   }
 
   const validIds = ids.filter((id): id is string => typeof id === "string");
-  console.log("[DELETE /api/chats] validIds:", JSON.stringify(validIds));
   if (validIds.length === 0) {
-    console.log("[DELETE /api/chats] rejected: no valid string ids");
     return NextResponse.json({ error: "ids required" }, { status: 400 });
   }
 
-  // Service role bypasses RLS so any authenticated member can delete family_group,
-  // family_thread, or their own private/incognito chats. Auth is verified above.
+  // Gate with the authenticated anon client so RLS enforces ownership.
+  // Only chat IDs the user is allowed to read (owns or is a member of) come
+  // back — preventing cross-user deletion of private/incognito chats.
+  const { data: allowedChats } = await supabase
+    .from("chats")
+    .select("id")
+    .in("id", validIds)
+    .in("type", ["private", "incognito", "family_thread", "family_group"]);
+
+  const allowedIds = (allowedChats ?? []).map((c: { id: string }) => c.id);
+  if (allowedIds.length === 0) {
+    return NextResponse.json({ error: "No chats deleted — check ownership or chat IDs" }, { status: 400 });
+  }
+
   const adminSupabase = createServiceRoleClient();
   const { data: deleted, error } = await adminSupabase
     .from("chats")
     .delete()
-    .in("id", validIds)
-    .in("type", ["private", "incognito", "family_thread", "family_group"])
+    .in("id", allowedIds)
     .select("id");
 
-  console.log("[DELETE /api/chats] supabase result — error:", error ? JSON.stringify(error) : null, "deleted rows:", JSON.stringify(deleted));
-
   if (error) {
-    console.log("[DELETE /api/chats] response: 500", error.message);
+    console.error("[api/chats] Delete failed:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   const count = (deleted ?? []).length;
   if (count === 0) {
-    console.log("[DELETE /api/chats] response: 400 — 0 rows deleted");
     return NextResponse.json({ error: "No chats deleted — check ownership or chat IDs" }, { status: 400 });
   }
 
-  console.log("[DELETE /api/chats] response: 200 — deleted", count, "rows");
   return NextResponse.json({ deleted: count });
 }
