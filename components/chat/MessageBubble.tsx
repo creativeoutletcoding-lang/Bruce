@@ -74,16 +74,16 @@ export default function MessageBubble({
           }}
         >
           {showDots ? (
-            <>
-              <div style={styles.dotsRow}>
+            <span style={{ display: "inline-flex", flexDirection: "column", gap: "4px" }}>
+              <span style={styles.dotsRow}>
                 <span style={styles.dot1} />
                 <span style={styles.dot2} />
                 <span style={styles.dot3} />
-              </div>
+              </span>
               {workingStatus && (
-                <div style={styles.indicatorStatus}>{workingStatus}</div>
+                <span style={styles.indicatorStatus}>{workingStatus}</span>
               )}
-            </>
+            </span>
           ) : (
             <>
               {imageUrl && attachmentType === "document" ? (
@@ -148,7 +148,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid #2a2a2a",
   },
   dotsRow: {
-    display: "flex",
+    display: "inline-flex",
     alignItems: "center",
     gap: "4px",
   },

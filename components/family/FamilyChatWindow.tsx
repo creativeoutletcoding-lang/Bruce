@@ -479,16 +479,16 @@ export default function FamilyChatWindow({
                     }}
                   >
                     {msg.isStreaming && !msg.content ? (
-                      <>
-                        <div style={styles.dotsRow}>
+                      <span style={{ display: "inline-flex", flexDirection: "column", gap: "4px" }}>
+                        <span style={styles.dotsRow}>
                           <span style={styles.dot1} />
                           <span style={styles.dot2} />
                           <span style={styles.dot3} />
-                        </div>
+                        </span>
                         {bruceState === "working" && (
-                          <div style={styles.indicatorStatus}>Working on it…</div>
+                          <span style={styles.indicatorStatus}>Working on it…</span>
                         )}
-                      </>
+                      </span>
                     ) : (
                       <>
                         {msg.imageUrl ? (
@@ -583,7 +583,7 @@ const styles: Record<string, React.CSSProperties> = {
   meBubble: { color: "#ffffff", borderBottomRightRadius: "4px" },
   bruceBubble: { backgroundColor: "transparent", color: "var(--text-primary)", border: "1px solid #2a2a2a", borderBottomLeftRadius: "4px" },
   memberBubble: { backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", border: "2px solid", borderBottomLeftRadius: "4px" },
-  dotsRow: { display: "flex", alignItems: "center", gap: "4px" },
+  dotsRow: { display: "inline-flex", alignItems: "center", gap: "4px" },
   dot1: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "0ms" },
   dot2: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "150ms" },
   dot3: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "300ms" },
