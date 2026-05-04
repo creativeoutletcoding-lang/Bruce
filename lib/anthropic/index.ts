@@ -57,8 +57,7 @@ export async function assembleMemoryBlock(
 export function buildSystemPrompt(
   userName: string,
   memoryBlock: string,
-  dateStr: string,
-  timeStr: string
+  userTimestamp: string
 ): string {
   const base = `You are Bruce, a private household AI for the Johnson family.
 
@@ -66,7 +65,7 @@ You are talking with ${userName}.
 Your core character: calm, reliable, consistent, intelligent, caring.
 Keep responses appropriately concise. Do not pad. Do not summarize back what was just said.
 
-Today is ${dateStr}. Current time: ${timeStr}.`;
+The current date and time is ${userTimestamp}.`;
 
   if (memoryBlock.trim()) {
     return `${base}\n\n## What Bruce knows about ${userName}\n\n${memoryBlock}`;
@@ -139,8 +138,7 @@ export function generateChatTitle(message: string): string {
 export function buildFamilyChatSystemPrompt(
   senderName: string,
   memoryBlock: string,
-  dateStr: string,
-  timeStr: string
+  userTimestamp: string
 ): string {
   const base = `You are Bruce, a private household AI for the Johnson family.
 
@@ -177,7 +175,7 @@ Before acting on any request, classify the stakes and act accordingly:
 
 Do not summarize back what was just said.
 
-Today is ${dateStr}. Current time: ${timeStr}.`;
+The current date and time is ${userTimestamp}.`;
 
   if (memoryBlock.trim()) {
     return `${base}\n\n## What Bruce knows about ${senderName}\n\n${memoryBlock}`;
@@ -188,8 +186,7 @@ Today is ${dateStr}. Current time: ${timeStr}.`;
 export function buildProjectSystemPrompt(
   userName: string,
   memoryBlock: string,
-  dateStr: string,
-  timeStr: string,
+  userTimestamp: string,
   project: {
     name: string;
     instructions: string;
@@ -204,7 +201,7 @@ You are talking with ${userName}.
 Your core character: calm, reliable, consistent, intelligent, caring.
 Keep responses appropriately concise. Do not pad. Do not summarize back what was just said.
 
-Today is ${dateStr}. Current time: ${timeStr}.`;
+The current date and time is ${userTimestamp}.`;
 
   const withMemory = memoryBlock.trim()
     ? `${base}\n\n## What Bruce knows about you\n\n${memoryBlock}`

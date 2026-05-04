@@ -265,6 +265,7 @@ export default function FamilyChatWindow({
           message: text,
           chatId,
           currentLocation,
+          userTimestamp: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }),
           image: fileToSend?.type === "image" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType } : undefined,
           document: fileToSend?.type === "document" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType, filename: fileToSend.filename } : undefined,
         }),

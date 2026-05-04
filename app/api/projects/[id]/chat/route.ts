@@ -32,14 +32,15 @@ export async function POST(request: NextRequest, { params }: Props) {
   } = await supabase.auth.getUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  let body: { message: string; chatId: string | null; currentLocation?: string; image?: { base64: string; mediaType: string }; document?: { base64: string; mediaType: string; filename: string } };
+  let body: { message: string; chatId: string | null; currentLocation?: string; userTimestamp?: string; image?: { base64: string; mediaType: string }; document?: { base64: string; mediaType: string; filename: string } };
   try {
     body = await request.json();
   } catch {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const { message, chatId, currentLocation, image, document } = body;
+  const { message, chatId, currentLocation, userTimestamp: rawTimestamp, image, document } = body;
+  const userTimestamp = rawTimestamp ?? new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
   if (image) {
     console.log('[api/projects/chat] image attachment: mediaType=%s base64Length=%d', image.mediaType, image.base64?.length ?? 0);
@@ -149,25 +150,12 @@ export async function POST(request: NextRequest, { params }: Props) {
   }
 
   // Build system prompt
-  const now = new Date();
-  const dateStr = now.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-  const timeStr = now.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-
   const locationContext = currentLocation
     ? `${userName}'s current location right now is ${currentLocation}.`
     : `${userName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;
 
   const systemPrompt =
-    buildProjectSystemPrompt(userName, memoryBlock, dateStr, timeStr, {
+    buildProjectSystemPrompt(userName, memoryBlock, userTimestamp, {
       name: project.name as string,
       instructions: project.instructions as string,
       memberNames,

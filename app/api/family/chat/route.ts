@@ -51,14 +51,15 @@ export async function POST(request: NextRequest) {
 
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  let body: { message: string; chatId: string; currentLocation?: string; image?: { base64: string; mediaType: string }; document?: { base64: string; mediaType: string; filename: string } };
+  let body: { message: string; chatId: string; currentLocation?: string; userTimestamp?: string; image?: { base64: string; mediaType: string }; document?: { base64: string; mediaType: string; filename: string } };
   try {
     body = await request.json();
   } catch {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const { message, chatId, currentLocation, image, document } = body;
+  const { message, chatId, currentLocation, userTimestamp: rawTimestamp, image, document } = body;
+  const userTimestamp = rawTimestamp ?? new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
   if (image) {
     console.log('[api/family/chat] image attachment: mediaType=%s base64Length=%d', image.mediaType, image.base64?.length ?? 0);
@@ -214,25 +215,12 @@ export async function POST(request: NextRequest) {
       .then();
   }
 
-  const now = new Date();
-  const dateStr = now.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-  const timeStr = now.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-
   const locationContext = currentLocation
     ? `${senderName}'s current location right now is ${currentLocation}.`
     : `${senderName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;
 
   const systemPrompt =
-    buildFamilyChatSystemPrompt(senderName, memoryBlock, dateStr, timeStr) +
+    buildFamilyChatSystemPrompt(senderName, memoryBlock, userTimestamp) +
     `\n\n${locationContext}` +
     CALENDAR_SYSTEM_BLOCK +
     IMAGE_VISION_BLOCK +
