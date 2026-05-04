@@ -213,20 +213,29 @@ async function handleCallback(request: NextRequest) {
       }
     }
 
-    let colorHex: string;
-    if (isAdmin) {
-      colorHex = "#33B679";
-    } else {
-      const MEMBER_COLORS = ["#9E69AF", "#0B8043", "#C0CA33"];
-      const OVERFLOW_COLORS = ["#4285F4", "#F4511E", "#E67C73"];
-      const { count: memberCount } = await adminSupabase
-        .from("users")
-        .select("id", { count: "exact", head: true })
-        .eq("role", "member");
-      const idx = memberCount ?? 0;
-      colorHex = idx < MEMBER_COLORS.length
-        ? MEMBER_COLORS[idx]
-        : OVERFLOW_COLORS[(idx - MEMBER_COLORS.length) % OVERFLOW_COLORS.length];
+    // Color assignment is keyed by Google account email so it never changes
+    // regardless of registration order or re-registration.
+    // Set MEMBER_EMAIL_* env vars in Vercel (and .env.local for dev) to lock
+    // each household member to their exact Google Calendar color.
+    const EMAIL_COLOR_MAP: Record<string, string> = {
+      [process.env.ADMIN_EMAIL ?? ""]:              "#33B679", // Jake — Sage
+      [process.env.MEMBER_EMAIL_LAURIANNE ?? ""]:   "#9E69AF", // Laurianne — Grape
+      [process.env.MEMBER_EMAIL_JOCELYNN ?? ""]:    "#0B8043", // Jocelynn — Basil
+      [process.env.MEMBER_EMAIL_NANA ?? ""]:        "#E67C73", // Nana — Flamingo
+    };
+
+    const userEmail = data.user.email ?? "";
+    let colorHex = EMAIL_COLOR_MAP[userEmail];
+
+    if (!colorHex) {
+      // Unknown email — derive a stable color from the email string so
+      // registration order never affects assignment.
+      const FALLBACK_COLORS = ["#4285F4", "#F4511E", "#C0CA33", "#E4C441", "#F6BF26"];
+      let h = 0;
+      for (let i = 0; i < userEmail.length; i++) {
+        h = (Math.imul(31, h) + userEmail.charCodeAt(i)) | 0;
+      }
+      colorHex = FALLBACK_COLORS[Math.abs(h) % FALLBACK_COLORS.length];
     }
 
     console.log("[callback] step=insert_user");
