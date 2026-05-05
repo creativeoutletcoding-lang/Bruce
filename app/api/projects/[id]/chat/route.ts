@@ -434,32 +434,54 @@ export async function POST(request: NextRequest, { params }: Props) {
           }
         }
 
-        controller.close();
-      } catch (err) {
-        console.error("[api/projects/chat] Stream error:", err instanceof Error ? err.message : String(err));
-        controller.error(err);
-      } finally {
+        // Persist before close — Vercel may terminate the function once the
+        // stream ends, so the write must complete while the connection is open.
         if (currentChatId && fullResponse) {
           const cleanResponse = fullResponse
             .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
             .trim();
           if (cleanResponse) {
-            try {
-              await adminSupabase.from("messages").insert({
-                chat_id: currentChatId,
-                sender_id: null,
-                role: "assistant",
-                content: cleanResponse,
-              });
-              await adminSupabase
+            const { error: insertErr } = await adminSupabase.from("messages").insert({
+              chat_id: currentChatId,
+              sender_id: null,
+              role: "assistant",
+              content: cleanResponse,
+            });
+            if (insertErr) {
+              console.error("[api/projects/chat] Failed to persist assistant message:", insertErr);
+            } else {
+              const { error: updateErr } = await adminSupabase
                 .from("chats")
                 .update({ last_message_at: new Date().toISOString() })
                 .eq("id", currentChatId);
-            } catch (dbErr) {
-              console.error("[api/projects/chat] Failed to persist assistant message:", dbErr);
+              if (updateErr) {
+                console.error("[api/projects/chat] Failed to update chat timestamp:", updateErr);
+              }
             }
           }
         }
+
+        controller.close();
+      } catch (err) {
+        console.error("[api/projects/chat] Stream error:", err instanceof Error ? err.message : String(err));
+        // Best-effort: save any partial response received before the error
+        if (currentChatId && fullResponse) {
+          const cleanResponse = fullResponse
+            .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+            .trim();
+          if (cleanResponse) {
+            const { error: insertErr } = await adminSupabase.from("messages").insert({
+              chat_id: currentChatId,
+              sender_id: null,
+              role: "assistant",
+              content: cleanResponse,
+            });
+            if (insertErr) {
+              console.error("[api/projects/chat] Failed to persist partial assistant message:", insertErr);
+            }
+          }
+        }
+        controller.error(err);
       }
     },
   });

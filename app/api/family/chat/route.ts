@@ -13,6 +13,12 @@ import {
   executeCalendarTool,
 } from "@/lib/google/calendarTools";
 import {
+  GMAIL_TOOLS,
+  GMAIL_TOOL_NAMES,
+  GMAIL_SYSTEM_BLOCK,
+  executeGmailTool,
+} from "@/lib/google/gmailTools";
+import {
   SEARCH_TOOL,
   SEARCH_SYSTEM_BLOCK,
   executeSearchTool,
@@ -219,10 +225,11 @@ export async function POST(request: NextRequest) {
     buildFamilyChatSystemPrompt(senderName, memoryBlock, userTimestamp) +
     `\n\n${locationContext}` +
     CALENDAR_SYSTEM_BLOCK +
+    GMAIL_SYSTEM_BLOCK +
     IMAGE_VISION_BLOCK +
     SEARCH_SYSTEM_BLOCK;
 
-  const tools = [...CALENDAR_TOOLS, SEARCH_TOOL];
+  const tools = [...CALENDAR_TOOLS, ...GMAIL_TOOLS, SEARCH_TOOL];
 
   let userContent: Anthropic.Messages.MessageParam["content"];
   try {
@@ -307,6 +314,12 @@ export async function POST(request: NextRequest) {
                     tc.name,
                     tc.input as Record<string, unknown>
                   );
+                } else if (GMAIL_TOOL_NAMES.has(tc.name)) {
+                  result = await executeGmailTool(
+                    tc.name,
+                    tc.input as Record<string, unknown>,
+                    user.id
+                  );
                 } else {
                   result = await executeCalendarTool(
                     tc.name,
@@ -331,27 +344,44 @@ export async function POST(request: NextRequest) {
           ];
         }
 
-        controller.close();
-      } catch (err) {
-        console.error("[api/family/chat] Stream error:", err);
-        controller.error(err);
-      } finally {
+        // Persist before close — Vercel may terminate the function once the
+        // stream ends, so the write must complete while the connection is open.
         if (fullResponse) {
-          try {
-            await adminSupabase.from("messages").insert({
-              chat_id: chatId,
-              sender_id: null,
-              role: "assistant",
-              content: fullResponse,
-            });
-            await adminSupabase
+          const { error: insertErr } = await adminSupabase.from("messages").insert({
+            chat_id: chatId,
+            sender_id: null,
+            role: "assistant",
+            content: fullResponse,
+          });
+          if (insertErr) {
+            console.error("[api/family/chat] Failed to persist Bruce message:", insertErr);
+          } else {
+            const { error: updateErr } = await adminSupabase
               .from("chats")
               .update({ last_message_at: new Date().toISOString() })
               .eq("id", chatId);
-          } catch (dbErr) {
-            console.error("[api/family/chat] Failed to persist Bruce message:", dbErr);
+            if (updateErr) {
+              console.error("[api/family/chat] Failed to update chat timestamp:", updateErr);
+            }
           }
         }
+
+        controller.close();
+      } catch (err) {
+        console.error("[api/family/chat] Stream error:", err);
+        // Best-effort: save any partial response received before the error
+        if (fullResponse) {
+          const { error: insertErr } = await adminSupabase.from("messages").insert({
+            chat_id: chatId,
+            sender_id: null,
+            role: "assistant",
+            content: fullResponse,
+          });
+          if (insertErr) {
+            console.error("[api/family/chat] Failed to persist partial Bruce message:", insertErr);
+          }
+        }
+        controller.error(err);
       }
     },
   });
