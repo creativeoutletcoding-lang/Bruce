@@ -10,6 +10,12 @@ import {
   executeCalendarTool,
 } from "@/lib/google/calendarTools";
 import {
+  GMAIL_TOOLS,
+  GMAIL_TOOL_NAMES,
+  GMAIL_SYSTEM_BLOCK,
+  executeGmailTool,
+} from "@/lib/google/gmailTools";
+import {
   SEARCH_TOOL,
   SEARCH_SYSTEM_BLOCK,
   SEARCH_STATUS_SENTINEL,
@@ -19,18 +25,6 @@ import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
-
-// Gate: only respond in group project chats when Bruce is directly addressed
-// or when his last message was a question (the reply is directed at him).
-function isDirectlyAddressed(message: string): boolean {
-  return /\bbruce\b/i.test(message);
-}
-
-function bruceAskedQuestion(history: Array<{ role: string; content: string }>): boolean {
-  if (history.length === 0) return false;
-  const last = history[history.length - 1];
-  return last.role === "assistant" && last.content.includes("?");
-}
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -169,11 +163,12 @@ export async function POST(request: NextRequest, { params }: Props) {
     }) +
     `\n\n${locationContext}` +
     CALENDAR_SYSTEM_BLOCK +
+    GMAIL_SYSTEM_BLOCK +
     IMAGE_SYSTEM_BLOCK +
     IMAGE_VISION_BLOCK +
     SEARCH_SYSTEM_BLOCK;
 
-  const tools = [...CALENDAR_TOOLS, SEARCH_TOOL];
+  const tools = [...CALENDAR_TOOLS, ...GMAIL_TOOLS, SEARCH_TOOL];
 
   // Create or use existing chat
   let currentChatId = chatId;
@@ -269,20 +264,6 @@ export async function POST(request: NextRequest, { params }: Props) {
 
   if (msgError) {
     console.error("[api/projects/chat] Failed to insert user message:", msgError);
-  }
-
-  // Group chat gate: if project has multiple members, only call Anthropic when Bruce is
-  // directly addressed or when his last message was a question.
-  const isGroupChat = memberNames.length > 1;
-  const willRespond = !isGroupChat || isDirectlyAddressed(message ?? "") || bruceAskedQuestion(history);
-
-  if (!willRespond) {
-    const earlyHeaders: Record<string, string> = {
-      "X-Chat-Id": currentChatId!,
-      "X-Bruce-Responded": "false",
-    };
-    if (chatTitle) earlyHeaders["X-Chat-Title"] = encodeURIComponent(chatTitle);
-    return new Response(null, { status: 200, headers: earlyHeaders });
   }
 
   let userContent: Anthropic.Messages.MessageParam["content"];
@@ -407,6 +388,12 @@ export async function POST(request: NextRequest, { params }: Props) {
                   result = await executeSearchTool(
                     tc.name,
                     tc.input as Record<string, unknown>
+                  );
+                } else if (GMAIL_TOOL_NAMES.has(tc.name)) {
+                  result = await executeGmailTool(
+                    tc.name,
+                    tc.input as Record<string, unknown>,
+                    user.id
                   );
                 } else {
                   result = await executeCalendarTool(

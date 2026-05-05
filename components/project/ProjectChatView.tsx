@@ -140,8 +140,12 @@ export default function ProjectChatView({
           const senderInfo = msg.sender_id ? memberMapRef.current[msg.sender_id] : null;
           setMessages((prev) => {
             if (prev.some((m) => m.id === msg.id)) return prev;
+            // When Bruce's real DB message arrives, replace the optimistic streaming placeholder
+            const base = msg.sender_id === null
+              ? prev.filter((m) => !m.id.startsWith("tmp-stream-"))
+              : prev;
             return [
-              ...prev,
+              ...base,
               {
                 id: msg.id,
                 role: msg.role as MessageRole,
@@ -388,7 +392,9 @@ export default function ProjectChatView({
     } finally {
       setIsStreaming(false);
       setWorkingStatus(null);
-      if (!hadImageReq) await loadMessages();
+      // Don't refetch from DB here — it races with the server's insert and causes
+      // the streamed message to flash and disappear. The realtime listener replaces
+      // the optimistic placeholder (tmp-stream-*) when the real DB row arrives.
     }
   }
 
