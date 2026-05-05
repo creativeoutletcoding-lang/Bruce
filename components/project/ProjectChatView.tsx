@@ -241,7 +241,6 @@ export default function ProjectChatView({
     ]);
     setIsStreaming(true);
 
-    let hadImageReq = false;
     try {
       const res = await fetch(`/api/projects/${projectId}/chat`, {
         method: "POST",
@@ -310,7 +309,6 @@ export default function ProjectChatView({
         .trim();
 
       if (imageReqSentinel && isClient) {
-        hadImageReq = true;
         try {
           const reqData = JSON.parse(imageReqSentinel.slice("IMAGE_REQ:".length)) as {
             prompt: string;
