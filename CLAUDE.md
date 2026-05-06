@@ -278,6 +278,11 @@ const supabase = createServiceRoleClient();
 
 ## Phase 6 — Polish Notes
 
+### Completed
+
+- ✅ Image generation via Replicate
+- ✅ Web search via Perplexity
+
 ### Planned Additions
 
 **Delete functionality (user-facing)**
@@ -303,4 +308,4 @@ All deletes are soft-delete where possible (status field), hard delete for chats
 
 **Current:** Phase 6 — Polish
 
-Phase 5 is complete and deployed (2026-05-01). Phase 6 scope: PWA, sharing, image gen, web search.
+Phase 5 is complete and deployed (2026-05-01). Phase 6 scope: PWA, sharing, image gen, web search. Image gen and web search complete.
