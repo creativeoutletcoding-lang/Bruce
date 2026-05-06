@@ -1,7 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverBodySizeLimit: "20mb",
+  outputFileTracingIncludes: {
+    "/api/admin/dev/chat":     ["./CLAUDE.md", "./docs/schema-summary.md"],
+    "/api/admin/dev/context":  ["./CLAUDE.md"],
+    "/api/admin/dev/messages": [],
   },
   images: {
     remotePatterns: [
