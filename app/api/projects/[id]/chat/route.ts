@@ -344,6 +344,7 @@ export async function POST(request: NextRequest, { params }: Props) {
 
       try {
         let currentMessages = [...anthropicMessages];
+        let webSearchUsed = false;
 
         while (true) {
           const stream = anthropic.messages.stream({
@@ -369,6 +370,7 @@ export async function POST(request: NextRequest, { params }: Props) {
           if (toolCalls.length === 0) break;
 
           if (toolCalls.some((tc) => tc.name === "web_search")) {
+            webSearchUsed = true;
             controller.enqueue(encoder.encode(SEARCH_STATUS_SENTINEL));
           }
 
@@ -438,6 +440,7 @@ export async function POST(request: NextRequest, { params }: Props) {
               sender_id: null,
               role: "assistant",
               content: cleanResponse,
+              ...(webSearchUsed ? { metadata: { web_search_used: true } } : {}),
             });
             if (insertErr) {
               console.error("[api/projects/chat] Failed to persist assistant message:", insertErr);

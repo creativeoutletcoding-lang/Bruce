@@ -18,7 +18,6 @@ interface Member {
 }
 
 function Avatar({ name, colorHex }: { name: string; colorHex: string }) {
-  console.log('avatar rendering, color_hex:', colorHex);
   return (
     <div
       style={{

@@ -26,22 +26,34 @@ export async function GET() {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-  const [messagesThisMonth, allUsers, filesThisMonth] = await Promise.all([
-    admin
-      .from("messages")
-      .select("sender_id", { count: "exact" })
-      .gte("created_at", monthStart)
-      .eq("role", "user"),
-    admin.from("users").select("id, name, avatar_url").eq("status", "active"),
-    admin
-      .from("files")
-      .select("id", { count: "exact" })
-      .gte("created_at", monthStart),
-  ]);
+  const [messagesThisMonth, allUsers, filesThisMonth, imagesThisMonth, searchesThisMonth] =
+    await Promise.all([
+      admin
+        .from("messages")
+        .select("sender_id", { count: "exact" })
+        .gte("created_at", monthStart)
+        .eq("role", "user"),
+      admin.from("users").select("id, name, color_hex").eq("status", "active"),
+      admin
+        .from("files")
+        .select("id", { count: "exact" })
+        .gte("created_at", monthStart),
+      admin
+        .from("messages")
+        .select("id", { count: "exact" })
+        .gte("created_at", monthStart)
+        .eq("metadata->>content_type", "image"),
+      admin
+        .from("messages")
+        .select("id", { count: "exact" })
+        .gte("created_at", monthStart)
+        .eq("metadata->>web_search_used", "true"),
+    ]);
 
   const totalMessages = messagesThisMonth.count ?? 0;
+  const totalImages = imagesThisMonth.count ?? 0;
+  const totalSearches = searchesThisMonth.count ?? 0;
 
-  // Message count per member this month
   const memberCounts: Record<string, number> = {};
   for (const msg of messagesThisMonth.data ?? []) {
     if (msg.sender_id) {
@@ -50,27 +62,36 @@ export async function GET() {
   }
 
   const users = allUsers.data ?? [];
-  const byMember = users.map((u) => ({
-    user_id: u.id,
-    name: u.name,
-    avatar_url: u.avatar_url,
-    count: memberCounts[u.id] ?? 0,
-  }));
+  const byMember = users
+    .map((u) => ({
+      user_id: u.id,
+      name: u.name,
+      color_hex: u.color_hex ?? "#0F6E56",
+      count: memberCounts[u.id] ?? 0,
+    }))
+    .sort((a, b) => b.count - a.count);
 
-  // Cost estimation: claude-sonnet-4-6 ~ $3/M input, $15/M output
-  // Approx per user message exchange: 1000 input tokens + 600 output tokens
-  const estimatedApiCost = parseFloat((totalMessages * 0.012).toFixed(2));
+  // Cost estimation
+  // Anthropic claude-sonnet-4-6: ~$3/M input + $15/M output, ~1600 tokens/exchange → ~$0.012/message
+  const chatApiCost = parseFloat((totalMessages * 0.012).toFixed(2));
+  // Replicate flux-schnell: $0.003/image
+  const replicateCost = parseFloat((totalImages * 0.003).toFixed(2));
+  // Perplexity sonar-pro: ~$0.005/request
+  const perplexityCost = parseFloat((totalSearches * 0.005).toFixed(2));
+  const totalCost = parseFloat((chatApiCost + replicateCost + perplexityCost).toFixed(2));
 
   return NextResponse.json({
     period,
     messages_total: totalMessages,
     messages_by_member: byMember,
     files_attached: filesThisMonth.count ?? 0,
-    estimated_api_cost_usd: estimatedApiCost,
+    images_generated: totalImages,
+    web_searches: totalSearches,
     cost_breakdown: {
-      chat_api: estimatedApiCost,
-      hosting_note: "Vercel Pro ~$20/mo (subscription)",
-      database_note: "Supabase Pro ~$25/mo (subscription)",
+      chat_api: chatApiCost,
+      replicate: replicateCost,
+      perplexity: perplexityCost,
+      total: totalCost,
     },
   });
 }
