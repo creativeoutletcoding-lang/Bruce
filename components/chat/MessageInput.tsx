@@ -12,6 +12,7 @@ export interface FileAttachment {
   previewUrl?: string;
 }
 
+// Legacy alias kept so callers that import ImageAttachment still compile
 export type ImageAttachment = FileAttachment;
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -30,18 +31,45 @@ function normalizeDocMimeType(file: File): string {
   return "text/plain";
 }
 
+function processFile(file: File): Promise<FileAttachment | null> {
+  const isImage = file.type.startsWith("image/");
+  const type: "image" | "document" = isImage ? "image" : "document";
+  const mediaType = isImage ? file.type || "image/jpeg" : normalizeDocMimeType(file);
+  const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
+
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      const base64 = dataUrl.split(",")[1];
+      resolve({ type, base64, mediaType, filename: file.name, fileSize: file.size, previewUrl });
+    };
+    reader.onerror = async () => {
+      if (!isImage) { resolve(null); return; }
+      try {
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let binary = "";
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        const base64 = btoa(binary);
+        resolve({ type, base64, mediaType, filename: file.name, fileSize: file.size, previewUrl });
+      } catch {
+        resolve(null);
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 interface MessageInputProps {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
   disabled?: boolean;
   placeholder?: string;
-  attachedFile?: FileAttachment | null;
-  onFileAttach?: (file: FileAttachment) => void;
-  onFileClear?: () => void;
-  attachedImage?: FileAttachment | null;
-  onImageAttach?: (img: FileAttachment) => void;
-  onImageClear?: () => void;
+  attachedFiles?: FileAttachment[];
+  onFilesAttach?: (files: FileAttachment[]) => void;
+  onFileRemove?: (index: number) => void;
 }
 
 export default function MessageInput({
@@ -50,22 +78,13 @@ export default function MessageInput({
   onSend,
   disabled = false,
   placeholder = "Message Bruce",
-  attachedFile: attachedFileProp,
-  onFileAttach: onFileAttachProp,
-  onFileClear: onFileClearProp,
-  attachedImage,
-  onImageAttach,
-  onImageClear,
+  attachedFiles = [],
+  onFilesAttach,
+  onFileRemove,
 }: MessageInputProps) {
-  const attachment = attachedFileProp ?? attachedImage ?? null;
-  const onAttach = onFileAttachProp ?? onImageAttach;
-  const onClear = onFileClearProp ?? onImageClear;
-
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const docInputRef = useRef<HTMLInputElement>(null);
-  const [showAttachMenu, setShowAttachMenu] = useState(false);
-  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachmentErrors, setAttachmentErrors] = useState<string[]>([]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -89,160 +108,91 @@ export default function MessageInput({
     const isMobile = window.matchMedia("(pointer: coarse)").matches;
     if (e.key === "Enter" && !e.shiftKey && !isMobile) {
       e.preventDefault();
-      if (!disabled && (value.trim() || attachment)) { lightHaptic(); onSend(); }
+      if (!disabled && (value.trim() || attachedFiles.length > 0)) { lightHaptic(); onSend(); }
     }
   }
 
-  function handleImageFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || !onAttach) return;
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
+    if (!files.length || !onFilesAttach) return;
 
-    const ext = file.name.split(".").pop()?.toLowerCase();
-    const isHeic = file.type === "image/heic" || file.type === "image/heif" || ext === "heic" || ext === "heif";
-    if (isHeic) {
-      setAttachmentError("Please use JPEG or PNG — HEIC format is not supported.");
-      return;
-    }
+    const errors: string[] = [];
+    const validFiles: File[] = [];
 
-    if (file.size > MAX_FILE_SIZE) {
-      setAttachmentError("File too large — maximum 10MB");
-      return;
-    }
-
-    setAttachmentError(null);
-    const previewUrl = URL.createObjectURL(file);
-    const mediaType = file.type || "image/jpeg";
-
-    console.log("[MessageInput] file selected: mediaType=%s size=%d", mediaType, file.size);
-
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      const base64 = dataUrl.split(",")[1];
-      console.log("[MessageInput] FileReader done: base64Length=%d", base64?.length ?? 0);
-      onAttach({
-        type: "image",
-        base64,
-        mediaType,
-        filename: file.name,
-        fileSize: file.size,
-        previewUrl,
-      });
-    };
-    reader.onerror = async () => {
-      // Fallback for iOS Safari FileReader quirks
-      try {
-        const buf = await file.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        let binary = "";
-        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-        const base64 = btoa(binary);
-        console.log("[MessageInput] arrayBuffer fallback: base64Length=%d", base64.length);
-        onAttach({
-          type: "image",
-          base64,
-          mediaType,
-          filename: file.name,
-          fileSize: file.size,
-          previewUrl,
-        });
-      } catch {
-        setAttachmentError("Could not read file. Please try again.");
+    for (const file of files) {
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      const isHeic = file.type === "image/heic" || file.type === "image/heif" || ext === "heic" || ext === "heif";
+      if (isHeic) {
+        errors.push(`${file.name}: HEIC not supported — use JPEG or PNG`);
+        continue;
       }
-    };
-    reader.readAsDataURL(file);
-  }
-
-  function handleDocFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || !onAttach) return;
-    e.target.value = "";
-    if (file.size > MAX_FILE_SIZE) {
-      setAttachmentError("File too large — maximum 10MB");
-      return;
+      if (file.size > MAX_FILE_SIZE) {
+        errors.push(`${file.name}: File too large (max 10MB)`);
+        continue;
+      }
+      validFiles.push(file);
     }
-    setAttachmentError(null);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      const base64 = dataUrl.split(",")[1];
-      onAttach({
-        type: "document",
-        base64,
-        mediaType: normalizeDocMimeType(file),
-        filename: file.name,
-        fileSize: file.size,
-      });
-    };
-    reader.readAsDataURL(file);
+
+    setAttachmentErrors(errors);
+    if (validFiles.length === 0) return;
+
+    const results = await Promise.all(validFiles.map(processFile));
+    const attachments = results.filter((r): r is FileAttachment => r !== null);
+    if (attachments.length > 0) onFilesAttach(attachments);
   }
 
-  const canSend = !disabled && (value.trim().length > 0 || !!attachment);
+  const canSend = !disabled && (value.trim().length > 0 || attachedFiles.length > 0);
 
   return (
     <div className="msg-input-container" style={styles.container}>
-      {attachmentError && (
-        <p style={styles.attachError}>{attachmentError}</p>
-      )}
-      {attachment && (
-        <div style={styles.thumbnailRow}>
-          {attachment.type === "image" && attachment.previewUrl ? (
-            <div style={styles.thumbnailWrapper}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={attachment.previewUrl} alt="" style={styles.thumbnail} />
-              <button onClick={onClear} style={styles.thumbnailClose} aria-label="Remove image">×</button>
-            </div>
-          ) : (
-            <div style={styles.docChip}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: "var(--text-secondary)" }}>
-                <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-                <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-              </svg>
-              <span style={styles.docChipName}>{attachment.filename}</span>
-              <span style={styles.docChipSize}>{formatFileSize(attachment.fileSize)}</span>
-              <button onClick={onClear} style={styles.thumbnailClose} aria-label="Remove file">×</button>
-            </div>
-          )}
+      {attachmentErrors.length > 0 && (
+        <div style={styles.errorsBlock}>
+          {attachmentErrors.map((err, i) => (
+            <p key={i} style={styles.attachError}>{err}</p>
+          ))}
         </div>
       )}
-      <div className="msg-input-row" style={styles.inputRow}>
-        {onAttach && (
-          <div style={{ position: "relative", flexShrink: 0 }}>
-            {showAttachMenu && (
-              <>
-                <div onClick={() => setShowAttachMenu(false)} style={styles.attachBackdrop} />
-                <div style={styles.attachMenu}>
-                  <button
-                    type="button"
-                    style={styles.attachOption}
-                    onClick={() => { setShowAttachMenu(false); imageInputRef.current?.click(); }}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                      <rect x="1" y="3" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.3" />
-                      <circle cx="5.5" cy="7.5" r="1.5" stroke="currentColor" strokeWidth="1.2" />
-                      <path d="M1 11l4-3.5 3 2.5 3-3 3 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    Photo
-                  </button>
-                  <button
-                    type="button"
-                    style={styles.attachOption}
-                    onClick={() => { setShowAttachMenu(false); docInputRef.current?.click(); }}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                      <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-                      <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                    </svg>
-                    Document
-                  </button>
+
+      {attachedFiles.length > 0 && (
+        <div style={styles.attachmentsRow}>
+          {attachedFiles.map((file, i) => (
+            <div key={i} style={{ flexShrink: 0 }}>
+              {file.type === "image" && file.previewUrl ? (
+                <div style={styles.thumbnailWrapper}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={file.previewUrl} alt="" style={styles.thumbnail} />
+                  <button onClick={() => onFileRemove?.(i)} style={styles.thumbnailClose} aria-label="Remove image">×</button>
                 </div>
-              </>
-            )}
-            <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleImageFileChange} />
-            <input ref={docInputRef} type="file" accept=".pdf,.txt,.md,.csv" style={{ display: "none" }} onChange={handleDocFileChange} />
+              ) : (
+                <div style={styles.docChip}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: "var(--text-secondary)" }}>
+                    <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                    <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                  </svg>
+                  <span style={styles.docChipName}>{file.filename}</span>
+                  <span style={styles.docChipSize}>{formatFileSize(file.fileSize)}</span>
+                  <button onClick={() => onFileRemove?.(i)} style={styles.thumbnailClose} aria-label="Remove file">×</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="msg-input-row" style={styles.inputRow}>
+        {onFilesAttach && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.txt,.md,.csv,image/*"
+              style={{ display: "none" }}
+              onChange={handleFileChange}
+            />
             <button
-              onClick={() => setShowAttachMenu((v) => !v)}
+              onClick={() => fileInputRef.current?.click()}
               style={styles.attachButton}
               aria-label="Attach file"
               type="button"
@@ -252,7 +202,7 @@ export default function MessageInput({
                 <path d="M15 9.5l-5.5 5.5a4 4 0 0 1-5.657-5.657l6-6a2.5 2.5 0 0 1 3.535 3.535L7.5 12.5a1 1 0 0 1-1.414-1.414L11.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
-          </div>
+          </>
         )}
         <textarea
           ref={textareaRef}
@@ -286,25 +236,34 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "var(--bg-primary)",
     flexShrink: 0,
   },
+  errorsBlock: {
+    padding: "0 14px 4px",
+    maxWidth: 780,
+    margin: "0 auto",
+    width: "100%",
+  },
   attachError: {
     fontSize: "0.8125rem",
     color: "var(--text-tertiary)",
-    padding: "0 14px 4px",
-    margin: 0,
+    margin: "0 0 2px",
   },
-  thumbnailRow: {
+  attachmentsRow: {
+    display: "flex",
+    gap: "8px",
     padding: "0 14px 8px",
     maxWidth: 780,
     margin: "0 auto",
     width: "100%",
+    overflowX: "auto",
+    WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
   },
   thumbnailWrapper: {
     position: "relative",
     display: "inline-block",
   },
   thumbnail: {
-    maxWidth: "80px",
-    maxHeight: "80px",
+    width: "48px",
+    height: "48px",
     borderRadius: "var(--radius-md)",
     objectFit: "cover",
     display: "block",
@@ -335,7 +294,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-md)",
     border: "1px solid var(--border)",
     backgroundColor: "var(--bg-secondary)",
-    maxWidth: "260px",
+    maxWidth: "200px",
     position: "relative",
   },
   docChipName: {
@@ -344,7 +303,7 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
-    maxWidth: "140px",
+    maxWidth: "100px",
   },
   docChipSize: {
     fontSize: "0.75rem",
@@ -378,40 +337,6 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     background: "transparent",
     padding: 0,
-  },
-  attachBackdrop: {
-    position: "fixed",
-    inset: 0,
-    zIndex: 97,
-  },
-  attachMenu: {
-    position: "absolute",
-    bottom: "calc(100% + 8px)",
-    left: 0,
-    zIndex: 98,
-    backgroundColor: "var(--bg-primary)",
-    border: "1px solid var(--border)",
-    borderRadius: "var(--radius-md)",
-    padding: "4px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px",
-    minWidth: "140px",
-    boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-  },
-  attachOption: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "8px 10px",
-    borderRadius: "var(--radius-sm)",
-    fontSize: "0.875rem",
-    color: "var(--text-primary)",
-    cursor: "pointer",
-    border: "none",
-    background: "transparent",
-    textAlign: "left",
-    transition: "background-color var(--transition)",
   },
   textarea: {
     flex: 1,

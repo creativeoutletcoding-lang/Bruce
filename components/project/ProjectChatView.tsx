@@ -66,7 +66,7 @@ export default function ProjectChatView({
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
-  const [attachedFile, setAttachedFile] = useState<FileAttachment | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
 
   const messagesRef = useRef(messages);
   const instructionsFiredRef = useRef(false);
@@ -214,12 +214,12 @@ export default function ProjectChatView({
     );
   }, [chatId]);
 
-  async function sendMessage(text: string, fileOverride?: FileAttachment | null) {
-    const fileToSend = fileOverride !== undefined ? fileOverride : attachedFile;
-    if ((!text && !fileToSend) || isStreaming) return;
+  async function sendMessage(text: string, filesOverride?: FileAttachment[] | null) {
+    const filesToSend = filesOverride !== undefined ? (filesOverride ?? []) : attachedFiles;
+    if ((!text && !filesToSend.length) || isStreaming) return;
 
     setInput("");
-    setAttachedFile(null);
+    setAttachedFiles([]);
     setError(null);
 
     const userMsgId = `tmp-user-${Date.now()}`;
@@ -232,9 +232,9 @@ export default function ProjectChatView({
         role: "user",
         content: text,
         created_at: new Date().toISOString(),
-        imageUrl: fileToSend?.type === "image" ? fileToSend.previewUrl : undefined,
-        attachmentType: fileToSend?.type,
-        attachmentFilename: fileToSend?.filename,
+        attachments: filesToSend.length > 0
+          ? filesToSend.map((f) => ({ url: f.previewUrl ?? "", type: f.type, filename: f.filename }))
+          : undefined,
         sender_id: currentUserId,
       },
       { id: streamMsgId, role: "assistant", content: "", isStreaming: true },
@@ -250,11 +250,8 @@ export default function ProjectChatView({
           chatId,
           currentLocation,
           userTimestamp: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }),
-          image: fileToSend?.type === "image"
-            ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType }
-            : undefined,
-          document: fileToSend?.type === "document"
-            ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType, filename: fileToSend.filename }
+          attachments: filesToSend.length > 0
+            ? filesToSend.map((f) => ({ base64: f.base64, mediaType: f.mediaType, filename: f.filename, type: f.type }))
             : undefined,
         }),
       });
@@ -436,9 +433,9 @@ export default function ProjectChatView({
         onChange={setInput}
         onSend={handleSend}
         disabled={isStreaming}
-        attachedFile={attachedFile}
-        onFileAttach={(f) => setAttachedFile(f)}
-        onFileClear={() => setAttachedFile(null)}
+        attachedFiles={attachedFiles}
+        onFilesAttach={(files) => setAttachedFiles((prev) => [...prev, ...files])}
+        onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
         placeholder={`Message ${projectName}…`}
       />
     </div>

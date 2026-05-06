@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import MessageBubble from "./MessageBubble";
+import type { MessageAttachment } from "./MessageBubble";
 import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
@@ -20,6 +21,8 @@ export interface ChatMessage {
   created_at?: string;
   isStreaming?: boolean;
   metadata?: Record<string, unknown>;
+  attachments?: MessageAttachment[];
+  // Legacy single-attachment fields (kept for backward compat with old DB rows)
   imageUrl?: string;
   attachmentType?: string;
   attachmentFilename?: string;
@@ -123,7 +126,16 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
               if (!url) return <ImageMessageSkeleton key={msg.id} isHD={isHD} />;
               return <ImageMessage key={msg.id} url={url} prompt={prompt} isHD={isHD} />;
             }
-            return (
+            {
+              // Resolve attachment list: prefer explicit array, then metadata.attachments, then single legacy fields
+              const resolvedAttachments: MessageAttachment[] | undefined =
+                msg.attachments ??
+                (msg.metadata?.attachments as MessageAttachment[] | undefined) ??
+                (msg.imageUrl
+                  ? [{ url: msg.imageUrl, type: msg.attachmentType ?? "image", filename: msg.attachmentFilename }]
+                  : undefined);
+
+              return (
               <MessageBubble
                 key={msg.id}
                 role={msg.role}
@@ -139,11 +151,10 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 }
                 senderName={msg.senderName}
                 senderColorHex={msg.senderColorHex}
-                imageUrl={msg.imageUrl ?? (msg.metadata?.image_url as string | undefined)}
-                attachmentType={msg.attachmentType}
-                attachmentFilename={msg.attachmentFilename}
+                attachments={resolvedAttachments}
               />
-            );
+              );
+            }
           })}
           <div style={styles.bottomPad} />
           <div ref={endRef} />

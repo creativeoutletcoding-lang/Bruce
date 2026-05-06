@@ -26,7 +26,7 @@ export default function NewChatOrchestrator({
   const [isStreaming, setIsStreaming] = useState(false);
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [attachedFile, setAttachedFile] = useState<FileAttachment | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
 
   function handleSuggestion(text: string) {
     setInput(text);
@@ -34,11 +34,11 @@ export default function NewChatOrchestrator({
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if ((!text && !attachedFile) || isStreaming) return;
+    if ((!text && !attachedFiles.length) || isStreaming) return;
 
-    const fileToSend = attachedFile;
+    const filesToSend = attachedFiles;
     setInput("");
-    setAttachedFile(null);
+    setAttachedFiles([]);
     setError(null);
 
     const userMsgId = `tmp-user-${Date.now()}`;
@@ -49,9 +49,9 @@ export default function NewChatOrchestrator({
       role: "user",
       content: text,
       created_at: new Date().toISOString(),
-      imageUrl: fileToSend?.type === "image" ? fileToSend.previewUrl : undefined,
-      attachmentType: fileToSend?.type,
-      attachmentFilename: fileToSend?.filename,
+      attachments: filesToSend.length > 0
+        ? filesToSend.map((f) => ({ url: f.previewUrl ?? "", type: f.type, filename: f.filename }))
+        : undefined,
     };
     const streamMsg: ChatMessage = {
       id: streamMsgId,
@@ -64,10 +64,6 @@ export default function NewChatOrchestrator({
     setIsStreaming(true);
 
     try {
-      if (fileToSend?.type === "image") {
-        console.log("[NewChatOrchestrator] sending image: mediaType=%s base64Length=%d", fileToSend.mediaType, fileToSend.base64.length);
-      }
-
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -76,8 +72,9 @@ export default function NewChatOrchestrator({
           chatId: null,
           isIncognito: incognito,
           userTimestamp: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }),
-          image: fileToSend?.type === "image" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType } : undefined,
-          document: fileToSend?.type === "document" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType, filename: fileToSend.filename } : undefined,
+          attachments: filesToSend.length > 0
+            ? filesToSend.map((f) => ({ base64: f.base64, mediaType: f.mediaType, filename: f.filename, type: f.type }))
+            : undefined,
         }),
       });
 
@@ -177,7 +174,7 @@ export default function NewChatOrchestrator({
       setIsStreaming(false);
       setWorkingStatus(null);
     }
-  }, [input, attachedFile, isStreaming, incognito, router, refreshChats]);
+  }, [input, attachedFiles, isStreaming, incognito, router, refreshChats]);
 
   // Show welcome screen until the user sends their first message
   if (messages.length === 0) {
@@ -190,9 +187,9 @@ export default function NewChatOrchestrator({
           onChange={setInput}
           onSend={handleSend}
           disabled={isStreaming}
-          attachedFile={attachedFile}
-          onFileAttach={(f) => setAttachedFile(f)}
-          onFileClear={() => setAttachedFile(null)}
+          attachedFiles={attachedFiles}
+          onFilesAttach={(files) => setAttachedFiles((prev) => [...prev, ...files])}
+          onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
         />
       </div>
     );
@@ -239,9 +236,9 @@ export default function NewChatOrchestrator({
         onChange={setInput}
         onSend={handleSend}
         disabled={isStreaming}
-        attachedFile={attachedFile}
-        onFileAttach={(f) => setAttachedFile(f)}
-        onFileClear={() => setAttachedFile(null)}
+        attachedFiles={attachedFiles}
+        onFilesAttach={(files) => setAttachedFiles((prev) => [...prev, ...files])}
+        onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
       />
     </div>
   );

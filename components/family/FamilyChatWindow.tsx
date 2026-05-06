@@ -11,6 +11,12 @@ import type { UserSummary } from "@/lib/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface FamilyMessageAttachment {
+  url: string;
+  type: string;
+  filename?: string;
+}
+
 export interface FamilyMessage {
   id: string;
   role: MessageRole;
@@ -20,6 +26,8 @@ export interface FamilyMessage {
   sender_avatar: string | null;
   created_at: string;
   isStreaming?: boolean;
+  attachments?: FamilyMessageAttachment[];
+  // Legacy single-attachment field for old DB rows
   imageUrl?: string;
 }
 
@@ -59,7 +67,7 @@ export default function FamilyChatWindow({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
-  const [attachedFile, setAttachedFile] = useState<FileAttachment | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
 
   const colorMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -158,15 +166,29 @@ export default function FamilyChatWindow({
     const supabase = createClient();
     const { data } = await supabase
       .from("messages")
-      .select("id, role, content, created_at, sender_id, image_url")
+      .select("id, role, content, created_at, sender_id, image_url, attachment_type, attachment_filename, metadata")
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true })
       .limit(100);
 
     if (!data) return;
     setMessages(
-      (data as Array<{ id: string; role: string; content: string; created_at: string; sender_id: string | null; image_url?: string | null }>).map(
-        (m) => ({
+      (data as Array<{
+        id: string;
+        role: string;
+        content: string;
+        created_at: string;
+        sender_id: string | null;
+        image_url?: string | null;
+        attachment_type?: string | null;
+        attachment_filename?: string | null;
+        metadata?: Record<string, unknown> | null;
+      }>).map((m) => {
+        const metaAttachments = m.metadata?.attachments as FamilyMessageAttachment[] | undefined;
+        const attachments: FamilyMessageAttachment[] | undefined =
+          metaAttachments ??
+          (m.image_url ? [{ url: m.image_url, type: m.attachment_type ?? "image", filename: m.attachment_filename ?? undefined }] : undefined);
+        return {
           id: m.id,
           role: m.role as MessageRole,
           content: m.content,
@@ -174,9 +196,9 @@ export default function FamilyChatWindow({
           sender_id: m.sender_id,
           sender_name: m.sender_id ? (memberMap.current[m.sender_id]?.name ?? null) : null,
           sender_avatar: m.sender_id ? (memberMap.current[m.sender_id]?.avatar_url ?? null) : null,
-          imageUrl: m.image_url ?? undefined,
-        })
-      )
+          attachments,
+        };
+      })
     );
   }, [chatId]);
 
@@ -232,11 +254,11 @@ export default function FamilyChatWindow({
   // ── Send ──────────────────────────────────────────────────────────────────
 
   async function sendMessage(text: string) {
-    if ((!text.trim() && !attachedFile) || bruceState !== "idle") return;
+    if ((!text.trim() && !attachedFiles.length) || bruceState !== "idle") return;
 
-    const fileToSend = attachedFile;
+    const filesToSend = attachedFiles;
     setInput("");
-    setAttachedFile(null);
+    setAttachedFiles([]);
     setError(null);
     setContextMenu(null);
 
@@ -251,7 +273,9 @@ export default function FamilyChatWindow({
         sender_name: memberMap.current[currentUserId]?.name ?? null,
         sender_avatar: memberMap.current[currentUserId]?.avatar_url ?? null,
         created_at: new Date().toISOString(),
-        imageUrl: fileToSend?.type === "image" ? fileToSend.previewUrl : undefined,
+        attachments: filesToSend.length > 0
+          ? filesToSend.map((f) => ({ url: f.previewUrl ?? "", type: f.type, filename: f.filename }))
+          : undefined,
       },
     ]);
 
@@ -266,8 +290,9 @@ export default function FamilyChatWindow({
           chatId,
           currentLocation,
           userTimestamp: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }),
-          image: fileToSend?.type === "image" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType } : undefined,
-          document: fileToSend?.type === "document" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType, filename: fileToSend.filename } : undefined,
+          attachments: filesToSend.length > 0
+            ? filesToSend.map((f) => ({ base64: f.base64, mediaType: f.mediaType, filename: f.filename, type: f.type }))
+            : undefined,
         }),
       });
 
@@ -491,10 +516,38 @@ export default function FamilyChatWindow({
                       </span>
                     ) : (
                       <>
-                        {msg.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={msg.imageUrl} alt="" style={{ maxWidth: "240px", width: "100%", borderRadius: "var(--radius-md)", display: "block", marginBottom: msg.content ? "8px" : 0 }} />
-                        ) : null}
+                        {(() => {
+                          const list: FamilyMessageAttachment[] =
+                            msg.attachments ??
+                            (msg.imageUrl ? [{ url: msg.imageUrl, type: "image" }] : []);
+                          const images = list.filter((a) => a.type === "image");
+                          const docs = list.filter((a) => a.type === "document");
+                          return (
+                            <>
+                              {images.length > 0 && (
+                                <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginBottom: msg.content || docs.length > 0 ? "8px" : 0 }}>
+                                  {images.map((img, i) => (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img key={i} src={img.url} alt="" style={{ maxWidth: "240px", width: images.length > 1 ? "112px" : "100%", height: images.length > 1 ? "112px" : "auto", borderRadius: "var(--radius-md)", objectFit: "cover", display: "block" }} />
+                                  ))}
+                                </div>
+                              )}
+                              {docs.length > 0 && (
+                                <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginBottom: msg.content ? "8px" : 0 }}>
+                                  {docs.map((doc, i) => (
+                                    <div key={i} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 10px", borderRadius: "var(--radius-sm)", border: "1px solid rgba(255,255,255,0.2)", backgroundColor: "rgba(255,255,255,0.1)" }}>
+                                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                                        <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                                        <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                                      </svg>
+                                      <span style={{ fontSize: "0.8125rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "160px" }}>{doc.filename ?? "Document"}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                         {msg.content}
                       </>
                     )}
@@ -535,9 +588,9 @@ export default function FamilyChatWindow({
         onSend={handleSend}
         disabled={bruceState !== "idle"}
         placeholder={placeholder}
-        attachedFile={attachedFile}
-        onFileAttach={(f) => setAttachedFile(f)}
-        onFileClear={() => setAttachedFile(null)}
+        attachedFiles={attachedFiles}
+        onFilesAttach={(files) => setAttachedFiles((prev) => [...prev, ...files])}
+        onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
       />
 
       {contextMenu && (

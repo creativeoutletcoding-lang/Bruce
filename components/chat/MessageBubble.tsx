@@ -3,6 +3,12 @@
 import { useState } from "react";
 import type { MessageRole } from "@/lib/types";
 
+export interface MessageAttachment {
+  url: string;
+  type: string;
+  filename?: string;
+}
+
 interface MessageBubbleProps {
   role: MessageRole;
   content: string;
@@ -13,6 +19,8 @@ interface MessageBubbleProps {
   isOwn?: boolean;
   senderName?: string;
   senderColorHex?: string;
+  attachments?: MessageAttachment[];
+  // Legacy single-attachment fallback
   imageUrl?: string;
   attachmentType?: string;
   attachmentFilename?: string;
@@ -36,17 +44,24 @@ export default function MessageBubble({
   isOwn,
   senderName,
   senderColorHex,
+  attachments,
   imageUrl,
   attachmentType,
   attachmentFilename,
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
-  // isOwn=undefined means standalone chat (fall back to role); isOwn=true/false means project group chat
   const isUser = isOwn !== undefined ? isOwn : role === "user";
   const isHumanMessage = role === "user";
   const showSenderLabel = isOwn === false && isHumanMessage && Boolean(senderName);
-  // Show dots inside the same bubble element — never swap elements, which causes flash/remount
   const showDots = isStreaming && !content;
+
+  // Resolve attachment list: prefer explicit array, fall back to single legacy fields
+  const resolvedAttachments: MessageAttachment[] =
+    attachments ??
+    (imageUrl ? [{ url: imageUrl, type: attachmentType ?? "image", filename: attachmentFilename }] : []);
+
+  const imageAttachments = resolvedAttachments.filter((a) => a.type === "image");
+  const docAttachments = resolvedAttachments.filter((a) => a.type === "document");
 
   return (
     <div
@@ -86,28 +101,49 @@ export default function MessageBubble({
             </span>
           ) : (
             <>
-              {imageUrl && attachmentType === "document" ? (
-                <div style={styles.docChip}>
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                    <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-                    <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                  </svg>
-                  <span style={styles.docChipName}>{attachmentFilename ?? "Document"}</span>
+              {imageAttachments.length > 0 && (
+                <div style={{
+                  display: "flex",
+                  gap: "4px",
+                  flexWrap: "wrap",
+                  marginBottom: content || docAttachments.length > 0 ? "8px" : 0,
+                }}>
+                  {imageAttachments.map((img, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={i}
+                      src={img.url}
+                      alt=""
+                      style={{
+                        maxWidth: "240px",
+                        width: imageAttachments.length > 1 ? "112px" : "100%",
+                        height: imageAttachments.length > 1 ? "112px" : "auto",
+                        borderRadius: "var(--radius-md)",
+                        objectFit: "cover",
+                        display: "block",
+                      }}
+                    />
+                  ))}
                 </div>
-              ) : imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={imageUrl}
-                  alt=""
-                  style={{
-                    maxWidth: "240px",
-                    width: "100%",
-                    borderRadius: "var(--radius-md)",
-                    display: "block",
-                    marginBottom: content ? "8px" : 0,
-                  }}
-                />
-              ) : null}
+              )}
+              {docAttachments.length > 0 && (
+                <div style={{
+                  display: "flex",
+                  gap: "4px",
+                  flexWrap: "wrap",
+                  marginBottom: content ? "8px" : 0,
+                }}>
+                  {docAttachments.map((doc, i) => (
+                    <div key={i} style={styles.docChip}>
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                        <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                        <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                      </svg>
+                      <span style={styles.docChipName}>{doc.filename ?? "Document"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {content && <span style={styles.content}>{content}</span>}
             </>
           )}
@@ -198,7 +234,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-sm)",
     border: "1px solid rgba(255,255,255,0.2)",
     backgroundColor: "rgba(255,255,255,0.1)",
-    marginBottom: "6px",
   },
   docChipName: {
     fontSize: "0.8125rem",

@@ -38,17 +38,18 @@ export async function POST(request: NextRequest, { params }: Props) {
   } = await supabase.auth.getUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  let body: { message: string; chatId: string | null; currentLocation?: string; userTimestamp?: string; image?: { base64: string; mediaType: string }; document?: { base64: string; mediaType: string; filename: string } };
+  let body: { message: string; chatId: string | null; currentLocation?: string; userTimestamp?: string; attachments?: Array<{ base64: string; mediaType: string; filename: string; type: "image" | "document" }> };
   try {
     body = await request.json();
   } catch {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const { message, chatId, currentLocation, userTimestamp: rawTimestamp, image, document } = body;
+  const { message, chatId, currentLocation, userTimestamp: rawTimestamp, attachments: rawAttachments } = body;
+  const attachments = rawAttachments ?? [];
   const userTimestamp = rawTimestamp ?? new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
-  if (!message?.trim() && !image && !document) return new Response("Message required", { status: 400 });
+  if (!message?.trim() && attachments.length === 0) return new Response("Message required", { status: 400 });
 
   // Verify user is a project member (RLS will reject if not, belt-and-suspenders)
   const { data: project, error: projectError } = await supabase
@@ -202,56 +203,44 @@ export async function POST(request: NextRequest, { params }: Props) {
     }
   }
 
-  // Upload image if present
-  let userImageUrl: string | undefined;
-  if (image) {
+  // Upload attachments to storage
+  const attachmentMeta: Array<{ url: string; type: string; filename?: string }> = [];
+  for (let i = 0; i < attachments.length; i++) {
+    const att = attachments[i];
     try {
-      const fileExt = image.mediaType.split("/")[1] ?? "jpg";
-      const filePath = `${user.id}/${Date.now()}.${fileExt}`;
+      const fileExt = att.type === "image"
+        ? (att.mediaType.split("/")[1] ?? "jpg")
+        : (att.filename.split(".").pop() ?? "bin");
+      const filePath = `${user.id}/${Date.now()}_${i}.${fileExt}`;
       const { error: uploadErr } = await adminSupabase.storage
         .from("message-images")
-        .upload(filePath, Buffer.from(image.base64, "base64"), {
-          contentType: image.mediaType,
+        .upload(filePath, Buffer.from(att.base64, "base64"), {
+          contentType: att.mediaType,
           upsert: false,
         });
       if (!uploadErr) {
-        const { data: urlData } = adminSupabase.storage
-          .from("message-images")
-          .getPublicUrl(filePath);
-        userImageUrl = urlData.publicUrl;
+        const { data: urlData } = adminSupabase.storage.from("message-images").getPublicUrl(filePath);
+        attachmentMeta.push({ url: urlData.publicUrl, type: att.type, filename: att.type === "document" ? att.filename : undefined });
+      } else {
+        attachmentMeta.push({ url: "", type: att.type, filename: att.type === "document" ? att.filename : undefined });
       }
-    } catch { /* non-fatal — message still sends */ }
-  }
-
-  let userDocUrl: string | undefined;
-  if (document) {
-    try {
-      const fileExt = document.filename.split(".").pop() ?? "bin";
-      const filePath = `${user.id}/${Date.now()}.${fileExt}`;
-      const { error: uploadErr } = await adminSupabase.storage
-        .from("message-images")
-        .upload(filePath, Buffer.from(document.base64, "base64"), {
-          contentType: document.mediaType,
-          upsert: false,
-        });
-      if (!uploadErr) {
-        const { data: urlData } = adminSupabase.storage
-          .from("message-images")
-          .getPublicUrl(filePath);
-        userDocUrl = urlData.publicUrl;
-      }
-    } catch { /* non-fatal — message still sends */ }
+    } catch {
+      attachmentMeta.push({ url: "", type: att.type, filename: att.type === "document" ? att.filename : undefined });
+    }
   }
 
   // Insert user message
+  const firstAtt = attachments[0];
+  const firstDocFilename = attachments.find((a) => a.type === "document")?.filename ?? null;
   const { error: msgError } = await adminSupabase.from("messages").insert({
     chat_id: currentChatId,
     sender_id: user.id,
     role: "user",
     content: message,
-    image_url: userImageUrl ?? userDocUrl ?? null,
-    attachment_type: image ? "image" : document ? "document" : null,
-    attachment_filename: document?.filename ?? null,
+    image_url: attachmentMeta[0]?.url ?? null,
+    attachment_type: firstAtt?.type ?? null,
+    attachment_filename: firstDocFilename,
+    ...(attachmentMeta.length > 0 ? { metadata: { attachments: attachmentMeta } } : {}),
   });
 
   if (msgError) {
@@ -260,30 +249,37 @@ export async function POST(request: NextRequest, { params }: Props) {
 
   let userContent: Anthropic.Messages.MessageParam["content"];
   try {
-    userContent = image
-      ? [
-          {
+    if (attachments.length > 0) {
+      const blocks: Array<
+        | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } }
+        | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } | { type: "text"; media_type: "text/plain"; data: string }; title: string }
+        | { type: "text"; text: string }
+      > = [];
+      for (const att of attachments) {
+        if (att.type === "image") {
+          blocks.push({
             type: "image" as const,
             source: {
               type: "base64" as const,
-              media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-              data: image.base64,
+              media_type: att.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+              data: att.base64,
             },
-          },
-          ...(message.trim() ? [{ type: "text" as const, text: message }] : []),
-        ]
-      : document
-      ? [
-          {
+          });
+        } else {
+          blocks.push({
             type: "document" as const,
-            source: document.mediaType === "application/pdf"
-              ? { type: "base64" as const, media_type: "application/pdf" as const, data: document.base64 }
-              : { type: "text" as const, media_type: "text/plain" as const, data: document.base64 },
-            title: document.filename,
-          },
-          ...(message.trim() ? [{ type: "text" as const, text: message }] : []),
-        ]
-      : message;
+            source: att.mediaType === "application/pdf"
+              ? { type: "base64" as const, media_type: "application/pdf" as const, data: att.base64 }
+              : { type: "text" as const, media_type: "text/plain" as const, data: att.base64 },
+            title: att.filename,
+          });
+        }
+      }
+      if (message.trim()) blocks.push({ type: "text" as const, text: message });
+      userContent = blocks as Anthropic.Messages.MessageParam["content"];
+    } else {
+      userContent = message;
+    }
   } catch (contentErr) {
     console.error('[api/projects/chat] content block construction failed:', contentErr);
     return new Response("Content processing failed", { status: 500 });

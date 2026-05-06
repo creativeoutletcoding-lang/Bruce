@@ -46,7 +46,7 @@ export default function ChatWindow({
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
-  const [attachedFile, setAttachedFile] = useState<FileAttachment | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
   const [model, setModel] = useState(initialModel ?? "claude-sonnet-4-6");
   const memoryFiredRef = useRef(false);
   const messagesRef = useRef(messages);
@@ -142,11 +142,11 @@ export default function ChatWindow({
 
   async function handleSend() {
     const text = input.trim();
-    if ((!text && !attachedFile) || isStreaming) return;
+    if ((!text && !attachedFiles.length) || isStreaming) return;
 
-    const fileToSend = attachedFile;
+    const filesToSend = attachedFiles;
     setInput("");
-    setAttachedFile(null);
+    setAttachedFiles([]);
     setError(null);
 
     const userMsgId = `tmp-user-${Date.now()}`;
@@ -157,9 +157,9 @@ export default function ChatWindow({
       role: "user",
       content: text,
       created_at: new Date().toISOString(),
-      imageUrl: fileToSend?.type === "image" ? fileToSend.previewUrl : undefined,
-      attachmentType: fileToSend?.type,
-      attachmentFilename: fileToSend?.filename,
+      attachments: filesToSend.length > 0
+        ? filesToSend.map((f) => ({ url: f.previewUrl ?? "", type: f.type, filename: f.filename }))
+        : undefined,
     };
     const streamMsg: ChatMessage = {
       id: streamMsgId,
@@ -172,10 +172,6 @@ export default function ChatWindow({
     setIsStreaming(true);
 
     try {
-      if (fileToSend?.type === "image") {
-        console.log("[ChatWindow] sending image: mediaType=%s base64Length=%d", fileToSend.mediaType, fileToSend.base64.length);
-      }
-
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -185,8 +181,9 @@ export default function ChatWindow({
           isIncognito: incognito,
           currentLocation,
           userTimestamp: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }),
-          image: fileToSend?.type === "image" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType } : undefined,
-          document: fileToSend?.type === "document" ? { base64: fileToSend.base64, mediaType: fileToSend.mediaType, filename: fileToSend.filename } : undefined,
+          attachments: filesToSend.length > 0
+            ? filesToSend.map((f) => ({ base64: f.base64, mediaType: f.mediaType, filename: f.filename, type: f.type }))
+            : undefined,
         }),
       });
 
@@ -395,9 +392,9 @@ export default function ChatWindow({
         onChange={setInput}
         onSend={handleSend}
         disabled={isStreaming}
-        attachedFile={attachedFile}
-        onFileAttach={(f) => setAttachedFile(f)}
-        onFileClear={() => setAttachedFile(null)}
+        attachedFiles={attachedFiles}
+        onFilesAttach={(files) => setAttachedFiles((prev) => [...prev, ...files])}
+        onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
       />
     </div>
   );
