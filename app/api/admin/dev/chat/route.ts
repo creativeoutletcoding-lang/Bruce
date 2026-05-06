@@ -13,11 +13,8 @@ function loadTechContext(): string {
   const resolvedPath = join(process.cwd(), "CLAUDE.md");
   try {
     const claudeMd = readFileSync(resolvedPath, "utf-8");
-    // DIAGNOSTIC — remove after confirming runtime file access
-    console.log("[dev/chat] CLAUDE.md path:", resolvedPath, "| length:", claudeMd.length);
     return claudeMd.replace(/(key|secret|token|password)\s*[:=]\s*\S+/gi, "$1: [MASKED]");
   } catch {
-    console.log("[dev/chat] CLAUDE.md path:", resolvedPath, "| NOT FOUND");
     return "(CLAUDE.md not found)";
   }
 }
@@ -25,12 +22,8 @@ function loadTechContext(): string {
 function loadSchemaSummary(): string {
   const resolvedPath = join(process.cwd(), "docs/schema-summary.md");
   try {
-    const content = readFileSync(resolvedPath, "utf-8");
-    // DIAGNOSTIC — remove after confirming runtime file access
-    console.log("[dev/chat] docs/schema-summary.md path:", resolvedPath, "| length:", content.length);
-    return content;
+    return readFileSync(resolvedPath, "utf-8");
   } catch {
-    console.log("[dev/chat] docs/schema-summary.md path:", resolvedPath, "| NOT FOUND");
     return "";
   }
 }
@@ -136,7 +129,7 @@ export async function POST(request: NextRequest) {
     .single();
   if (profile?.role !== "admin") return new Response("Forbidden", { status: 403 });
 
-  let body: { message: string };
+  let body: { message: string; sessionId: string };
   try {
     body = await request.json();
   } catch {
@@ -144,12 +137,14 @@ export async function POST(request: NextRequest) {
   }
 
   if (!body.message?.trim()) return new Response("Message required", { status: 400 });
+  if (!body.sessionId) return new Response("sessionId required", { status: 400 });
 
   const serviceSupabase = createServiceRoleClient();
 
   const { data: historyRows } = await serviceSupabase
     .from("admin_dev_messages")
     .select("role, content")
+    .eq("session_id", body.sessionId)
     .order("created_at", { ascending: true })
     .limit(40);
 
@@ -173,6 +168,7 @@ export async function POST(request: NextRequest) {
   ];
 
   const userMessage = body.message;
+  const sessionId = body.sessionId;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -194,9 +190,15 @@ export async function POST(request: NextRequest) {
         await anthropicStream.finalMessage();
 
         await serviceSupabase.from("admin_dev_messages").insert([
-          { role: "user", content: userMessage },
-          { role: "assistant", content: fullResponse },
+          { role: "user", content: userMessage, session_id: sessionId },
+          { role: "assistant", content: fullResponse, session_id: sessionId },
         ]);
+
+        // Bump session updated_at so it floats to top of list
+        await serviceSupabase
+          .from("admin_dev_sessions")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", sessionId);
 
         controller.close();
       } catch (err) {

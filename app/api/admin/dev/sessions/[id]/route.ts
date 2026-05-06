@@ -18,34 +18,50 @@ async function isAdmin(): Promise<boolean> {
   return profile?.role === "admin";
 }
 
-export async function GET(request: NextRequest) {
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   if (!(await isAdmin())) return new Response("Forbidden", { status: 403 });
 
-  const sessionId = request.nextUrl.searchParams.get("sessionId");
-  if (!sessionId) return new Response("sessionId required", { status: 400 });
+  const { id } = await params;
+
+  let body: { name?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return new Response("Invalid JSON", { status: 400 });
+  }
+
+  const name = body.name?.trim();
+  if (!name) return new Response("Name required", { status: 400 });
 
   const serviceSupabase = createServiceRoleClient();
   const { data, error } = await serviceSupabase
-    .from("admin_dev_messages")
-    .select("id, role, content, created_at")
-    .eq("session_id", sessionId)
-    .order("created_at", { ascending: true });
+    .from("admin_dev_sessions")
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
 
   if (error) return new Response("DB error", { status: 500 });
-  return Response.json(data ?? []);
+  return Response.json(data);
 }
 
-export async function DELETE(request: NextRequest) {
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   if (!(await isAdmin())) return new Response("Forbidden", { status: 403 });
 
-  const sessionId = request.nextUrl.searchParams.get("sessionId");
-  if (!sessionId) return new Response("sessionId required", { status: 400 });
-
+  const { id } = await params;
   const serviceSupabase = createServiceRoleClient();
+
+  // Messages cascade-delete via FK ON DELETE CASCADE
   const { error } = await serviceSupabase
-    .from("admin_dev_messages")
+    .from("admin_dev_sessions")
     .delete()
-    .eq("session_id", sessionId);
+    .eq("id", id);
 
   if (error) return new Response("DB error", { status: 500 });
   return new Response(null, { status: 204 });

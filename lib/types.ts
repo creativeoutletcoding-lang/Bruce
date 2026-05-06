@@ -268,6 +268,30 @@ export interface DriveFile {
 }
 
 // ------------------------------------------------------------
+// Admin dev workspace types
+// ------------------------------------------------------------
+
+export interface AdminDevSession {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminDevSessionWithMeta extends AdminDevSession {
+  message_count: number;
+  last_message_preview: string | null;
+}
+
+export interface AdminDevMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  session_id: string | null;
+  created_at: string;
+}
+
+// ------------------------------------------------------------
 // Google Calendar types
 // ------------------------------------------------------------
 
