@@ -39,8 +39,15 @@ export async function POST(request: NextRequest) {
     return Response.json({ generated: 0 });
   }
 
+  const { data: userProfile } = await supabase
+    .from("users")
+    .select("name")
+    .eq("id", user.id)
+    .single();
+  const userName = (userProfile as { name: string } | null)?.name ?? "User";
+
   const transcript = messages
-    .map((m) => `${m.role === "user" ? "Jake" : "Bruce"}: ${m.content}`)
+    .map((m) => `${m.role === "user" ? userName : "Bruce"}: ${m.content}`)
     .join("\n\n");
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -53,9 +60,9 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "user",
-          content: `Review this conversation and identify facts, preferences, situations, or context worth remembering about Jake.
+          content: `Review this conversation and identify facts, preferences, situations, or context worth remembering about ${userName}.
 
-Write each memory as a clean, concise statement in the third person. Example: "Jake prefers direct responses with no preamble."
+Write each memory as a clean, concise statement in the third person. Example: "${userName} prefers direct responses with no preamble."
 
 Return only memories that clear a meaningful threshold — not every detail, only things genuinely useful to know in future conversations.
 

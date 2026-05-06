@@ -1,5 +1,6 @@
 // Anthropic helpers — memory assembly, system prompts, image generation block
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createServiceRoleClient } from "@/lib/supabase/server";
 
 const MAX_CORE = 20;
 const MAX_ACTIVE = 15;
@@ -15,31 +16,31 @@ export async function assembleMemoryBlock(
 ): Promise<{ block: string; loadedIds: string[] }> {
   const { data: core } = await supabase
     .from("memory")
-    .select("id, content, category")
+    .select("id, content, category, relevance_score")
     .eq("user_id", userId)
     .eq("tier", "core")
     .limit(MAX_CORE);
 
   const { data: active } = await supabase
     .from("memory")
-    .select("id, content, category")
+    .select("id, content, category, relevance_score")
     .eq("user_id", userId)
     .eq("tier", "active")
     .order("relevance_score", { ascending: false })
     .limit(MAX_ACTIVE);
 
-  const coreList = (core ?? []) as Array<{ id: string; content: string; category: string | null }>;
-  const activeList = (active ?? []) as Array<{ id: string; content: string; category: string | null }>;
+  const coreList = (core ?? []) as Array<{ id: string; content: string; category: string | null; relevance_score: number }>;
+  const activeList = (active ?? []) as Array<{ id: string; content: string; category: string | null; relevance_score: number }>;
 
   const lines: string[] = [];
-  const loadedIds: string[] = [];
+  const loadedItems: Array<{ id: string; relevance_score: number }> = [];
   let wordCount = 0;
 
   for (const m of coreList) {
     const words = countWords(m.content);
     if (wordCount + words > MAX_WORDS) break;
     lines.push(m.content);
-    loadedIds.push(m.id);
+    loadedItems.push({ id: m.id, relevance_score: m.relevance_score });
     wordCount += words;
   }
 
@@ -47,8 +48,27 @@ export async function assembleMemoryBlock(
     const words = countWords(m.content);
     if (wordCount + words > MAX_WORDS) break;
     lines.push(m.content);
-    loadedIds.push(m.id);
+    loadedItems.push({ id: m.id, relevance_score: m.relevance_score });
     wordCount += words;
+  }
+
+  const loadedIds = loadedItems.map((m) => m.id);
+
+  // Fire-and-forget: increment relevance_score (capped at 100) and update last_accessed
+  // for every memory actually injected into the prompt.
+  if (loadedItems.length > 0) {
+    const serviceRole = createServiceRoleClient();
+    Promise.all(
+      loadedItems.map((m) =>
+        serviceRole
+          .from("memory")
+          .update({
+            relevance_score: Math.min(m.relevance_score + 1, 100),
+            last_accessed: new Date().toISOString(),
+          })
+          .eq("id", m.id)
+      )
+    ).then();
   }
 
   return { block: lines.join("\n"), loadedIds };

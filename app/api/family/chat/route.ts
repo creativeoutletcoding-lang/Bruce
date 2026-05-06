@@ -209,14 +209,6 @@ export async function POST(request: NextRequest) {
     user.id
   );
 
-  if (loadedIds.length > 0) {
-    supabase
-      .from("memory")
-      .update({ last_accessed: new Date().toISOString() })
-      .in("id", loadedIds)
-      .then();
-  }
-
   const locationContext = currentLocation
     ? `${senderName}'s current location right now is ${currentLocation}.`
     : `${senderName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;

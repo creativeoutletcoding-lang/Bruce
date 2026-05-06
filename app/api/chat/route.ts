@@ -61,14 +61,6 @@ export async function POST(request: NextRequest) {
     user.id
   );
 
-  if (loadedIds.length > 0) {
-    supabase
-      .from("memory")
-      .update({ last_accessed: new Date().toISOString() })
-      .in("id", loadedIds)
-      .then();
-  }
-
   // Load conversation history — replace image messages with a brief note
   let history: Array<{ role: string; content: string }> = [];
   if (chatId) {
