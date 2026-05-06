@@ -13,8 +13,8 @@ const PHASE_STATUS = [
   { phase: "2 — Core Chat", status: "complete" },
   { phase: "3 — Projects", status: "complete" },
   { phase: "4 — Household", status: "complete" },
-  { phase: "5 — Connectors + Admin", status: "in-progress" },
-  { phase: "6 — Polish", status: "not-started" },
+  { phase: "5 — Connectors + Admin", status: "complete" },
+  { phase: "6 — Polish", status: "in-progress" },
 ];
 
 const STACK = [
@@ -52,8 +52,19 @@ export default function DevPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/dev/messages")
+      .then((r) => r.json())
+      .then((rows: Array<{ id: string; role: "user" | "assistant"; content: string }>) => {
+        setMessages(rows.map((r) => ({ id: r.id, role: r.role, content: r.content })));
+      })
+      .catch(() => {})
+      .finally(() => setLoadingHistory(false));
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -78,13 +89,11 @@ export default function DevPage() {
     setInput("");
     setSending(true);
 
-    const history = messages.map((m) => ({ role: m.role, content: m.content }));
-
     try {
       const r = await fetch("/api/admin/dev/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history }),
+        body: JSON.stringify({ message: text }),
       });
 
       if (!r.ok || !r.body) {
@@ -122,6 +131,12 @@ export default function DevPage() {
     inputRef.current?.focus();
   }
 
+  async function clearSession() {
+    if (!confirm("Clear the entire dev session history? This cannot be undone.")) return;
+    await fetch("/api/admin/dev/messages", { method: "DELETE" });
+    setMessages([]);
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
@@ -133,13 +148,23 @@ export default function DevPage() {
     <div className="admin-section admin-dev-layout">
       <div className="admin-dev-header">
         <h1 className="admin-section-title" style={{ margin: 0 }}>Bruce Dev</h1>
-        <button
-          className="admin-btn-secondary"
-          style={{ fontSize: "0.8125rem", padding: "5px 12px" }}
-          onClick={() => setContextOpen(!contextOpen)}
-        >
-          {contextOpen ? "Hide context" : "Show context"}
-        </button>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <button
+            className="admin-btn-secondary"
+            style={{ fontSize: "0.8125rem", padding: "5px 12px", color: "var(--text-tertiary)" }}
+            onClick={clearSession}
+            disabled={messages.length === 0}
+          >
+            Clear session
+          </button>
+          <button
+            className="admin-btn-secondary"
+            style={{ fontSize: "0.8125rem", padding: "5px 12px" }}
+            onClick={() => setContextOpen(!contextOpen)}
+          >
+            {contextOpen ? "Hide context" : "Show context"}
+          </button>
+        </div>
       </div>
 
       {contextOpen && (
@@ -177,7 +202,11 @@ export default function DevPage() {
       )}
 
       <div className="admin-dev-messages admin-card" style={{ flex: 1, overflowY: "auto", minHeight: "300px", maxHeight: "calc(100vh - 420px)", gap: "0" }}>
-        {messages.length === 0 ? (
+        {loadingHistory ? (
+          <div style={{ padding: "24px 0", color: "var(--text-tertiary)", fontSize: "0.875rem" }}>
+            Loading session…
+          </div>
+        ) : messages.length === 0 ? (
           <div style={{ padding: "24px 0", color: "var(--text-tertiary)", fontSize: "0.875rem" }}>
             Paste logs, errors, configs, or ask anything about the stack. Bruce has full technical context loaded.
           </div>
@@ -208,7 +237,6 @@ export default function DevPage() {
                   color: "var(--text-primary)",
                   whiteSpace: "pre-wrap",
                   lineHeight: 1.6,
-                  fontFamily: m.role === "user" ? "inherit" : "inherit",
                 }}
               >
                 {m.content || (m.role === "assistant" && sending ? (

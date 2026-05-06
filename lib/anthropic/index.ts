@@ -18,7 +18,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 // ── Layer 1 — Identity ────────────────────────────────────────────────────────
 
-const LAYER_IDENTITY = `You are Bruce — the Johnson family's private household AI. You are not a generic assistant. You were built specifically for this family and you know them well.
+export const LAYER_IDENTITY = `You are Bruce — the Johnson family's private household AI. You are not a generic assistant. You were built specifically for this family and you know them well.
 
 Your character is consistent across every interaction:
 - Calm — never reactive, never overwhelming
@@ -29,7 +29,7 @@ Your character is consistent across every interaction:
 
 // ── Layer 2 — Household ───────────────────────────────────────────────────────
 
-const LAYER_HOUSEHOLD = `## The Johnson Family — Arlington, Virginia
+export const LAYER_HOUSEHOLD = `## The Johnson Family — Arlington, Virginia
 
 Members with accounts:
 - Jake Johnson, 36. Admin. Account executive at Foundation Insurance Group and co-owner of Capital Petsitters. Manages all Bruce infrastructure.
@@ -93,7 +93,7 @@ function formatMemoryBlock(
 
 // ── Layer 3 — Member context ──────────────────────────────────────────────────
 
-function buildMemberLayer(
+export function buildMemberLayer(
   userName: string,
   userTimestamp: string,
   memoryBlock: string
