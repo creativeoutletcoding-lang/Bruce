@@ -218,7 +218,7 @@ async function handleCallback(request: NextRequest) {
     // Set MEMBER_EMAIL_* env vars in Vercel (and .env.local for dev) to lock
     // each household member to their exact Google Calendar color.
     const EMAIL_COLOR_MAP: Record<string, string> = {
-      [process.env.ADMIN_EMAIL ?? ""]:              "#33B679", // Jake — Sage
+      [process.env.ADMIN_EMAIL ?? ""]:              "#4A90D9", // Jake — Blue
       [process.env.MEMBER_EMAIL_LAURIANNE ?? ""]:   "#9E69AF", // Laurianne — Grape
       [process.env.MEMBER_EMAIL_JOCELYNN ?? ""]:    "#0B8043", // Jocelynn — Basil
       [process.env.MEMBER_EMAIL_NANA ?? ""]:        "#E67C73", // Nana — Flamingo
