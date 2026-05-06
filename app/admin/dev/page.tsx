@@ -8,41 +8,36 @@ interface DevMessage {
   content: string;
 }
 
-const PHASE_STATUS = [
-  { phase: "1 — Foundation", status: "complete" },
-  { phase: "2 — Core Chat", status: "complete" },
-  { phase: "3 — Projects", status: "complete" },
-  { phase: "4 — Household", status: "complete" },
-  { phase: "5 — Connectors + Admin", status: "complete" },
-  { phase: "6 — Polish", status: "in-progress" },
-];
+interface PhaseEntry {
+  number: string;
+  name: string;
+  status: "complete" | "active" | "queued";
+}
 
-const STACK = [
-  ["Frontend", "Next.js 15, React 19, TypeScript"],
-  ["Hosting", "Vercel — auto-deploy from GitHub main"],
-  ["Database", "Supabase (Postgres + RLS + Realtime)"],
-  ["Auth", "Supabase Auth + Google OAuth"],
-  ["Background jobs", "DigitalOcean droplet + PM2"],
-  ["Push notifications", "Firebase Cloud Messaging"],
-  ["AI model", "claude-sonnet-4-6"],
-  ["Image gen", "Replicate"],
-  ["Web search", "Perplexity API"],
-];
+interface StackEntry {
+  layer: string;
+  technology: string;
+}
+
+interface DevContext {
+  phases: PhaseEntry[];
+  stack: StackEntry[];
+}
 
 function PhaseIndicator({ status }: { status: string }) {
   const colors: Record<string, string> = {
     complete: "#10b981",
-    "in-progress": "#f59e0b",
-    "not-started": "var(--text-tertiary)",
+    active: "#f59e0b",
+    queued: "var(--text-tertiary)",
   };
   const labels: Record<string, string> = {
     complete: "✓ Complete",
-    "in-progress": "⟳ In progress",
-    "not-started": "○ Not started",
+    active: "⟳ In progress",
+    queued: "○ Queued",
   };
   return (
-    <span style={{ fontSize: "0.75rem", color: colors[status], fontWeight: 500 }}>
-      {labels[status]}
+    <span style={{ fontSize: "0.75rem", color: colors[status] ?? "var(--text-tertiary)", fontWeight: 500 }}>
+      {labels[status] ?? status}
     </span>
   );
 }
@@ -53,6 +48,9 @@ export default function DevPage() {
   const [sending, setSending] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [devContext, setDevContext] = useState<DevContext | null>(null);
+  const [contextError, setContextError] = useState(false);
+  const [contextLoading, setContextLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -65,6 +63,19 @@ export default function DevPage() {
       .catch(() => {})
       .finally(() => setLoadingHistory(false));
   }, []);
+
+  useEffect(() => {
+    if (!contextOpen || devContext || contextError) return;
+    setContextLoading(true);
+    fetch("/api/admin/dev/context")
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
+      .then((data: DevContext) => setDevContext(data))
+      .catch(() => setContextError(true))
+      .finally(() => setContextLoading(false));
+  }, [contextOpen, devContext, contextError]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -169,35 +180,45 @@ export default function DevPage() {
 
       {contextOpen && (
         <div className="admin-card" style={{ fontFamily: "monospace", fontSize: "0.8125rem" }}>
-          <h3 style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px" }}>
-            Stack
-          </h3>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <tbody>
-              {STACK.map(([layer, tech]) => (
-                <tr key={layer}>
-                  <td style={{ padding: "3px 12px 3px 0", color: "var(--text-tertiary)", whiteSpace: "nowrap", verticalAlign: "top" }}>{layer}</td>
-                  <td style={{ padding: "3px 0", color: "var(--text-primary)" }}>{tech}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {contextLoading ? (
+            <div style={{ color: "var(--text-tertiary)", fontSize: "0.875rem" }}>Loading…</div>
+          ) : contextError ? (
+            <div style={{ color: "var(--text-tertiary)", fontSize: "0.875rem" }}>
+              Could not load context from CLAUDE.md
+            </div>
+          ) : devContext ? (
+            <>
+              <h3 style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px" }}>
+                Stack
+              </h3>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <tbody>
+                  {devContext.stack.map(({ layer, technology }) => (
+                    <tr key={layer}>
+                      <td style={{ padding: "3px 12px 3px 0", color: "var(--text-tertiary)", whiteSpace: "nowrap", verticalAlign: "top" }}>{layer}</td>
+                      <td style={{ padding: "3px 0", color: "var(--text-primary)" }}>{technology}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
-          <h3 style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "16px 0 10px" }}>
-            Build Phases
-          </h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            {PHASE_STATUS.map((p) => (
-              <div key={p.phase} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ color: "var(--text-primary)" }}>Phase {p.phase}</span>
-                <PhaseIndicator status={p.status} />
+              <h3 style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "16px 0 10px" }}>
+                Build Phases
+              </h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {devContext.phases.map((p) => (
+                  <div key={p.number} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ color: "var(--text-primary)" }}>Phase {p.number} — {p.name}</span>
+                    <PhaseIndicator status={p.status} />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          <p style={{ marginTop: "12px", color: "var(--text-tertiary)", fontSize: "0.75rem" }}>
-            Full CLAUDE.md is loaded in the system prompt — Bruce has complete technical context.
-          </p>
+              <p style={{ marginTop: "12px", color: "var(--text-tertiary)", fontSize: "0.75rem" }}>
+                Full CLAUDE.md is loaded in the system prompt — Bruce has complete technical context.
+              </p>
+            </>
+          ) : null}
         </div>
       )}
 

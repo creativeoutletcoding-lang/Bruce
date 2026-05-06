@@ -18,6 +18,14 @@ function loadTechContext(): string {
   }
 }
 
+function loadSchemaSummary(): string {
+  try {
+    return readFileSync(join(process.cwd(), "docs/schema-summary.md"), "utf-8");
+  } catch {
+    return "";
+  }
+}
+
 function getGitState(): { gitLog: string; gitDiff: string } {
   let gitLog = "";
   let gitDiff = "";
@@ -86,8 +94,9 @@ Files changed in last commit:
 ${gitDiff || "(no diff available)"}`;
 
   const techContext = loadTechContext();
+  const schemaSummary = loadSchemaSummary();
 
-  return [
+  const sections = [
     LAYER_IDENTITY,
     LAYER_HOUSEHOLD,
     memberLayer,
@@ -95,7 +104,13 @@ ${gitDiff || "(no diff available)"}`;
     `## Environment Variable Status (values masked)\n\n${envStatus}`,
     gitBlock,
     `## Full Technical Context (CLAUDE.md)\n\n${techContext}`,
-  ].join("\n\n");
+  ];
+
+  if (schemaSummary) {
+    sections.push(`## Live Database Schema\n\n${schemaSummary}`);
+  }
+
+  return sections.join("\n\n");
 }
 
 export async function POST(request: NextRequest) {
