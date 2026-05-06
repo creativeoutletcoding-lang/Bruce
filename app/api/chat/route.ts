@@ -72,11 +72,19 @@ export async function POST(request: NextRequest) {
       .order("created_at", { ascending: true });
     history = (msgs ?? []).map((m) => {
       const meta = m.metadata as Record<string, unknown> | null;
-      return {
-        role: m.role as string,
-        content: meta?.content_type === "image" ? "[image generated]" : (m.content as string),
-      };
-    });
+      if (meta?.content_type === "image") {
+        return { role: m.role as string, content: "[image generated]" };
+      }
+      const text = (m.content as string) ?? "";
+      const metaAttachments = meta?.attachments as Array<{ type: string; filename?: string }> | undefined;
+      if (metaAttachments && metaAttachments.length > 0 && !text.trim()) {
+        const desc = metaAttachments
+          .map((a) => a.type === "document" ? `[document: ${a.filename ?? "file"}]` : "[image]")
+          .join(", ");
+        return { role: m.role as string, content: desc };
+      }
+      return { role: m.role as string, content: text };
+    }).filter((m) => m.content.trim().length > 0);
   }
 
   // Fetch user profile for name, home location, and preferred model

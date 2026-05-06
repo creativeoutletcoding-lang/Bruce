@@ -91,16 +91,27 @@ export async function POST(request: NextRequest) {
   // Load conversation history (before saving current message)
   const { data: msgs } = await adminSupabase
     .from("messages")
-    .select("role, content, sender_id")
+    .select("role, content, sender_id, metadata")
     .eq("chat_id", chatId)
     .order("created_at", { ascending: false })
     .limit(40);
 
-  const history = ((msgs ?? []).reverse()) as Array<{
+  const history = ((msgs ?? []).reverse() as Array<{
     role: string;
     content: string;
     sender_id: string | null;
-  }>;
+    metadata: Record<string, unknown> | null;
+  }>).map((m) => {
+    const text = m.content ?? "";
+    const metaAttachments = m.metadata?.attachments as Array<{ type: string; filename?: string }> | undefined;
+    if (metaAttachments && metaAttachments.length > 0 && !text.trim()) {
+      const desc = metaAttachments
+        .map((a) => a.type === "document" ? `[document: ${a.filename ?? "file"}]` : "[image]")
+        .join(", ");
+      return { role: m.role, content: desc, sender_id: m.sender_id };
+    }
+    return { role: m.role, content: text, sender_id: m.sender_id };
+  }).filter((m) => m.content.trim().length > 0);
 
   const willRespond = shouldBruceRespond(message, history);
 
