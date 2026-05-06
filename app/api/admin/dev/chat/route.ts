@@ -10,18 +10,27 @@ import { execSync } from "child_process";
 export const runtime = "nodejs";
 
 function loadTechContext(): string {
+  const resolvedPath = join(process.cwd(), "CLAUDE.md");
   try {
-    const claudeMd = readFileSync(join(process.cwd(), "CLAUDE.md"), "utf-8");
+    const claudeMd = readFileSync(resolvedPath, "utf-8");
+    // DIAGNOSTIC — remove after confirming runtime file access
+    console.log("[dev/chat] CLAUDE.md path:", resolvedPath, "| length:", claudeMd.length);
     return claudeMd.replace(/(key|secret|token|password)\s*[:=]\s*\S+/gi, "$1: [MASKED]");
   } catch {
+    console.log("[dev/chat] CLAUDE.md path:", resolvedPath, "| NOT FOUND");
     return "(CLAUDE.md not found)";
   }
 }
 
 function loadSchemaSummary(): string {
+  const resolvedPath = join(process.cwd(), "docs/schema-summary.md");
   try {
-    return readFileSync(join(process.cwd(), "docs/schema-summary.md"), "utf-8");
+    const content = readFileSync(resolvedPath, "utf-8");
+    // DIAGNOSTIC — remove after confirming runtime file access
+    console.log("[dev/chat] docs/schema-summary.md path:", resolvedPath, "| length:", content.length);
+    return content;
   } catch {
+    console.log("[dev/chat] docs/schema-summary.md path:", resolvedPath, "| NOT FOUND");
     return "";
   }
 }
