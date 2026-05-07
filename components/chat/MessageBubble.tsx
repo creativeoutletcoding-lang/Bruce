@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { marked } from "marked";
 import type { MessageRole } from "@/lib/types";
 
 export interface MessageAttachment {
@@ -69,7 +70,7 @@ export default function MessageBubble({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="msg-group" style={styles.messageGroup}>
+      <div className="msg-group" data-role={role} style={styles.messageGroup}>
         {showSenderLabel && (
           <div style={{ fontSize: "0.6875rem", fontWeight: 500, color: senderColorHex ?? "var(--text-secondary)", padding: "0 2px", marginBottom: "1px" }}>
             {senderName}
@@ -78,6 +79,7 @@ export default function MessageBubble({
         <div
           style={{
             ...styles.bubble,
+            whiteSpace: isHumanMessage ? "pre-wrap" : "normal",
             ...(isHumanMessage
               ? {
                   ...styles.userBubble,
@@ -144,7 +146,16 @@ export default function MessageBubble({
                   ))}
                 </div>
               )}
-              {content && <span style={styles.content}>{content}</span>}
+              {content && (
+                role === "assistant" ? (
+                  <div
+                    className="bruce-md"
+                    dangerouslySetInnerHTML={{ __html: marked(content) as string }}
+                  />
+                ) : (
+                  <span style={styles.content}>{content}</span>
+                )
+              )}
             </>
           )}
         </div>
@@ -174,7 +185,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.9375rem",
     lineHeight: "1.55",
     wordBreak: "break-word",
-    whiteSpace: "pre-wrap",
   },
   userBubble: { color: "#ffffff", borderBottomRightRadius: "4px" },
   assistantBubble: {

@@ -1154,3 +1154,22 @@ span[class*="typingDots"] > span:nth-child(3),
     display: none !important;
   }
 }
+
+/* Markdown rendering for Bruce assistant messages */
+.bruce-md h1, .bruce-md h2, .bruce-md h3, .bruce-md h4 { font-weight: 600; margin: 0.5em 0 0.2em 0; line-height: 1.3; }
+.bruce-md h1 { font-size: 1.25em; }
+.bruce-md h2 { font-size: 1.15em; }
+.bruce-md h3 { font-size: 1.05em; color: #a3e8d0; }
+.bruce-md p { margin: 0.15em 0; line-height: 1.6; }
+.bruce-md ul, .bruce-md ol { margin: 0.2em 0; padding-left: 1.4em; }
+.bruce-md li { margin: 0.1em 0; line-height: 1.5; }
+.bruce-md li p { margin: 0; }
+.bruce-md strong { font-weight: 600; color: #e2e8f0; }
+.bruce-md em { font-style: italic; }
+.bruce-md hr { border: none; border-top: 1px solid rgba(255,255,255,0.15); margin: 0.4em 0; }
+.bruce-md code { background: rgba(255,255,255,0.08); padding: 0.1em 0.3em; border-radius: 3px; font-family: monospace; font-size: 0.9em; }
+.bruce-md pre { background: rgba(255,255,255,0.06); padding: 0.75em; border-radius: 6px; overflow-x: auto; margin: 0.3em 0; }
+.bruce-md a { color: #68d391; text-decoration: underline; }
+.bruce-md blockquote { border-left: 3px solid rgba(255,255,255,0.2); margin: 0.3em 0; padding-left: 0.75em; color: rgba(249,250,251,0.75); }
+.bruce-md > *:first-child { margin-top: 0; }
+.bruce-md > *:last-child { margin-bottom: 0; }
