@@ -70,6 +70,7 @@ function JoinContent() {
           "https://www.googleapis.com/auth/spreadsheets",
           "https://www.googleapis.com/auth/presentations",
           "https://www.googleapis.com/auth/calendar",
+          "https://mail.google.com/",
         ].join(" "),
         queryParams: {
           access_type: "offline",

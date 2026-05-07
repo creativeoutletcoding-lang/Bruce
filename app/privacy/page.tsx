@@ -41,10 +41,11 @@ export default function PrivacyPage() {
 
             <h3 style={styles.h3}>Gmail</h3>
             <p style={styles.p}>
-              Bruce requests read-only access to Gmail. This access is used solely to read email
-              subjects, sender information, and message content when the user explicitly asks Bruce
-              to search or summarize their inbox. Bruce never sends, modifies, moves, or deletes
-              email messages of any kind.
+              Gmail — full access. Used to read, search, and summarize email when requested.
+              Bruce can compose and send emails, reply to threads, and archive or delete messages
+              on your behalf. Bruce always shows you a preview and asks for confirmation before
+              sending, replying, or deleting any email. Bruce never accesses your email without
+              an explicit request.
             </p>
 
             <h3 style={styles.h3}>Google Drive</h3>

@@ -20,6 +20,7 @@ function LoginContent() {
           "https://www.googleapis.com/auth/spreadsheets",
           "https://www.googleapis.com/auth/presentations",
           "https://www.googleapis.com/auth/calendar",
+          "https://mail.google.com/",
         ].join(" "),
         // access_type=offline gets a refresh token; prompt=consent forces Google
         // to re-issue a refresh token even for returning users
