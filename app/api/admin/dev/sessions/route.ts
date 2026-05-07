@@ -37,7 +37,10 @@ export async function GET() {
         .order("created_at", { ascending: false }),
     ]);
 
-  if (sessError || msgError) return new Response("DB error", { status: 500 });
+  if (sessError || msgError) {
+    console.error("[admin/dev/sessions] GET error", { sessError, msgError });
+    return new Response("DB error", { status: 500 });
+  }
 
   // Compute message_count and last_message_preview per session
   const countMap = new Map<string, number>();
@@ -81,7 +84,10 @@ export async function POST(request: NextRequest) {
     .select()
     .single();
 
-  if (error) return new Response("DB error", { status: 500 });
+  if (error) {
+    console.error("[admin/dev/sessions] POST error", error);
+    return new Response("DB error", { status: 500 });
+  }
   return Response.json(data, { status: 201 });
 }
 

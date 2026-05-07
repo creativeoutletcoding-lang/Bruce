@@ -44,7 +44,10 @@ export async function PATCH(
     .select()
     .single();
 
-  if (error) return new Response("DB error", { status: 500 });
+  if (error) {
+    console.error("[admin/dev/sessions/[id]] PATCH error", error);
+    return new Response("DB error", { status: 500 });
+  }
   return Response.json(data);
 }
 
@@ -63,6 +66,9 @@ export async function DELETE(
     .delete()
     .eq("id", id);
 
-  if (error) return new Response("DB error", { status: 500 });
+  if (error) {
+    console.error("[admin/dev/sessions/[id]] DELETE error", error);
+    return new Response("DB error", { status: 500 });
+  }
   return new Response(null, { status: 204 });
 }
