@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 const adminEmail = process.env.ADMIN_EMAIL ?? "jake@heybruce.app";
 
 export default function PrivacyPage() {
@@ -5,7 +7,7 @@ export default function PrivacyPage() {
     <div style={styles.page}>
       <div style={styles.container}>
         <header style={styles.header}>
-          <a href="/" style={styles.backLink}>← Bruce</a>
+          <Link href="/" style={styles.backLink}>← Bruce</Link>
         </header>
 
         <main style={styles.content}>
@@ -48,7 +50,7 @@ export default function PrivacyPage() {
             <h3 style={styles.h3}>Google Drive</h3>
             <p style={styles.p}>
               Bruce requests read and write access to Google Drive, scoped to a Bruce-specific
-              folder that the app creates and manages on the user's behalf. This access is used to
+              folder that the app creates and manages on the user&apos;s behalf. This access is used to
               store files referenced in conversations and to read documents the user shares with
               Bruce within that folder. Bruce never accesses, reads, modifies, or deletes files
               outside the dedicated Bruce folder it creates.
@@ -56,7 +58,7 @@ export default function PrivacyPage() {
 
             <h3 style={styles.h3}>Google Profile</h3>
             <p style={styles.p}>
-              Bruce reads the user's Google account name and email address. This information is
+              Bruce reads the user&apos;s Google account name and email address. This information is
               used solely for authentication and to identify the user within the household app.
               No profile data is used for any other purpose.
             </p>
@@ -84,9 +86,9 @@ export default function PrivacyPage() {
             <h2 style={styles.h2}>Data Storage and Security</h2>
             <p style={styles.p}>
               All application data is stored in a private Supabase database hosted in the United
-              States. The database enforces row-level security at the database level — each user's
+              States. The database enforces row-level security at the database level — each user&apos;s
               data is isolated and inaccessible to other household members. No household member can
-              read, access, or modify another member's private data, conversations, or files.
+              read, access, or modify another member&apos;s private data, conversations, or files.
             </p>
             <p style={styles.p}>
               Google OAuth tokens (access tokens and refresh tokens) are stored securely in the
@@ -96,7 +98,7 @@ export default function PrivacyPage() {
             </p>
             <p style={styles.p}>
               Conversation history is stored in the database and is private to each individual
-              user. No household member can access another member's conversations.
+              user. No household member can access another member&apos;s conversations.
             </p>
           </section>
 
@@ -114,13 +116,13 @@ export default function PrivacyPage() {
               within 30 days.
             </p>
             <p style={styles.p}>
-              If a user's account is deactivated or an invite is revoked, their data enters a
+              If a user&apos;s account is deactivated or an invite is revoked, their data enters a
               30-day holding period before permanent deletion.
             </p>
           </section>
 
           <section style={styles.section}>
-            <h2 style={styles.h2}>Children's Privacy</h2>
+            <h2 style={styles.h2}>Children&apos;s Privacy</h2>
             <p style={styles.p}>
               Bruce is not designed for or directed at children. Household member accounts are
               limited to adults and teenagers who are members of the Johnson household. Children
@@ -151,7 +153,7 @@ export default function PrivacyPage() {
         </main>
 
         <footer style={styles.footer}>
-          <a href="/" style={styles.footerLink}>← Back to Bruce</a>
+          <Link href="/" style={styles.footerLink}>← Back to Bruce</Link>
         </footer>
       </div>
     </div>
