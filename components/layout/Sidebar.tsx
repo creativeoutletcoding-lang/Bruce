@@ -213,6 +213,12 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const longPressActiveRef = useRef(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
+  // ── rename ───────────────────────────────────────────────────────────────
+  const [renameTarget, setRenameTarget] = useState<{ id: string; currentTitle: string } | null>(null);
+  const [renameInput, setRenameInput] = useState("");
+  const [isRenameSaving, setIsRenameSaving] = useState(false);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
   // ── pull-to-refresh ──────────────────────────────────────────────────────
   const supabase = createClient();
   const contentRef = useRef<HTMLDivElement>(null);
@@ -719,6 +725,38 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     } finally {
       setIsDeletingSingle(false);
     }
+  }
+
+  // ── rename chat ──────────────────────────────────────────────────────────
+  function openRename(id: string) {
+    const chat = chats.find((c) => c.id === id);
+    const currentTitle = chat?.title ?? "Untitled";
+    setRenameTarget({ id, currentTitle });
+    setRenameInput(currentTitle);
+    // Focus the input after the modal renders
+    setTimeout(() => renameInputRef.current?.select(), 50);
+  }
+
+  async function handleRenameSave() {
+    if (!renameTarget || isRenameSaving) return;
+    const newTitle = renameInput.trim();
+    if (!newTitle || newTitle === renameTarget.currentTitle) {
+      setRenameTarget(null);
+      return;
+    }
+    setIsRenameSaving(true);
+    // Optimistic update
+    setChats((prev) => prev.map((c) => c.id === renameTarget.id ? { ...c, title: newTitle } : c));
+    const { error } = await supabase
+      .from("chats")
+      .update({ title: newTitle })
+      .eq("id", renameTarget.id);
+    if (error) {
+      // Roll back on failure
+      setChats((prev) => prev.map((c) => c.id === renameTarget.id ? { ...c, title: renameTarget.currentTitle } : c));
+    }
+    setIsRenameSaving(false);
+    setRenameTarget(null);
   }
 
   // ── project creation ─────────────────────────────────────────────────────
@@ -1411,6 +1449,17 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             minWidth: "130px",
           }}
         >
+          {contextMenu.kind === "chat" && (
+            <button
+              style={{ ...styles.contextMenuItem, color: "var(--text-primary)", borderBottom: "1px solid var(--border)" }}
+              onClick={() => {
+                openRename(contextMenu.id);
+                setContextMenu(null);
+              }}
+            >
+              Rename
+            </button>
+          )}
           <button
             style={styles.contextMenuItem}
             onClick={() => {
@@ -1451,6 +1500,47 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                   style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingSingle ? styles.createButtonDisabled : {}) }}
                 >
                   {isDeletingSingle ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Rename chat modal ────────────────────────────────────────────────── */}
+      {renameTarget && (
+        <div style={styles.modalOverlay} onClick={() => setRenameTarget(null)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <span style={styles.modalTitle}>Rename chat</span>
+              <button style={styles.modalClose} onClick={() => setRenameTarget(null)}>×</button>
+            </div>
+            <div style={styles.modalBody}>
+              <input
+                ref={renameInputRef}
+                style={styles.nameInput}
+                value={renameInput}
+                onChange={(e) => setRenameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleRenameSave();
+                  if (e.key === "Escape") setRenameTarget(null);
+                }}
+                placeholder="Chat name"
+                autoFocus
+              />
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={() => setRenameTarget(null)}
+                  style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRenameSave}
+                  disabled={isRenameSaving || !renameInput.trim()}
+                  style={{ ...styles.createButton, flex: 1, ...(isRenameSaving || !renameInput.trim() ? styles.createButtonDisabled : {}) }}
+                >
+                  {isRenameSaving ? "Saving…" : "Save"}
                 </button>
               </div>
             </div>
