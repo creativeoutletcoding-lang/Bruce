@@ -70,16 +70,40 @@ export default function DevPage() {
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
 
-  // Load sessions list
+  // Load sessions list — auto-create one if none exist so the input is never stuck disabled
   useEffect(() => {
-    fetch("/api/admin/dev/sessions")
-      .then((r) => r.json())
-      .then((rows: AdminDevSessionWithMeta[]) => {
-        setSessions(rows);
-        if (rows.length > 0) setActiveSessionId(rows[0].id);
-      })
-      .catch(() => {})
-      .finally(() => setLoadingSessions(false));
+    async function initSessions() {
+      try {
+        const r = await fetch("/api/admin/dev/sessions");
+        if (!r.ok) throw new Error("sessions fetch failed");
+        const rows: AdminDevSessionWithMeta[] = await r.json();
+        if (rows.length > 0) {
+          setSessions(rows);
+          setActiveSessionId(rows[0].id);
+        } else {
+          // No sessions yet — create the first one automatically
+          const r2 = await fetch("/api/admin/dev/sessions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          if (r2.ok) {
+            const newSession: AdminDevSessionWithMeta = {
+              ...(await r2.json()),
+              message_count: 0,
+              last_message_preview: null,
+            };
+            setSessions([newSession]);
+            setActiveSessionId(newSession.id);
+          }
+        }
+      } catch {
+        // Sessions unavailable — leave activeSessionId null; UI shows disabled state with reason
+      } finally {
+        setLoadingSessions(false);
+      }
+    }
+    initSessions();
   }, []);
 
   // Load messages when active session changes
@@ -367,7 +391,7 @@ export default function DevPage() {
               </div>
             ) : sessions.length === 0 ? (
               <div style={{ padding: "16px 12px", color: "var(--text-tertiary)", fontSize: "0.8125rem" }}>
-                No sessions yet.
+                {activeSessionId === null ? "Could not connect to sessions." : "No sessions yet."}
               </div>
             ) : (
               sessions.map((s) => (
