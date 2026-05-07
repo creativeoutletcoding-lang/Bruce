@@ -254,6 +254,10 @@ const supabase = createServiceRoleClient();
 - **Error boundaries** around chat and project views.
 - **No console.log in production paths.** Use proper error handling.
 
+**MIGRATIONS**
+
+Every migration file in `migrations/` must be applied manually in the Supabase SQL editor immediately after push. The application will 500 silently on any route that depends on the migration until it runs. Never defer. Never assume a previous session applied it. After applying, mark it ✅ in `docs/migration-log.md`.
+
 ---
 
 ## What To Do When Starting a Session

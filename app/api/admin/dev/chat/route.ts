@@ -37,6 +37,15 @@ function loadDecisionsLog(): string {
   }
 }
 
+function loadMigrationLog(): string {
+  const resolvedPath = join(process.cwd(), "docs/migration-log.md");
+  try {
+    return readFileSync(resolvedPath, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
 function getGitState(): { gitLog: string; gitDiff: string } {
   let gitLog = "";
   let gitDiff = "";
@@ -106,6 +115,7 @@ ${gitDiff || "(no diff available)"}`;
 
   const techContext = loadTechContext();
   const decisionsLog = loadDecisionsLog();
+  const migrationLog = loadMigrationLog();
   const schemaSummary = loadSchemaSummary();
 
   const sections = [
@@ -120,6 +130,10 @@ ${gitDiff || "(no diff available)"}`;
 
   if (decisionsLog) {
     sections.push(`## Build Decisions Log\n\n${decisionsLog}`);
+  }
+
+  if (migrationLog) {
+    sections.push(`## Migration Log\n\n${migrationLog}`);
   }
 
   if (schemaSummary) {

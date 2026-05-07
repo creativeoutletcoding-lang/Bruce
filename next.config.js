@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   outputFileTracingIncludes: {
-    "/api/admin/dev/chat":     ["./CLAUDE.md", "./docs/schema-summary.md", "./docs/decisions.md"],
+    "/api/admin/dev/chat":     ["./CLAUDE.md", "./docs/schema-summary.md", "./docs/decisions.md", "./docs/migration-log.md"],
     "/api/admin/dev/context":  ["./CLAUDE.md"],
     "/api/admin/dev/messages": [],
   },
