@@ -28,6 +28,15 @@ function loadSchemaSummary(): string {
   }
 }
 
+function loadDecisionsLog(): string {
+  const resolvedPath = join(process.cwd(), "docs/decisions.md");
+  try {
+    return readFileSync(resolvedPath, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
 function getGitState(): { gitLog: string; gitDiff: string } {
   let gitLog = "";
   let gitDiff = "";
@@ -96,6 +105,7 @@ Files changed in last commit:
 ${gitDiff || "(no diff available)"}`;
 
   const techContext = loadTechContext();
+  const decisionsLog = loadDecisionsLog();
   const schemaSummary = loadSchemaSummary();
 
   const sections = [
@@ -107,6 +117,10 @@ ${gitDiff || "(no diff available)"}`;
     gitBlock,
     `## Full Technical Context (CLAUDE.md)\n\n${techContext}`,
   ];
+
+  if (decisionsLog) {
+    sections.push(`## Build Decisions Log\n\n${decisionsLog}`);
+  }
 
   if (schemaSummary) {
     sections.push(`## Live Database Schema\n\n${schemaSummary}`);
