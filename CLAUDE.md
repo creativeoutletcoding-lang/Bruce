@@ -1,342 +1,168 @@
 # CLAUDE.md — Bruce Household AI
-## Persistent context for Claude Code sessions
 
-Read this file fully before doing anything. It is the source of truth for every
-implementation decision. When in doubt, consult it.
+Read this before doing anything. Source of truth for all implementation decisions.
 
 ---
 
 ## What Bruce Is
 
-Bruce is a private household AI for the Johnson family, living at heybruce.app.
-Not a product. Infrastructure. Built to feel like a trusted family presence.
-The closest reference is Claude.ai — same structure, extended with a shared
-household dimension.
-
-**Core identity Bruce should always express:** calm, reliable, consistent,
-intelligent, caring.
+Private household AI for the Johnson family at heybruce.app. Jake runs the build. Members: Jake (36, admin), Laurianne (33), Jocelynn (16), Nana (69). Kids with no accounts: Elliot (8), Henry (5), Violette (5). Not a product — infrastructure built to behave like a trusted family presence.
 
 ---
 
-## Household Members
-
-| Name | Age | Role | Notes |
-|------|-----|------|-------|
-| Jake | 36 | Admin | Runs the build. Account exec at FIG, co-owner of CPS. |
-| Laurianne | 33 | Member | Full private workspace. |
-| Jocelynn | 16 | Member | Treated as adult. Full private workspace. |
-| Nana | 69 | Member | Jake's mother. Co-owner of CPS. |
-
-Kids in shared memory context only (no accounts): Elliot (8), Henry (5), Violette (5).
-
----
-
-## Tech Stack
+## Stack
 
 | Layer | Technology |
-|-------|------------|
+|---|---|
 | Frontend | Next.js 15, React 19, TypeScript |
 | Hosting | Vercel — auto-deploy from GitHub main |
 | Database | Supabase (Postgres + RLS + Realtime) |
 | Auth | Supabase Auth + Google OAuth |
-| Background jobs | DigitalOcean droplet + PM2 |
-| Push notifications | Firebase Cloud Messaging |
-| AI model | Anthropic API — claude-sonnet-4-6 |
-| Image gen | Replicate |
+| AI | Anthropic — claude-sonnet-4-6 |
+| Image generation | Replicate (flux-schnell) |
 | Web search | Perplexity API |
+| URL fetching | Jina Reader |
+| Push notifications | Firebase Cloud Messaging |
+| Background jobs | DigitalOcean droplet + PM2 |
 | Domain | heybruce.app |
 
 ---
 
-## Repository Structure
+## Database Schema
 
-```
-bruce/
-├── app/
-│   ├── layout.tsx            # Root layout, global styles, PWA meta
-│   ├── page.tsx              # Redirects to /chat or /login
-│   ├── globals.css           # Design tokens and reset
-│   ├── login/
-│   │   └── page.tsx          # Google OAuth login
-│   ├── auth/
-│   │   └── callback/
-│   │       └── route.ts      # OAuth exchange + first-login user creation
-│   ├── chat/                 # Standalone chats (Phase 2)
-│   │   ├── layout.tsx        # Auth guard + ChatShell wrapper
-│   │   ├── page.tsx          # Welcome screen + new chat
-│   │   └── [id]/
-│   │       └── page.tsx      # Existing chat view
-│   ├── projects/             # Project workspace (Phase 3)
-│   │   ├── layout.tsx        # Auth guard + ChatShell wrapper
-│   │   └── [id]/
-│   │       ├── page.tsx      # Project home screen (server component)
-│   │       └── chat/
-│   │           └── [chatId]/
-│   │               └── page.tsx  # Project chat view
-│   ├── api/
-│   │   ├── chat/route.ts             # Standalone chat streaming
-│   │   ├── memory/generate/route.ts  # Memory generation on unmount
-│   │   ├── users/route.ts            # GET all active household members
-│   │   ├── admin/
-│   │   │   └── invites/
-│   │   │       ├── route.ts          # POST create invite token (admin only)
-│   │   │       └── [token]/
-│   │   │           └── route.ts      # GET validate token (public)
-│   │   └── projects/
-│   │       ├── route.ts              # GET list, POST create
-│   │       └── [id]/
-│   │           ├── route.ts          # GET detail, PATCH, DELETE
-│   │           ├── members/route.ts  # POST add, DELETE remove
-│   │           ├── chat/route.ts     # POST streaming project chat
-│   │           ├── instructions/
-│   │           │   └── update/route.ts  # POST living instructions update
-│   │           └── files/
-│   │               ├── route.ts      # GET list, POST attach, DELETE detach
-│   │               ├── browse/route.ts  # GET Drive files for project folder
-│   │               └── upload/route.ts  # POST create new file in Drive
-│   ├── join/
-│   │   └── page.tsx              # Public invite landing page
-│   ├── family/               # Family group chat (Phase 4)
-│   └── admin/
-│       └── invites/
-│           └── page.tsx          # Admin invite generator (stub — Phase 5 gets full panel)
-├── components/
-│   ├── layout/               # ChatShell, Sidebar (with projects + chats sections)
-│   ├── chat/                 # ChatWindow, MessageList, MessageInput, MessageBubble, TopBar
-│   ├── project/              # ProjectHome, ProjectChatWindow, ProjectTopBar
-│   └── ui/                   # Shared primitives
-├── lib/
-│   ├── supabase/
-│   │   ├── client.ts         # Browser client (use client components)
-│   │   └── server.ts         # Server client + service role client
-│   ├── anthropic/            # buildSystemPrompt, buildProjectSystemPrompt, assembleMemoryBlock
-│   ├── google/
-│   │   └── drive.ts          # Drive client: ensureBruceFolders, listProjectFiles, getFileContent, uploadFile
-│   ├── types.ts              # TypeScript types matching DB schema + API response shapes
-│   └── utils/
-├── public/
-│   ├── manifest.json         # PWA manifest
-│   └── sw.js                 # Service worker (Phase 6)
-├── middleware.ts             # Auth protection + session refresh
-├── schema.sql                # Complete Supabase schema (source of truth)
-├── migrations/
-│   ├── 003_google_tokens.sql # Adds 6 Google token/folder columns to users table
-│   └── 004_invite_rls.sql    # Adds public anon SELECT policy for invite token validation
-├── scripts/
-│   ├── seed-cps.ts           # One-time: creates CPS — Operations project, adds Jake as owner
-│   └── seed-cps-nana.ts      # One-time: adds Nana to CPS after she accepts invite
-├── docs/
-│   └── google-oauth-setup.md # Step-by-step Google Cloud Console + Supabase config
-├── tsconfig.scripts.json     # ts-node compatible tsconfig for seed scripts
-├── CLAUDE.md                 # This file
-└── .env.example              # All required env vars documented
-```
+Migrations 001–018 applied. `schema.sql` is the source of truth — always update it when altering structure.
+
+**household** — single row; `memories` (jsonb), `context` (jsonb with family member data)
+
+**users** — one per member; `id` (auth.users FK), `email`, `name`, `avatar_url`, `role` (admin|member), `status` (active|suspended|deactivated), `morning_summary_time`, `notification_sensitivity`, `notification_preferences` (jsonb), `fcm_token`, `google_access_token`, `google_refresh_token`, `google_token_expires_at`, `google_drive_root_id`, `google_drive_personal_id`, `google_drive_projects_id`, `color_hex`, `home_location`, `preferred_model`, `deactivated_at`, `purge_at`
+
+**invite_tokens** — single-use 48hr links; `token`, `created_by`, `email`, `role`, `used`, `expires_at`
+
+**projects** — `id`, `owner_id`, `name`, `icon`, `instructions`, `isolate_memory` (bool, default false), `status` (active|archived)
+
+**project_members** — `project_id`, `user_id`, `role` (owner|member)
+
+**chats** — `id`, `owner_id`, `project_id` (null = standalone), `type` (private|group|family|family_group|family_thread|incognito), `title`, `is_incognito`, `deleted_at` (soft-delete for threads), `last_message_at`
+
+**chat_members** — `chat_id`, `user_id`; used for group/family/thread chats only
+
+**messages** — `id`, `chat_id`, `sender_id` (null = Bruce), `role` (user|assistant|system), `content`, `metadata` (jsonb), `image_url`, `attachment_type`, `attachment_filename`
+
+**files** — `project_id`, `owner_id`, `google_drive_file_id`, `name`, `mime_type`, `drive_url`
+
+**memory** — `id`, `type` (private|shared), `owner_id` (private only), `member_combination` (shared only — sorted UUIDs joined `:`), `project_id` (project-isolated only), `content`, `tier` (core|active|archive), `relevance_score`, `category`, `last_accessed`
+
+**notifications** — `user_id`, `type`, `content`, `metadata` (jsonb), `read`, `chat_id`, `read_at`
+
+**pending_memory** — `suggested_by`, `content`, `status` (pending|approved|rejected)
+
+**user_presence** — `user_id` + `chat_id` composite PK, `updated_at`; no user-facing RLS, service role only
+
+**RLS** is enabled on every table. `is_admin()` bypasses it for: `household`, `users`, `invite_tokens`, `pending_memory`. Admin does NOT bypass RLS on: `projects`, `project_members`, `chats`, `chat_members`, `messages`, `files`, `memory`. Memory privacy is architectural — no admin content access.
 
 ---
 
-## Design System
+## Active Tools
 
-**Accent color:** `#0F6E56` — deep blue-green. Used for active states, send button, selected items, highlights.
+All three chat routes include the same tool set.
 
-**Mode:** Light/dark follows device system setting automatically. CSS variables handle the switch.
+**web_search** — Perplexity API. Tool defined in `lib/searchTools.ts`. Used for current events, live data, anything past knowledge cutoff. System block: `SEARCH_SYSTEM_BLOCK` in `lib/searchTools.ts`.
 
-**All design tokens are in `app/globals.css`.** Never hardcode colors or spacing. Always use CSS variables.
+**browse_url** — Jina Reader. Defined in `lib/searchTools.ts`. Fetches any public URL as clean markdown. Only visit URLs the user explicitly provides. System block: `BROWSE_SYSTEM_BLOCK`.
 
-Key tokens:
-```css
---accent: #0F6E56
---bg-primary / --bg-secondary / --bg-sidebar
---text-primary / --text-secondary / --text-tertiary
---border / --border-strong
---radius-sm / --radius-md / --radius-lg / --radius-full
---sidebar-width: 260px
---topbar-height: 52px
---mobile-nav-height: 56px
---transition: 150ms ease
-```
+**generate_image** — Replicate flux-schnell. Not a standard tool — Bruce emits `<image_request>{"prompt":"...","quality":"standard|hd"}</image_request>` as XML in its text response. `app/api/chat/route.ts` intercepts the tag, strips it from the stream, and sends a `IMAGE_REQ:` sentinel to the client, which then calls the image endpoint. Defined via `IMAGE_SYSTEM_BLOCK` in `lib/anthropic/index.ts`. Standalone chat only.
 
-**Typography:** System font stack (`-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif`). No external fonts unless explicitly specified.
+**Google Calendar** — `lib/google/calendarTools.ts`. Read/create/update/delete/respond to events. System block: `CALENDAR_SYSTEM_BLOCK`.
 
-**Mobile-first.** Every component must work on iPhone. Desktop is fully supported, same experience.
+**Gmail** — `lib/google/gmailTools.ts`. Read/send/archive/delete. Three-tier confirmation rules per operation. System block: `GMAIL_SYSTEM_BLOCK`.
+
+**Media analysis** — Bruce reads PDFs and analyzes images. Defined via `IMAGE_VISION_BLOCK` in `lib/anthropic/index.ts`. All contexts.
 
 ---
 
-## Database — Key Rules
+## System Prompt Builders
 
-1. **Never bypass RLS on the client.** All queries use the anon client. RLS is the privacy wall.
-2. **Service role client is server-side only.** API routes and DigitalOcean jobs only. Never in components.
-3. **Incognito messages never touch the database.** Session-only, gone when the chat closes.
-4. **Memory is owner-only.** The admin policy does NOT apply to the memory table. No exceptions.
-5. **Schema lives in `schema.sql`.** If you need to alter the schema, update that file and provide the migration SQL separately.
+All in `lib/anthropic/index.ts`.
 
-All types are in `lib/types.ts`. Use them. Don't redefine inline.
+**Shared constants:** `LAYER_IDENTITY`, `LAYER_HOUSEHOLD` — used by all three builders. `buildMemberLayer(userName, userTimestamp, memoryBlock)` adds per-session context: who is speaking, per-member tone instruction, timestamp, and memory block.
+
+**buildSystemPrompt(userName, memoryBlock, userTimestamp)** — standalone chat. Identity + household + member layer + formatting guidance (prefer lists, max 2-col tables, avoid wide tables).
+
+**buildProjectSystemPrompt(userName, memoryBlock, userTimestamp, project)** — project chat. Adds project block (name, instructions, members, files, Drive content). Single-member: same formatting as standalone. Multi-member: adds participation rule + plain prose only (no markdown).
+
+**buildFamilyChatSystemPrompt(senderName, memoryBlock, userTimestamp)** — family/group chat. Adds participation rule, plain prose only, three-tier stakes rule, tone guidelines.
+
+Route handlers append tool system blocks after the builder output: `CALENDAR_SYSTEM_BLOCK`, `GMAIL_SYSTEM_BLOCK`, `SEARCH_SYSTEM_BLOCK`, `BROWSE_SYSTEM_BLOCK`. Standalone also gets `IMAGE_SYSTEM_BLOCK`. All contexts get `IMAGE_VISION_BLOCK`.
 
 ---
 
-## Supabase Client Usage
+## Memory Architecture
 
+Two types: **private** (one member + Bruce) and **shared** (multiple members). All assembly uses the service role client — RLS gates client reads but assembly bypasses it server-side.
+
+**Private:** `owner_id` set, `member_combination` null. Generated from standalone and single-member project chats.
+
+**Shared:** `owner_id` null, `member_combination` = alphabetically sorted UUIDs joined `:`. Generated from family chats and multi-member project chats.
+
+**Project isolation:** `projects.isolate_memory` (default false). When true, new shared memories from that project are tagged with `project_id` and excluded from the global combination stream. The global stream still loads inside isolated projects (flow in, not out). Toggle lives on the project right panel — owners only.
+
+**Loading order:** private core (max 20) → private active (max 15 by relevance score) → global shared core → global shared active → project-isolated core/active (if `isolate_memory` on). Budget: 500 words. Relevance scores incremented on every load.
+
+**Generation:** `app/api/memory/generate/route.ts` — called with `keepalive: true` on component unmount. Sends conversation to Claude, generates a memory entry. Determines type (private vs shared) from chat type and member count.
+
+**Admin access:** `/admin/memory` shows aggregate counts per member via `get_memory_metrics()` (SECURITY DEFINER function, migration 018). No content access ever.
+
+---
+
+## Build Conventions
+
+- **Model:** always `claude-sonnet-4-6`. Never hardcode another.
+- **Streaming:** all chat responses stream via Anthropic SDK streaming helpers.
+- **No `any` types.** Use `lib/types.ts`.
+- **API keys never leave the server.** API routes and DigitalOcean jobs only.
+- **RLS is the privacy wall.** Never bypass on the client. Service role: server-side only.
+- **Incognito messages never touch the database.**
+- **No console.log in production paths.**
+- **Design tokens only.** `app/globals.css` has all tokens. Accent: `#0F6E56`. No Tailwind.
+- **Mobile-first.** Every component must work on iPhone.
+- **Deploy:** git push to main. Vercel auto-deploys. Never `npx vercel --prod`.
+- **Schema changes:** update `schema.sql` and provide a numbered migration file in `migrations/`.
+- **Migrations are manual:** apply in the Supabase SQL editor immediately after push. App will 500 until applied. Log completion in `docs/migration-log.md`.
+- **Working tree must be clean before ending a session.** Run `git status` to confirm.
+
+**Supabase client pattern:**
 ```typescript
-// In a Client Component:
+// Client component
 import { createClient } from "@/lib/supabase/client";
-const supabase = createClient();
 
-// In a Server Component or API Route:
+// Server component or API route
 import { createClient } from "@/lib/supabase/server";
 const supabase = await createClient();
 
-// In a background job (DigitalOcean) — bypasses RLS:
+// Bypass RLS (server-side only)
 import { createServiceRoleClient } from "@/lib/supabase/server";
-const supabase = createServiceRoleClient();
 ```
-
----
-
-## Anthropic API — Key Rules
-
-1. **Model:** always `claude-sonnet-4-6`. Never hardcode another.
-2. **Streaming:** all chat responses stream. Use the Anthropic SDK streaming helpers.
-3. **Memory budget:** max 500 words sent per API call. Assembly order:
-   - Household shared context
-   - User's core memories (all, max 20)
-   - User's active memories (top 15 by relevance score)
-4. **System prompt construction** happens server-side in an API route. Client never touches the API key.
-5. **Project context:** when in a project chat, include project instructions + relevant file summaries in the system prompt.
-6. **Active tools** (available in all chat contexts — standalone, project, family):
-   - `web_search` — Perplexity search for current information
-   - `browse_url` — Jina Reader fetches any public URL as clean markdown
-   - `generate_image` — Replicate flux-schnell image generation
-   - Google Calendar tools (read/write/manage events)
-   - Gmail tools (read/send/archive/delete email)
-
----
-
-## Navigation Structure
-
-**Desktop:** Persistent left sidebar (260px). Sections: Projects (top), Chats (standalone only, flat list), Family (pinned bottom). Never mixes project chats into the standalone list.
-
-**Mobile:** Bottom nav (Home, Chats, Projects, Family). Sidebar becomes slide-out drawer via hamburger top-left. Inside a chat: bottom nav disappears, top bar + back arrow.
-
----
-
-## Bruce's Group Chat Behavior
-
-**Trigger:** `/@bruce\b/i` (case-insensitive, word boundary) or natural-language address ("Bruce, can you…"). No engagement window — if nobody addresses Bruce, no Anthropic call is made.
-
-**Three-Tier Rule**
-
-| Stakes | Action |
-|--------|--------|
-| Low — add to list, log preference, note something | Act silently or with a single word at most. No "Done.", "Got it.", "Added." — reactions (Phase 6) will handle acknowledgment. |
-| Medium — update doc, modify project, schedule | Flag before acting: "I can do X — want me to go ahead?" |
-| High — connector writes, deletions, irreversible | Always ask explicitly before acting. No exceptions. |
-
-**Tone rules:** No filler ("got it", "sure thing", "fingers crossed"). No self-doubt. No deflecting to specific household members. If the action speaks for itself, stop — no appended meta-commentary. Emotional messages: one or two sentences, warm and grounded, never therapist-mode.
-
----
-
-## Build Phases
-
-| Phase | Status | Scope |
-|-------|--------|-------|
-| 1 — Foundation | ✅ Complete | Supabase, schema, auth, Vercel, DigitalOcean, heybruce.app |
-| 2 — Core Chat | ✅ Complete | Private chat, streaming, history, memory, welcome screen, incognito |
-| 3 — Projects | ✅ Complete | Project UI, Drive integration, invite flow, CPS goes live |
-| 4 — Household | ✅ Complete | Family group chat, group threads, member avatars, Bruce behavior |
-| 5 — Connectors + Admin | ✅ Complete (2026-05-01) | Push notifications, Google Calendar, delete flows, collapsible sidebar, admin panel |
-| 6 — Polish | 🔄 In progress | PWA, sharing, image gen, web search |
-
----
-
-## Phase 2 — Complete
-
----
-
-## Conventions
-
-- **No `any` types.** Use proper types from `lib/types.ts`.
-- **API routes are in `app/api/`.** Client components call these. API keys never leave the server.
-- **Components use CSS-in-JS via inline `style` objects** with CSS variables, or plain CSS modules. No Tailwind — it's not installed.
-- **Every UI component must handle loading, error, and empty states.**
-- **Error boundaries** around chat and project views.
-- **No console.log in production paths.** Use proper error handling.
-
-**MIGRATIONS**
-
-Every migration file in `migrations/` must be applied manually in the Supabase SQL editor immediately after push. The application will 500 silently on any route that depends on the migration until it runs. Never defer. Never assume a previous session applied it. After applying, mark it ✅ in `docs/migration-log.md`.
-
----
-
-## What To Do When Starting a Session
-
-1. Read this file.
-2. Check which phase is active (table above).
-3. Read the task brief provided — it will be specific.
-4. Implement exactly what's described. If something is ambiguous, implement the most reasonable interpretation and note what you assumed.
-5. Update the phase status in this file when a phase is complete.
-
----
-
----
-
-## Phase 3 — Complete
-
----
-
-## Phase 5 — Complete
-
----
-
-## Phase 6 — Polish Notes
-
-### Completed
-
-- ✅ Image generation via Replicate
-- ✅ Web search via Perplexity
-- ✅ Mobile UI — removed bottom nav bar, fixed sidebar close behavior (overlay tap + X button)
-- ✅ URL browsing via Jina Reader — `browse_url` tool available in all chat contexts
-- ✅ Family thread back navigation — back button and post-delete redirect now go to `/chat`; `/family` redirects to `/chat` when no family_group chat exists
-
-### Planned Additions
-
-**Delete functionality (user-facing)**
-
-- Delete individual standalone chats
-- Delete individual project chats
-- Archive/delete a project (owner only)
-- Clear all chats within a project
-
-All deletes are soft-delete where possible (status field), hard delete for chats and messages. Confirmation prompt required before any delete action.
-
-**"Continue in new group chat"**
-
-Button in chat top bar that summarizes the current private chat via Bruce, spins up a new group chat, and inserts the summary as an opening context message. Private chat remains intact. Use case: scratchpad a topic privately with Bruce, then bring in another member when ready.
-
----
-
----
-
-## Phase 4 — Complete
 
 ---
 
 ## Decisions Log
 
-### Memory architecture — 2026-05-09
+**Memory architecture (2026-05-09):** Two types — private (owner_id) and shared (member_combination). Shared is scoped to sorted UUID pairs, not containers. Project isolation toggle keeps new memories inside a project. Admin has no content access — metrics only via SECURITY DEFINER function.
 
-Two memory types: **private** (one member + Bruce) and **shared** (multiple members). Shared memory is scoped to member combinations, not containers — the same two members build one shared stream regardless of whether they're in a project or a group chat. The combination key is the sorted member UUID list joined with `:`.
-
-Projects have an optional `isolate_memory` toggle (default off). When on, memories generated inside that project are tagged with the project ID and never merge into the broader shared stream for that member combination. Project-isolated memories are still loaded inside the project alongside the caller's private memories. The global shared stream remains accessible inside isolated projects (memories flow in, not out).
-
-The toggle lives on the project homepage (right panel, Memory section). Only owners can change it.
-
-Admin has no special access to any member's private memory — the admin memory panel has been removed. This model has not been retrofitted — it is the foundation the memory system is built on from 2026-05-09 forward.
+**RLS admin overrides removed (2026-05-06, migration 016):** Stripped `is_admin()` from projects, project_members, chats, messages, files. Admin bypass retained only for household, users, invite_tokens, pending_memory.
 
 ---
 
-## Active Task
+## Phase Status
 
-*Updated by the planning chat before each Claude Code session.*
+| Phase | Status |
+|---|---|
+| 1 — Foundation | ✅ Complete |
+| 2 — Core Chat | ✅ Complete |
+| 3 — Projects | ✅ Complete |
+| 4 — Household | ✅ Complete |
+| 5 — Connectors + Admin | ✅ Complete (2026-05-01) |
+| 6 — Polish | 🔄 In progress |
 
-**Current:** Phase 6 — Polish
-
-Phase 5 is complete and deployed (2026-05-01). Phase 6 scope: PWA, sharing, image gen, web search. Image gen and web search complete.
+Phase 6 complete: image generation, web search, browse_url, mobile UI fixes, family thread navigation, admin memory panel.
+Phase 6 planned: user-facing chat deletion, "continue in group chat" feature.
