@@ -286,6 +286,7 @@ Every migration file in `migrations/` must be applied manually in the Supabase S
 
 - ✅ Image generation via Replicate
 - ✅ Web search via Perplexity
+- ✅ Mobile UI — removed bottom nav bar, fixed sidebar close behavior (overlay tap + X button)
 
 ### Planned Additions
 
@@ -297,6 +298,14 @@ Every migration file in `migrations/` must be applied manually in the Supabase S
 - Clear all chats within a project
 
 All deletes are soft-delete where possible (status field), hard delete for chats and messages. Confirmation prompt required before any delete action.
+
+**URL browsing via Jina Reader**
+
+Fetch any public URL, return clean markdown, inject as prompt context. Triggered when a URL is provided in conversation. Similar integration pattern to existing Perplexity web search.
+
+**"Continue in new group chat"**
+
+Button in chat top bar that summarizes the current private chat via Bruce, spins up a new group chat, and inserts the summary as an opening context message. Private chat remains intact. Use case: scratchpad a topic privately with Bruce, then bring in another member when ready.
 
 ---
 

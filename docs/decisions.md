@@ -6,6 +6,16 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### "Continue in New Group Chat" — Deferred, 2026-05-09
+
+**Decision:** Deferred for now. Will evaluate based on actual usage before building.
+
+**Reason:** The use case is valid — using a private chat as a scratchpad before bringing in another member — but the complexity may not be warranted. Option B (summarize + new group chat) was selected as the right approach if built: preserves privacy, gives the new participant context without raw history, no schema changes required. The private chat becomes a referenceable artifact.
+
+**Alternatives considered:** Convert in place with history visible from join date (clean but exposes private scratchpad feel); manual summary copy-paste (works today, zero build). Both remain valid fallbacks.
+
+---
+
 ### RLS Privacy: Admin Access Scope — 2026-05-06
 
 **Decision:** The `is_admin()` function may only bypass RLS on `household`, `users`, `invite_tokens`, and `pending_memory`. It was explicitly removed from all policies on `projects`, `project_members`, `chats`, `chat_members`, `messages`, and `files`. The admin memory panel (read/edit/compress another member's memory via service role) was deleted entirely.
