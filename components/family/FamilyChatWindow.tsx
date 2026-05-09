@@ -81,10 +81,16 @@ export default function FamilyChatWindow({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const workingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isStreamingRef = useRef(false);
+  const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingFlushRef = useRef(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollTouchStartY = useRef<number>(-1);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    return () => { if (flushTimerRef.current) clearInterval(flushTimerRef.current); };
+  }, []);
 
   // Presence heartbeat — tells the server this chat is open so it can suppress
   // push notifications while the user is actively viewing the conversation.
@@ -331,19 +337,35 @@ export default function FamilyChatWindow({
       const decoder = new TextDecoder();
       let accumulated = "";
 
+      pendingFlushRef.current = false;
+      let hasFirstContent = false;
+
+      flushTimerRef.current = setInterval(() => {
+        if (!pendingFlushRef.current) return;
+        pendingFlushRef.current = false;
+        const display = accumulated;
+        if (!hasFirstContent && display.trim()) {
+          hasFirstContent = true;
+          setBruceState("streaming");
+        }
+        setMessages((prev) =>
+          prev.map((m) => (m.id === streamMsgId ? { ...m, content: display } : m))
+        );
+      }, 40);
+
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         accumulated += decoder.decode(value, { stream: true });
-        const current = accumulated;
-        setBruceState("streaming");
-        setMessages((prev) =>
-          prev.map((m) => (m.id === streamMsgId ? { ...m, content: current } : m))
-        );
+        pendingFlushRef.current = true;
       }
 
+      clearInterval(flushTimerRef.current);
+      flushTimerRef.current = null;
+
+      // Final flush
       setMessages((prev) =>
-        prev.map((m) => (m.id === streamMsgId ? { ...m, isStreaming: false } : m))
+        prev.map((m) => (m.id === streamMsgId ? { ...m, content: accumulated, isStreaming: false } : m))
       );
     } catch (err) {
       console.error("[FamilyChatWindow] Send error:", err);
