@@ -6,6 +6,7 @@ import Link from "next/link";
 interface MemoryMetricRow {
   user_id: string;
   name: string;
+  color_hex: string;
   private_core_count: number;
   private_active_count: number;
   private_archive_count: number;
@@ -13,14 +14,14 @@ interface MemoryMetricRow {
   total_count: number;
 }
 
-function Avatar({ name }: { name: string }) {
+function Avatar({ name, colorHex }: { name: string; colorHex: string }) {
   return (
     <div
       style={{
         width: 32,
         height: 32,
         borderRadius: "50%",
-        backgroundColor: "var(--accent)",
+        backgroundColor: colorHex,
         color: "#fff",
         display: "flex",
         alignItems: "center",
@@ -85,7 +86,7 @@ export default function MemoryAdminPage() {
                 <tr key={m.user_id}>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <Avatar name={m.name} />
+                      <Avatar name={m.name} colorHex={m.color_hex} />
                       <span style={{ fontWeight: 500 }}>{m.name}</span>
                     </div>
                   </td>

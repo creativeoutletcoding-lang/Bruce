@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 interface MemoryMetricRow {
   user_id: string;
   name: string;
+  color_hex: string;
   private_core_count: number;
   private_active_count: number;
   private_archive_count: number;
@@ -38,5 +39,21 @@ export async function GET() {
     return NextResponse.json({ error: "Failed to load metrics" }, { status: 500 });
   }
 
-  return NextResponse.json({ metrics: data as MemoryMetricRow[], current_user_id: user.id });
+  const rows = (data ?? []) as Omit<MemoryMetricRow, "color_hex">[];
+  const { data: userData } = await admin
+    .from("users")
+    .select("id, color_hex")
+    .in("id", rows.map((r) => r.user_id));
+
+  const colorMap: Record<string, string> = {};
+  for (const u of (userData ?? []) as { id: string; color_hex: string }[]) {
+    colorMap[u.id] = u.color_hex ?? "#6B7280";
+  }
+
+  const metrics: MemoryMetricRow[] = rows.map((r) => ({
+    ...r,
+    color_hex: colorMap[r.user_id] ?? "#6B7280",
+  }));
+
+  return NextResponse.json({ metrics, current_user_id: user.id });
 }

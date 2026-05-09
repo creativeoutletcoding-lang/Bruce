@@ -375,9 +375,9 @@ span[class*="typingDots"] > span:nth-child(3),
   color: var(--text-primary);
 }
 .admin-nav-item--active {
-  color: var(--accent);
+  color: #ffffff;
   font-weight: 600;
-  background-color: rgba(15, 110, 86, 0.08);
+  background-color: var(--accent);
   border-left-color: var(--accent);
 }
 
