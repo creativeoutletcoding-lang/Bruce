@@ -199,16 +199,6 @@ a {
   .mobile-only {
     display: flex !important;
   }
-
-  /* Show mobile bottom nav */
-  nav[aria-label="Main navigation"] {
-    display: flex !important;
-  }
-
-  /* Shrink main content so it doesn't sit under the bottom nav */
-  .with-bottom-nav {
-    padding-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px)) !important;
-  }
 }
 
 /* ============================================================
@@ -254,13 +244,6 @@ span[class*="typingDots"] > span:nth-child(2),
 span[class*="typingDots"] > span:nth-child(3),
 .typing-dot:nth-child(3) {
   animation-delay: 0.4s;
-}
-
-/* Mobile bottom nav safe area padding */
-@media (max-width: 768px) {
-  .with-bottom-nav {
-    padding-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px));
-  }
 }
 
 @keyframes pull-refresh-indeterminate {

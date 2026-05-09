@@ -889,6 +889,19 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   // ── render ────────────────────────────────────────────────────────────────
   return (
     <div style={styles.sidebar}>
+      {/* Close button — mobile only */}
+      <div className="mobile-only" style={styles.mobileCloseRow}>
+        <button
+          onClick={onNavigate}
+          style={styles.mobileCloseButton}
+          aria-label="Close menu"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <path d="M4 4l10 10M14 4L4 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
+
       <div style={styles.contentWrapper}>
         <PullProgressBar pullProgress={Math.min(sidebarPullDistance / 56, 1)} refreshing={sidebarIsRefreshing} />
         <div
@@ -1786,6 +1799,23 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     height: "100%",
     overflow: "hidden",
+  },
+  mobileCloseRow: {
+    alignItems: "center",
+    justifyContent: "flex-end",
+    padding: "10px 12px 4px",
+    flexShrink: 0,
+  },
+  mobileCloseButton: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "32px",
+    height: "32px",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--text-tertiary)",
+    cursor: "pointer",
+    transition: "color var(--transition), background-color var(--transition)",
   },
   header: {
     padding: "12px",
