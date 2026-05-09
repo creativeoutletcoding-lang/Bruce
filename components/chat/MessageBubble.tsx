@@ -70,25 +70,25 @@ export default function MessageBubble({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="msg-group" data-role={role} style={styles.messageGroup}>
+      <div className="msg-group" data-role={role} style={{ ...styles.messageGroup, ...(isUser ? {} : { width: "100%" }) }}>
         {showSenderLabel && (
           <div style={{ fontSize: "0.6875rem", fontWeight: 500, color: senderColorHex ?? "var(--text-secondary)", padding: "0 2px", marginBottom: "1px" }}>
             {senderName}
           </div>
         )}
         <div
-          style={{
-            ...styles.bubble,
-            whiteSpace: isHumanMessage ? "pre-wrap" : "normal",
-            ...(isHumanMessage
+          style={
+            isHumanMessage
               ? {
+                  ...styles.bubble,
+                  whiteSpace: "pre-wrap",
                   ...styles.userBubble,
                   backgroundColor: isUser
                     ? (bubbleColorHex ?? "var(--accent)")
                     : (senderColorHex ?? "var(--accent)"),
                 }
-              : styles.assistantBubble),
-          }}
+              : styles.assistantContent
+          }
         >
           {showDots ? (
             <span style={{ display: "inline-flex", flexDirection: "column", gap: "4px" }}>
@@ -187,11 +187,13 @@ const styles: Record<string, React.CSSProperties> = {
     wordBreak: "break-word",
   },
   userBubble: { color: "#ffffff", borderBottomRightRadius: "4px" },
-  assistantBubble: {
-    backgroundColor: "transparent",
+  assistantContent: {
+    fontSize: "0.9375rem",
+    lineHeight: "1.55",
+    wordBreak: "break-word" as const,
     color: "var(--text-primary)",
-    borderBottomLeftRadius: "4px",
-    border: "1px solid #2a2a2a",
+    padding: "8px 0",
+    width: "100%",
   },
   dotsRow: {
     display: "inline-flex",

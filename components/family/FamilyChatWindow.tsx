@@ -522,7 +522,7 @@ export default function FamilyChatWindow({
                 onTouchMove={handleTouchEnd}
                 onContextMenu={(e) => handleContextMenu(e, msg)}
               >
-                <div className="msg-group" style={{ ...styles.messageGroup, alignItems: isMe ? "flex-end" : "flex-start" }}>
+                <div className="msg-group" style={{ ...styles.messageGroup, alignItems: isMe ? "flex-end" : "flex-start", ...(isBruce ? { width: "100%" } : {}) }}>
                   {!isSameSender && (
                     <div
                       style={{
@@ -536,14 +536,13 @@ export default function FamilyChatWindow({
                   )}
 
                   <div
-                    style={{
-                      ...styles.bubble,
-                      ...(isMe
-                        ? { ...styles.meBubble, backgroundColor: myColor }
+                    style={
+                      isMe
+                        ? { ...styles.bubble, ...styles.meBubble, backgroundColor: myColor }
                         : isBruce
-                        ? styles.bruceBubble
-                        : { ...styles.memberBubble, borderColor: `${memberColor}50` }),
-                    }}
+                        ? styles.bruceContent
+                        : { ...styles.bubble, ...styles.memberBubble, borderColor: `${memberColor}50` }
+                    }
                   >
                     {msg.isStreaming && !msg.content ? (
                       <span style={{ display: "inline-flex", flexDirection: "column", gap: "4px" }}>
@@ -676,7 +675,7 @@ const styles: Record<string, React.CSSProperties> = {
   senderName: { fontSize: "0.6875rem", fontWeight: "400", letterSpacing: "0.01em", marginBottom: "1px", color: "var(--text-tertiary)" },
   bubble: { padding: "10px 14px", borderRadius: "var(--radius-lg)", fontSize: "0.9375rem", lineHeight: "1.55", wordBreak: "break-word", whiteSpace: "pre-wrap", userSelect: "text" },
   meBubble: { color: "#ffffff", borderBottomRightRadius: "4px" },
-  bruceBubble: { backgroundColor: "transparent", color: "var(--text-primary)", border: "1px solid #2a2a2a", borderBottomLeftRadius: "4px" },
+  bruceContent: { fontSize: "0.9375rem", lineHeight: "1.55", wordBreak: "break-word", color: "var(--text-primary)", padding: "8px 0", width: "100%", userSelect: "text", whiteSpace: "pre-wrap" },
   memberBubble: { backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", border: "2px solid", borderBottomLeftRadius: "4px" },
   dotsRow: { display: "inline-flex", alignItems: "center", gap: "4px" },
   dot1: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "0ms" },
