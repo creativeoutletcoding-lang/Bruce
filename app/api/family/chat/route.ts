@@ -21,6 +21,8 @@ import {
 import {
   SEARCH_TOOL,
   SEARCH_SYSTEM_BLOCK,
+  BROWSE_TOOL,
+  BROWSE_SYSTEM_BLOCK,
   executeSearchTool,
 } from "@/lib/searchTools";
 import { NextRequest } from "next/server";
@@ -220,9 +222,10 @@ export async function POST(request: NextRequest) {
     CALENDAR_SYSTEM_BLOCK +
     GMAIL_SYSTEM_BLOCK +
     IMAGE_VISION_BLOCK +
-    SEARCH_SYSTEM_BLOCK;
+    SEARCH_SYSTEM_BLOCK +
+    BROWSE_SYSTEM_BLOCK;
 
-  const tools = [...CALENDAR_TOOLS, ...GMAIL_TOOLS, SEARCH_TOOL];
+  const tools = [...CALENDAR_TOOLS, ...GMAIL_TOOLS, SEARCH_TOOL, BROWSE_TOOL];
 
   let userContent: Anthropic.Messages.MessageParam["content"];
   try {
@@ -309,7 +312,7 @@ export async function POST(request: NextRequest) {
             toolCalls.map(async (tc) => {
               let result: string;
               try {
-                if (tc.name === "web_search") {
+                if (tc.name === "web_search" || tc.name === "browse_url") {
                   result = await executeSearchTool(
                     tc.name,
                     tc.input as Record<string, unknown>

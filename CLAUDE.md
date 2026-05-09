@@ -201,6 +201,12 @@ const supabase = createServiceRoleClient();
    - User's active memories (top 15 by relevance score)
 4. **System prompt construction** happens server-side in an API route. Client never touches the API key.
 5. **Project context:** when in a project chat, include project instructions + relevant file summaries in the system prompt.
+6. **Active tools** (available in all chat contexts — standalone, project, family):
+   - `web_search` — Perplexity search for current information
+   - `browse_url` — Jina Reader fetches any public URL as clean markdown
+   - `generate_image` — Replicate flux-schnell image generation
+   - Google Calendar tools (read/write/manage events)
+   - Gmail tools (read/send/archive/delete email)
 
 ---
 

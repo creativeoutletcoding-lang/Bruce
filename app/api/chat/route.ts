@@ -23,6 +23,9 @@ import {
   SEARCH_TOOL,
   SEARCH_SYSTEM_BLOCK,
   SEARCH_STATUS_SENTINEL,
+  BROWSE_TOOL,
+  BROWSE_SYSTEM_BLOCK,
+  BROWSE_STATUS_SENTINEL,
   executeSearchTool,
 } from "@/lib/searchTools";
 import { type ImageQuality } from "@/lib/images/generate";
@@ -109,9 +112,10 @@ export async function POST(request: NextRequest) {
     GMAIL_SYSTEM_BLOCK +
     IMAGE_SYSTEM_BLOCK +
     IMAGE_VISION_BLOCK +
-    SEARCH_SYSTEM_BLOCK;
+    SEARCH_SYSTEM_BLOCK +
+    BROWSE_SYSTEM_BLOCK;
 
-  const tools = [...CALENDAR_TOOLS, ...GMAIL_TOOLS, SEARCH_TOOL];
+  const tools = [...CALENDAR_TOOLS, ...GMAIL_TOOLS, SEARCH_TOOL, BROWSE_TOOL];
 
   const adminSupabase = createServiceRoleClient();
   let currentChatId = chatId;
@@ -293,6 +297,7 @@ export async function POST(request: NextRequest) {
       try {
         let currentMessages = [...anthropicMessages];
         let webSearchUsed = false;
+        let browseUrlUsed = false;
 
         while (true) {
           const stream = anthropic.messages.stream({
@@ -321,12 +326,16 @@ export async function POST(request: NextRequest) {
             webSearchUsed = true;
             controller.enqueue(encoder.encode(SEARCH_STATUS_SENTINEL));
           }
+          if (toolCalls.some((tc) => tc.name === "browse_url")) {
+            browseUrlUsed = true;
+            controller.enqueue(encoder.encode(BROWSE_STATUS_SENTINEL));
+          }
 
           const toolResults = await Promise.all(
             toolCalls.map(async (tc) => {
               let result: string;
               try {
-                if (tc.name === "web_search") {
+                if (tc.name === "web_search" || tc.name === "browse_url") {
                   result = await executeSearchTool(
                     tc.name,
                     tc.input as Record<string, unknown>
@@ -389,7 +398,7 @@ export async function POST(request: NextRequest) {
               sender_id: null,
               role: "assistant",
               content: cleanResponse,
-              ...(webSearchUsed ? { metadata: { web_search_used: true } } : {}),
+              ...(webSearchUsed || browseUrlUsed ? { metadata: { web_search_used: webSearchUsed, browse_url_used: browseUrlUsed } } : {}),
             });
             if (insertErr) {
               console.error("[api/chat] Failed to persist assistant message:", insertErr);
