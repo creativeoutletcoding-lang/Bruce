@@ -50,6 +50,9 @@ interface ProjectRightPanelProps {
   userId: string;
   onOpenMemberPicker: () => void;
   onRemoveMember: (userId: string) => void;
+  // Memory
+  isolateMemory: boolean;
+  onIsolateMemoryChange: (v: boolean) => void;
 }
 
 function SectionHeader({
@@ -98,12 +101,15 @@ export default function ProjectRightPanel({
   userId,
   onOpenMemberPicker,
   onRemoveMember,
+  isolateMemory,
+  onIsolateMemoryChange,
 }: ProjectRightPanelProps) {
   const [open, setOpen] = useState({
     instructions: true,
     files: true,
     connectors: false,
     members: true,
+    memory: false,
   });
 
   function toggle(section: keyof typeof open) {
@@ -221,6 +227,45 @@ export default function ProjectRightPanel({
                   <span style={styles.notConnected}>Not connected</span>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Memory */}
+      <div style={styles.section}>
+        <SectionHeader
+          label="Memory"
+          open={open.memory}
+          onToggle={() => toggle("memory")}
+        />
+        {open.memory && (
+          <div style={styles.content}>
+            <div style={styles.toggleRow}>
+              <div style={styles.toggleText}>
+                <span style={styles.toggleLabel}>Keep memories within this project</span>
+                <span style={styles.toggleSubtitle}>
+                  When on, memories from this project won&apos;t carry over into other conversations with the same members
+                </span>
+              </div>
+              <button
+                role="switch"
+                aria-checked={isolateMemory}
+                onClick={() => canEdit && onIsolateMemoryChange(!isolateMemory)}
+                style={{
+                  ...styles.toggleTrack,
+                  ...(isolateMemory ? styles.toggleTrackOn : {}),
+                  cursor: canEdit ? "pointer" : "default",
+                  opacity: canEdit ? 1 : 0.5,
+                }}
+              >
+                <span
+                  style={{
+                    ...styles.toggleThumb,
+                    ...(isolateMemory ? styles.toggleThumbOn : {}),
+                  }}
+                />
+              </button>
             </div>
           </div>
         )}
@@ -413,6 +458,61 @@ const styles: Record<string, React.CSSProperties> = {
     border: "0.5px solid var(--border)",
     color: "var(--text-tertiary)",
     flexShrink: 0,
+  },
+
+  // Memory toggle
+  toggleRow: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "12px",
+    justifyContent: "space-between",
+  },
+  toggleText: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "3px",
+    flex: 1,
+    minWidth: 0,
+  },
+  toggleLabel: {
+    fontSize: "0.8125rem",
+    fontWeight: "500",
+    color: "var(--text-primary)",
+    lineHeight: 1.4,
+  },
+  toggleSubtitle: {
+    fontSize: "0.75rem",
+    color: "var(--text-tertiary)",
+    lineHeight: 1.4,
+  },
+  toggleTrack: {
+    flexShrink: 0,
+    position: "relative" as const,
+    width: "36px",
+    height: "20px",
+    borderRadius: "var(--radius-full)",
+    backgroundColor: "var(--border-strong)",
+    border: "none",
+    padding: 0,
+    transition: "background-color 150ms ease",
+    marginTop: "2px",
+  },
+  toggleTrackOn: {
+    backgroundColor: "var(--accent)",
+  },
+  toggleThumb: {
+    position: "absolute" as const,
+    top: "3px",
+    left: "3px",
+    width: "14px",
+    height: "14px",
+    borderRadius: "var(--radius-full)",
+    backgroundColor: "#fff",
+    transition: "left 150ms ease",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+  },
+  toggleThumbOn: {
+    left: "19px",
   },
 
   // Members

@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { assembleMemoryBlock, buildProjectSystemPrompt, generateChatTitle, IMAGE_SYSTEM_BLOCK, IMAGE_VISION_BLOCK } from "@/lib/anthropic";
+import { assembleMemoryBlock, buildMemberCombination, buildProjectSystemPrompt, generateChatTitle, IMAGE_SYSTEM_BLOCK, IMAGE_VISION_BLOCK } from "@/lib/anthropic";
 import { getFileContent } from "@/lib/google/drive";
 import { type ImageQuality } from "@/lib/images/generate";
 import {
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest, { params }: Props) {
   const { data: project, error: projectError } = await supabase
     .from("projects")
     .select(
-      `id, name, instructions,
+      `id, name, instructions, isolate_memory,
        project_members(user_id),
        files(id, name, google_drive_file_id, mime_type)`
     )
@@ -82,6 +82,11 @@ export async function POST(request: NextRequest, { params }: Props) {
   const memberUserIds = (
     project.project_members as Array<{ user_id: string }>
   ).map((m) => m.user_id);
+
+  const isolateMemory = !!(project.isolate_memory as boolean | null);
+  const memberCombination = memberUserIds.length > 1
+    ? buildMemberCombination(memberUserIds)
+    : undefined;
 
   const { data: memberProfiles } = await adminSupabase
     .from("users")
@@ -126,7 +131,11 @@ export async function POST(request: NextRequest, { params }: Props) {
   }
 
   // Load memory
-  const { block: memoryBlock, loadedIds } = await assembleMemoryBlock(supabase, user.id);
+  const { block: memoryBlock } = await assembleMemoryBlock(supabase, user.id, {
+    memberCombination,
+    projectId,
+    isolateMemory,
+  });
   // Load conversation history — replace image messages with a brief note
   let history: Array<{ role: string; content: string }> = [];
   if (chatId) {

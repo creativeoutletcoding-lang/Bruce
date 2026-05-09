@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import {
   assembleMemoryBlock,
   buildFamilyChatSystemPrompt,
+  buildMemberCombination,
   IMAGE_VISION_BLOCK,
 } from "@/lib/anthropic";
 import { notifyUser } from "@/lib/notifications";
@@ -173,6 +174,11 @@ export async function POST(request: NextRequest) {
     adminSupabase.from("chat_members").select("user_id").eq("chat_id", chatId),
   ]);
 
+  const familyMemberIds = ((memberRows ?? []) as { user_id: string }[]).map((r) => r.user_id);
+  const familyCombination = familyMemberIds.length > 1
+    ? buildMemberCombination(familyMemberIds)
+    : undefined;
+
   const notifUrl =
     (chatRow as { type: string } | null)?.type === "family_thread"
       ? `https://heybruce.app/family/threads/${chatId}`
@@ -207,9 +213,10 @@ export async function POST(request: NextRequest) {
   }
 
   // Load sender's memory for the system prompt
-  const { block: memoryBlock, loadedIds } = await assembleMemoryBlock(
+  const { block: memoryBlock } = await assembleMemoryBlock(
     supabase,
-    user.id
+    user.id,
+    { memberCombination: familyCombination }
   );
 
   const locationContext = currentLocation

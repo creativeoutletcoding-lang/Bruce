@@ -42,7 +42,7 @@ const nanaEmail = process.argv[2];
 if (!nanaEmail || !nanaEmail.includes("@")) {
   console.error(
     "Usage: npm run seed:cps:nana -- <nana@email.com>\n" +
-      "Example: npm run seed:cps:nana -- nana@gmail.com"
+      "Example: npm run seed:cps:nana -- nanabritt57@gmail.com"
   );
   process.exit(1);
 }

@@ -15,6 +15,7 @@ export type ProjectMemberRole = "owner" | "member";
 export type ChatType = "private" | "group" | "family" | "family_group" | "family_thread" | "incognito";
 export type MessageRole = "user" | "assistant" | "system";
 export type MemoryTier = "core" | "active" | "archive";
+export type MemoryType = "private" | "shared";
 export type PendingMemoryStatus = "pending" | "approved" | "rejected";
 
 // ------------------------------------------------------------
@@ -104,6 +105,7 @@ export interface Project {
   name: string;
   icon: string;
   instructions: string;
+  isolate_memory: boolean;
   status: ProjectStatus;
   created_at: string;
   updated_at: string;
@@ -163,7 +165,10 @@ export interface File {
 
 export interface Memory {
   id: string;
-  user_id: string;
+  type: MemoryType;
+  owner_id: string | null;         // set for private; null for shared
+  member_combination: string | null; // set for shared; null for private
+  project_id: string | null;       // set for project-isolated shared; null otherwise
   content: string;
   tier: MemoryTier;
   relevance_score: number;

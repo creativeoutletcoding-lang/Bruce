@@ -319,6 +319,20 @@ Button in chat top bar that summarizes the current private chat via Bruce, spins
 
 ---
 
+## Decisions Log
+
+### Memory architecture — 2026-05-09
+
+Two memory types: **private** (one member + Bruce) and **shared** (multiple members). Shared memory is scoped to member combinations, not containers — the same two members build one shared stream regardless of whether they're in a project or a group chat. The combination key is the sorted member UUID list joined with `:`.
+
+Projects have an optional `isolate_memory` toggle (default off). When on, memories generated inside that project are tagged with the project ID and never merge into the broader shared stream for that member combination. Project-isolated memories are still loaded inside the project alongside the caller's private memories. The global shared stream remains accessible inside isolated projects (memories flow in, not out).
+
+The toggle lives on the project homepage (right panel, Memory section). Only owners can change it.
+
+Admin has no special access to any member's private memory — the admin memory panel has been removed. This model has not been retrofitted — it is the foundation the memory system is built on from 2026-05-09 forward.
+
+---
+
 ## Active Task
 
 *Updated by the planning chat before each Claude Code session.*

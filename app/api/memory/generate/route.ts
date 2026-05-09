@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { classifyMemory } from "@/lib/anthropic";
+import { classifyMemory, buildMemberCombination } from "@/lib/anthropic";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -12,9 +12,7 @@ export async function POST(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    return new Response("Unauthorized", { status: 401 });
-  }
+  if (!user) return new Response("Unauthorized", { status: 401 });
 
   let chatId: string;
   try {
@@ -24,31 +22,89 @@ export async function POST(request: NextRequest) {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  if (!chatId) {
-    return new Response("chatId required", { status: 400 });
+  if (!chatId) return new Response("chatId required", { status: 400 });
+
+  const adminSupabase = createServiceRoleClient();
+
+  // Load chat metadata
+  const { data: chat } = await adminSupabase
+    .from("chats")
+    .select("id, type, owner_id, project_id")
+    .eq("id", chatId)
+    .single();
+
+  if (!chat) return new Response("Chat not found", { status: 404 });
+
+  const chatType = chat.type as string;
+  const projectId = chat.project_id as string | null;
+
+  // Determine member IDs and project isolation setting
+  let memberIds: string[] = [];
+  let projectIsolateMemory = false;
+
+  if (projectId) {
+    const [{ data: projMembers }, { data: projData }] = await Promise.all([
+      adminSupabase.from("project_members").select("user_id").eq("project_id", projectId),
+      adminSupabase.from("projects").select("isolate_memory").eq("id", projectId).single(),
+    ]);
+    memberIds = ((projMembers ?? []) as { user_id: string }[]).map((m) => m.user_id);
+    projectIsolateMemory = (projData as { isolate_memory: boolean } | null)?.isolate_memory ?? false;
+  } else if (chatType === "family_group" || chatType === "family_thread" || chatType === "group") {
+    const { data: chatMembers } = await adminSupabase
+      .from("chat_members")
+      .select("user_id")
+      .eq("chat_id", chatId);
+    memberIds = ((chatMembers ?? []) as { user_id: string }[]).map((m) => m.user_id);
+  } else {
+    // Standalone private chat — single owner
+    memberIds = [chat.owner_id as string];
   }
 
+  const isMultiMember = memberIds.length > 1;
+
   // Fetch all messages for the chat
-  const { data: messages } = await supabase
+  const { data: messages } = await adminSupabase
     .from("messages")
-    .select("role, content")
+    .select("role, content, sender_id")
     .eq("chat_id", chatId)
     .order("created_at", { ascending: true });
 
-  if (!messages || messages.length < 2) {
-    return Response.json({ generated: 0 });
+  if (!messages || messages.length < 2) return Response.json({ generated: 0 });
+
+  // Build name map for transcript
+  const memberNameMap: Record<string, string> = {};
+  if (memberIds.length > 0) {
+    const { data: profiles } = await adminSupabase
+      .from("users")
+      .select("id, name")
+      .in("id", memberIds);
+    for (const p of profiles ?? []) {
+      memberNameMap[p.id as string] = p.name as string;
+    }
+  }
+  // Ensure the calling user is in the map
+  if (!memberNameMap[user.id]) {
+    const { data: me } = await adminSupabase.from("users").select("name").eq("id", user.id).single();
+    memberNameMap[user.id] = (me as { name: string } | null)?.name ?? "User";
   }
 
-  const { data: userProfile } = await supabase
-    .from("users")
-    .select("name")
-    .eq("id", user.id)
-    .single();
-  const userName = (userProfile as { name: string } | null)?.name ?? "User";
-
+  // Build transcript
   const transcript = messages
-    .map((m) => `${m.role === "user" ? userName : "Bruce"}: ${m.content}`)
+    .map((m) => {
+      const sender = m.sender_id
+        ? (memberNameMap[m.sender_id as string] ?? "Member")
+        : "Bruce";
+      return `${sender}: ${m.content}`;
+    })
     .join("\n\n");
+
+  const memberNames = memberIds.map((id) => memberNameMap[id] ?? id);
+  const subjectDescription = isMultiMember
+    ? memberNames.join(" and ")
+    : (memberNames[0] ?? "the user");
+
+  const exampleName = memberNames[0] ?? "Jake";
+  const exampleName2 = memberNames[1] ?? "Nana";
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -60,9 +116,9 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "user",
-          content: `Review this conversation and identify facts, preferences, situations, or context worth remembering about ${userName}.
+          content: `Review this conversation and identify facts, preferences, decisions, situations, or context worth remembering about ${subjectDescription}.
 
-Write each memory as a clean, concise statement in the third person. Example: "${userName} prefers direct responses with no preamble."
+Write each memory as a clean, concise statement in the third person. ${isMultiMember ? `Reference people by name. Example: "${exampleName} and ${exampleName2} prefer to meet on Thursdays."` : `Example: "${exampleName} prefers direct responses with no preamble."`}
 
 Return only memories that clear a meaningful threshold — not every detail, only things genuinely useful to know in future conversations.
 
@@ -74,50 +130,76 @@ ${transcript}`,
         },
       ],
     });
-
-    raw =
-      response.content[0].type === "text" ? response.content[0].text : "NONE";
+    raw = response.content[0].type === "text" ? response.content[0].text : "NONE";
   } catch (err) {
     console.error("[memory/generate] Anthropic error:", err);
     return new Response("Memory generation failed", { status: 500 });
   }
 
-  if (raw.trim() === "NONE") {
-    return Response.json({ generated: 0 });
-  }
+  if (raw.trim() === "NONE") return Response.json({ generated: 0 });
 
   const lines = raw
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l && l !== "NONE");
 
-  if (lines.length === 0) {
-    return Response.json({ generated: 0 });
-  }
+  if (lines.length === 0) return Response.json({ generated: 0 });
 
-  const adminSupabase = createServiceRoleClient();
   let generated = 0;
 
-  for (const content of lines) {
-    // Skip duplicates
-    const { data: existing } = await adminSupabase
-      .from("memory")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("content", content)
-      .maybeSingle();
+  if (!isMultiMember) {
+    // Private memory — scoped to the single member
+    const ownerId = memberIds[0] ?? user.id;
+    for (const content of lines) {
+      const { data: existing } = await adminSupabase
+        .from("memory")
+        .select("id")
+        .eq("owner_id", ownerId)
+        .eq("type", "private")
+        .eq("content", content)
+        .maybeSingle();
+      if (existing) continue;
 
-    if (existing) continue;
+      const { error } = await adminSupabase.from("memory").insert({
+        owner_id: ownerId,
+        type: "private",
+        content,
+        tier: "active",
+        relevance_score: 50,
+        category: classifyMemory(content),
+      });
+      if (!error) generated++;
+    }
+  } else {
+    // Shared memory — scoped to the member combination
+    const combo = buildMemberCombination(memberIds);
+    const memProjectId = projectIsolateMemory ? projectId : null;
 
-    const { error } = await adminSupabase.from("memory").insert({
-      user_id: user.id,
-      content,
-      tier: "active",
-      relevance_score: 50,
-      category: classifyMemory(content),
-    });
+    for (const content of lines) {
+      const query = adminSupabase
+        .from("memory")
+        .select("id")
+        .eq("member_combination", combo)
+        .eq("type", "shared")
+        .eq("content", content);
 
-    if (!error) generated++;
+      const { data: existing } = memProjectId
+        ? await query.eq("project_id", memProjectId).maybeSingle()
+        : await query.is("project_id", null).maybeSingle();
+
+      if (existing) continue;
+
+      const { error } = await adminSupabase.from("memory").insert({
+        type: "shared",
+        member_combination: combo,
+        project_id: memProjectId,
+        content,
+        tier: "active",
+        relevance_score: 50,
+        category: classifyMemory(content),
+      });
+      if (!error) generated++;
+    }
   }
 
   return Response.json({ generated });

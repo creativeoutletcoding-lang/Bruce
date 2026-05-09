@@ -1157,3 +1157,6 @@ span[class*="typingDots"] > span:nth-child(3),
 .bruce-md blockquote { border-left: 3px solid rgba(255,255,255,0.2); margin: 0.3em 0; padding-left: 0.75em; color: rgba(249,250,251,0.75); }
 .bruce-md > *:first-child { margin-top: 0; }
 .bruce-md > *:last-child { margin-bottom: 0; }
+.bruce-md table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; border-collapse: collapse; margin: 0.5em 0; max-width: 100%; }
+.bruce-md th, .bruce-md td { white-space: nowrap; padding: 0.4em 0.75em; border: 1px solid rgba(255,255,255,0.15); font-size: 0.9em; }
+.bruce-md th { font-weight: 600; background: rgba(255,255,255,0.06); }

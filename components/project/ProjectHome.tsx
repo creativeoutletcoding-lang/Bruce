@@ -18,6 +18,7 @@ interface ProjectHomeProps {
   projectIcon: string;
   projectInstructions: string;
   projectOwnerId: string;
+  projectIsolateMemory: boolean;
   members: ProjectMemberDetail[];
   files: BruceFile[];
   initialChats: ChatPreview[];
@@ -54,6 +55,7 @@ export default function ProjectHome({
   projectName,
   projectIcon,
   projectInstructions,
+  projectIsolateMemory,
   members,
   files: initialFiles,
   initialChats,
@@ -67,6 +69,9 @@ export default function ProjectHome({
   // ── Instructions ──────────────────────────────────────────────
   const [instructions, setInstructions] = useState(projectInstructions);
   const [isSavingInstructions, setIsSavingInstructions] = useState(false);
+
+  // ── Memory isolation ──────────────────────────────────────────
+  const [isolateMemory, setIsolateMemory] = useState(projectIsolateMemory);
 
   // ── Files ─────────────────────────────────────────────────────
   const [fileList, setFileList] = useState<BruceFile[]>(initialFiles);
@@ -98,6 +103,20 @@ export default function ProjectHome({
   const [isDeletingChat, setIsDeletingChat] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressActiveRef = useRef(false);
+
+  // ── Memory isolation ──────────────────────────────────────────
+
+  const handleIsolateMemoryChange = useCallback(
+    async (value: boolean) => {
+      setIsolateMemory(value);
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isolate_memory: value }),
+      });
+    },
+    [projectId]
+  );
 
   // ── Instructions ──────────────────────────────────────────────
 
@@ -451,6 +470,8 @@ export default function ProjectHome({
             userId={userId}
             onOpenMemberPicker={handleOpenMemberPicker}
             onRemoveMember={handleRemoveMember}
+            isolateMemory={isolateMemory}
+            onIsolateMemoryChange={handleIsolateMemoryChange}
           />
         </div>
       </div>

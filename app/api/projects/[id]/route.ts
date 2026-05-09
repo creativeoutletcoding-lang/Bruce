@@ -87,27 +87,22 @@ export async function PATCH(request: NextRequest, { params }: Props) {
 
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const { data: userProfile } = await supabase
-    .from("users")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (project.owner_id !== user.id && userProfile?.role !== "admin") {
+  if (project.owner_id !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  let body: { name?: string; icon?: string; instructions?: string };
+  let body: { name?: string; icon?: string; instructions?: string; isolate_memory?: boolean };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const updates: Record<string, string> = {};
+  const updates: Record<string, string | boolean> = {};
   if (body.name !== undefined) updates.name = body.name;
   if (body.icon !== undefined) updates.icon = body.icon;
   if (body.instructions !== undefined) updates.instructions = body.instructions;
+  if (body.isolate_memory !== undefined) updates.isolate_memory = body.isolate_memory;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
@@ -141,13 +136,7 @@ export async function DELETE(_req: NextRequest, { params }: Props) {
 
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const { data: userProfile } = await supabase
-    .from("users")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (project.owner_id !== user.id && userProfile?.role !== "admin") {
+  if (project.owner_id !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

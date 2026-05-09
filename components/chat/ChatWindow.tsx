@@ -51,6 +51,8 @@ export default function ChatWindow({
   const memoryFiredRef = useRef(false);
   const messagesRef = useRef(messages);
   const incognitoRef = useRef(incognito);
+  const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingFlushRef = useRef(false);
 
   const loadMessages = useCallback(async () => {
     const supabase = createClient();
@@ -80,6 +82,9 @@ export default function ChatWindow({
   useEffect(() => { setIsClient(true); }, []);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { incognitoRef.current = incognito; }, [incognito]);
+  useEffect(() => {
+    return () => { if (flushTimerRef.current) clearInterval(flushTimerRef.current); };
+  }, []);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
@@ -207,44 +212,53 @@ export default function ChatWindow({
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
-      let sentinelSeen = false;
       const STATUS_RE = /\x1eSTATUS:[^\x1e]*\x1e/g;
+
+      pendingFlushRef.current = false;
+      let hasFirstContent = false;
+
+      flushTimerRef.current = setInterval(() => {
+        if (!pendingFlushRef.current) return;
+        pendingFlushRef.current = false;
+        const sentinelIdx = accumulated.indexOf("\x1f");
+        const raw = sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated;
+        const display = raw
+          .replace(STATUS_RE, "")
+          .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+          .trimStart();
+        if (!hasFirstContent && display.trim()) {
+          hasFirstContent = true;
+          setWorkingStatus(null);
+        }
+        setMessages((prev) =>
+          prev.map((m) => m.id === streamMsgId ? { ...m, content: display } : m)
+        );
+      }, 40);
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         accumulated += decoder.decode(value, { stream: true });
-
-        // Parse status sentinel — update indicator, never show in bubble
         const statusMatch = /\x1eSTATUS:([^\x1e]*)\x1e/.exec(accumulated);
         if (statusMatch) setWorkingStatus(statusMatch[1]);
-
-        if (sentinelSeen) continue;
-        const sentinelIdx = accumulated.indexOf("\x1f");
-        if (sentinelIdx !== -1) {
-          sentinelSeen = true;
-          const display = accumulated.slice(0, sentinelIdx)
-            .replace(STATUS_RE, "")
-            .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-            .trim();
-          if (display) setWorkingStatus(null);
-          setMessages((prev) =>
-            prev.map((m) => m.id === streamMsgId ? { ...m, content: display } : m)
-          );
-        } else {
-          const display = accumulated
-            .replace(STATUS_RE, "")
-            .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-            .trimStart();
-          if (display.trim()) setWorkingStatus(null);
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === streamMsgId ? { ...m, content: display } : m
-            )
-          );
-        }
+        pendingFlushRef.current = true;
       }
 
+      clearInterval(flushTimerRef.current);
+      flushTimerRef.current = null;
+
+      // Final flush — drain any content not yet written by the interval
+      {
+        const sentinelIdx = accumulated.indexOf("\x1f");
+        const raw = sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated;
+        const display = raw
+          .replace(STATUS_RE, "")
+          .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+          .trimStart();
+        setMessages((prev) =>
+          prev.map((m) => m.id === streamMsgId ? { ...m, content: display } : m)
+        );
+      }
       setWorkingStatus(null);
 
       // Parse sentinel

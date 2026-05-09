@@ -7,7 +7,7 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
-async function checkOwnerOrAdmin(
+async function checkOwner(
   supabase: Awaited<ReturnType<typeof createClient>>,
   projectId: string,
   userId: string
@@ -19,15 +19,7 @@ async function checkOwnerOrAdmin(
     .eq("user_id", userId)
     .single();
 
-  if (member?.role === "owner") return true;
-
-  const { data: userProfile } = await supabase
-    .from("users")
-    .select("role")
-    .eq("id", userId)
-    .single();
-
-  return userProfile?.role === "admin";
+  return member?.role === "owner";
 }
 
 export async function POST(request: NextRequest, { params }: Props) {
@@ -38,7 +30,7 @@ export async function POST(request: NextRequest, { params }: Props) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const allowed = await checkOwnerOrAdmin(supabase, id, user.id);
+  const allowed = await checkOwner(supabase, id, user.id);
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   let body: { user_id: string };
@@ -81,7 +73,7 @@ export async function DELETE(request: NextRequest, { params }: Props) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const allowed = await checkOwnerOrAdmin(supabase, id, user.id);
+  const allowed = await checkOwner(supabase, id, user.id);
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   let body: { user_id: string };

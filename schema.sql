@@ -127,15 +127,16 @@ CREATE INDEX idx_invite_tokens_token ON invite_tokens(token);
 -- ============================================================
 
 CREATE TABLE projects (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  owner_id      UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
-  name          TEXT NOT NULL,
-  icon          TEXT NOT NULL DEFAULT '📁',
-  instructions  TEXT NOT NULL DEFAULT '',    -- plain English, shapes Bruce's behavior
-  status        TEXT NOT NULL DEFAULT 'active'
-                  CHECK (status IN ('active', 'archived')),
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  owner_id        UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+  name            TEXT NOT NULL,
+  icon            TEXT NOT NULL DEFAULT '📁',
+  instructions    TEXT NOT NULL DEFAULT '',    -- plain English, shapes Bruce's behavior
+  isolate_memory  BOOLEAN NOT NULL DEFAULT FALSE, -- when true, memories stay inside this project
+  status          TEXT NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('active', 'archived')),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TRIGGER projects_updated_at
@@ -257,29 +258,38 @@ CREATE INDEX idx_files_project ON files(project_id);
 
 -- ============================================================
 -- TABLE: memory
--- Personal memory per member. Three tiers: core / active / archive.
+-- Two types: private (one member + Bruce) and shared (multiple members).
+-- Private: owner_id set, member_combination null, project_id null.
+-- Shared (global): owner_id null, member_combination = sorted UUIDs joined ':', project_id null.
+-- Shared (project-isolated): owner_id null, member_combination set, project_id set.
 -- ============================================================
 
 CREATE TABLE memory (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  content         TEXT NOT NULL,            -- clean concise statement
-  tier            TEXT NOT NULL DEFAULT 'active'
-                    CHECK (tier IN ('core', 'active', 'archive')),
-  relevance_score FLOAT NOT NULL DEFAULT 1.0,
-  category        TEXT,                     -- professional, preference, life, etc.
-  last_accessed   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  type               TEXT NOT NULL DEFAULT 'private'
+                       CHECK (type IN ('private', 'shared')),
+  owner_id           UUID REFERENCES users(id) ON DELETE CASCADE,  -- private only
+  member_combination TEXT,                  -- shared only: sorted UUIDs joined ':'
+  project_id         UUID REFERENCES projects(id) ON DELETE CASCADE, -- project-isolated only
+  content            TEXT NOT NULL,
+  tier               TEXT NOT NULL DEFAULT 'active'
+                       CHECK (tier IN ('core', 'active', 'archive')),
+  relevance_score    FLOAT NOT NULL DEFAULT 1.0,
+  category           TEXT,
+  last_accessed      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TRIGGER memory_updated_at
   BEFORE UPDATE ON memory
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
-CREATE INDEX idx_memory_user ON memory(user_id);
-CREATE INDEX idx_memory_user_tier ON memory(user_id, tier);
-CREATE INDEX idx_memory_relevance ON memory(user_id, relevance_score DESC);
+CREATE INDEX idx_memory_owner           ON memory(owner_id)              WHERE owner_id IS NOT NULL;
+CREATE INDEX idx_memory_owner_tier      ON memory(owner_id, tier)        WHERE owner_id IS NOT NULL;
+CREATE INDEX idx_memory_owner_relevance ON memory(owner_id, relevance_score DESC) WHERE owner_id IS NOT NULL;
+CREATE INDEX idx_memory_member_combo    ON memory(member_combination)    WHERE member_combination IS NOT NULL;
+CREATE INDEX idx_memory_project         ON memory(project_id)            WHERE project_id IS NOT NULL;
 
 
 -- ============================================================
@@ -751,15 +761,42 @@ CREATE POLICY "files_delete_owner"
 
 -- ============================================================
 -- RLS POLICIES — memory
--- STRICT. Only the owner sees their memory. No exceptions.
+-- Private: only the owner. Shared: members whose UUID is in member_combination.
 -- Admin sees nothing — privacy guarantee is architectural.
+-- Writes go through service role (background generation); these gate reads.
 -- ============================================================
 
-CREATE POLICY "memory_owner_only"
-  ON memory FOR ALL
-  TO authenticated
-  USING (user_id = auth.uid())
-  WITH CHECK (user_id = auth.uid());
+CREATE POLICY "memory_select"
+  ON memory FOR SELECT TO authenticated
+  USING (
+    (type = 'private' AND owner_id = auth.uid())
+    OR (type = 'shared' AND auth.uid()::text = ANY(string_to_array(member_combination, ':')))
+  );
+
+CREATE POLICY "memory_insert"
+  ON memory FOR INSERT TO authenticated
+  WITH CHECK (
+    (type = 'private' AND owner_id = auth.uid())
+    OR (type = 'shared' AND auth.uid()::text = ANY(string_to_array(member_combination, ':')))
+  );
+
+CREATE POLICY "memory_update"
+  ON memory FOR UPDATE TO authenticated
+  USING (
+    (type = 'private' AND owner_id = auth.uid())
+    OR (type = 'shared' AND auth.uid()::text = ANY(string_to_array(member_combination, ':')))
+  )
+  WITH CHECK (
+    (type = 'private' AND owner_id = auth.uid())
+    OR (type = 'shared' AND auth.uid()::text = ANY(string_to_array(member_combination, ':')))
+  );
+
+CREATE POLICY "memory_delete"
+  ON memory FOR DELETE TO authenticated
+  USING (
+    (type = 'private' AND owner_id = auth.uid())
+    OR (type = 'shared' AND auth.uid()::text = ANY(string_to_array(member_combination, ':')))
+  );
 
 
 -- ============================================================

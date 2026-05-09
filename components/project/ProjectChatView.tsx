@@ -71,6 +71,7 @@ export default function ProjectChatView({
   const messagesRef = useRef(messages);
   const instructionsFiredRef = useRef(false);
   const initialSentRef = useRef(false);
+  const memoryFiredRef = useRef(false);
   const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingFlushRef = useRef(false);
 
@@ -79,6 +80,22 @@ export default function ProjectChatView({
   useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
   useEffect(() => {
     return () => { if (flushTimerRef.current) clearInterval(flushTimerRef.current); };
+  }, []);
+
+  // Fire memory generation on unmount
+  useEffect(() => {
+    return () => {
+      if (!memoryFiredRef.current && messagesRef.current.length >= 2) {
+        memoryFiredRef.current = true;
+        fetch("/api/memory/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId }),
+          keepalive: true,
+        }).catch(() => {});
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

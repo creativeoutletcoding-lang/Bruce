@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Load memory
-  const { block: memoryBlock, loadedIds } = await assembleMemoryBlock(
+  const { block: memoryBlock } = await assembleMemoryBlock(
     supabase,
     user.id
   );

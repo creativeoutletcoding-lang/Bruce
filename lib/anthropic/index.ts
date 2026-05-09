@@ -8,6 +8,12 @@ const MAX_CORE = 20;
 const MAX_ACTIVE = 15;
 const MAX_WORDS = 500;
 
+// ── Member combination helper ─────────────────────────────────────────────────
+
+export function buildMemberCombination(userIds: string[]): string {
+  return [...userIds].sort().join(":");
+}
+
 const CATEGORY_ORDER = ["professional", "preference", "personal", "context"] as const;
 const CATEGORY_LABELS: Record<string, string> = {
   professional: "Professional",
@@ -115,68 +121,134 @@ The current date and time is ${userTimestamp}.`;
 
 // ── Memory assembly ───────────────────────────────────────────────────────────
 
+type MemoryRow = {
+  id: string;
+  content: string;
+  category: string | null;
+  relevance_score: number;
+};
+
 export async function assembleMemoryBlock(
-  supabase: SupabaseClient,
-  userId: string
+  _supabase: SupabaseClient,
+  userId: string,
+  context?: {
+    memberCombination?: string;
+    projectId?: string;
+    isolateMemory?: boolean;
+  }
 ): Promise<{ block: string; loadedIds: string[] }> {
-  const { data: core } = await supabase
-    .from("memory")
-    .select("id, content, category, relevance_score, created_at")
-    .eq("user_id", userId)
-    .eq("tier", "core")
-    .order("created_at", { ascending: true })
-    .limit(MAX_CORE);
+  const serviceRole = createServiceRoleClient();
 
-  const { data: active } = await supabase
-    .from("memory")
-    .select("id, content, category, relevance_score")
-    .eq("user_id", userId)
-    .eq("tier", "active")
-    .order("relevance_score", { ascending: false })
-    .limit(MAX_ACTIVE);
+  // Always load the calling user's private memories.
+  const [{ data: privateCore }, { data: privateActive }] = await Promise.all([
+    serviceRole
+      .from("memory")
+      .select("id, content, category, relevance_score")
+      .eq("owner_id", userId)
+      .eq("type", "private")
+      .eq("tier", "core")
+      .order("created_at", { ascending: true })
+      .limit(MAX_CORE),
+    serviceRole
+      .from("memory")
+      .select("id, content, category, relevance_score")
+      .eq("owner_id", userId)
+      .eq("type", "private")
+      .eq("tier", "active")
+      .order("relevance_score", { ascending: false })
+      .limit(MAX_ACTIVE),
+  ]);
 
-  const coreList = (core ?? []) as Array<{
-    id: string;
-    content: string;
-    category: string | null;
-    relevance_score: number;
-    created_at: string;
-  }>;
-  const activeList = (active ?? []) as Array<{
-    id: string;
-    content: string;
-    category: string | null;
-    relevance_score: number;
-  }>;
+  // Load shared memories if there's a member combination.
+  let sharedCore: MemoryRow[] = [];
+  let sharedActive: MemoryRow[] = [];
+  let isolatedCore: MemoryRow[] = [];
+  let isolatedActive: MemoryRow[] = [];
 
-  const loadedItems: Array<{
-    id: string;
-    relevance_score: number;
-    content: string;
-    category: string | null;
-  }> = [];
+  if (context?.memberCombination) {
+    const combo = context.memberCombination;
+
+    const [scRes, saRes] = await Promise.all([
+      serviceRole
+        .from("memory")
+        .select("id, content, category, relevance_score")
+        .eq("member_combination", combo)
+        .eq("type", "shared")
+        .is("project_id", null)
+        .eq("tier", "core")
+        .order("created_at", { ascending: true })
+        .limit(MAX_CORE),
+      serviceRole
+        .from("memory")
+        .select("id, content, category, relevance_score")
+        .eq("member_combination", combo)
+        .eq("type", "shared")
+        .is("project_id", null)
+        .eq("tier", "active")
+        .order("relevance_score", { ascending: false })
+        .limit(MAX_ACTIVE),
+    ]);
+    sharedCore = (scRes.data ?? []) as MemoryRow[];
+    sharedActive = (saRes.data ?? []) as MemoryRow[];
+
+    if (context.isolateMemory && context.projectId) {
+      const [icRes, iaRes] = await Promise.all([
+        serviceRole
+          .from("memory")
+          .select("id, content, category, relevance_score")
+          .eq("member_combination", combo)
+          .eq("type", "shared")
+          .eq("project_id", context.projectId)
+          .eq("tier", "core")
+          .order("created_at", { ascending: true })
+          .limit(MAX_CORE),
+        serviceRole
+          .from("memory")
+          .select("id, content, category, relevance_score")
+          .eq("member_combination", combo)
+          .eq("type", "shared")
+          .eq("project_id", context.projectId)
+          .eq("tier", "active")
+          .order("relevance_score", { ascending: false })
+          .limit(MAX_ACTIVE),
+      ]);
+      isolatedCore = (icRes.data ?? []) as MemoryRow[];
+      isolatedActive = (iaRes.data ?? []) as MemoryRow[];
+    }
+  }
+
+  const allCore: MemoryRow[] = [
+    ...((privateCore ?? []) as MemoryRow[]),
+    ...(sharedCore ?? []),
+    ...(isolatedCore ?? []),
+  ];
+  const allActive: MemoryRow[] = [
+    ...((privateActive ?? []) as MemoryRow[]),
+    ...(sharedActive ?? []),
+    ...(isolatedActive ?? []),
+  ];
+
+  const loadedItems: Array<MemoryRow> = [];
   let wordCount = 0;
 
-  for (const m of coreList) {
+  for (const m of allCore) {
     const words = countWords(m.content);
     if (wordCount + words > MAX_WORDS) break;
-    loadedItems.push({ id: m.id, relevance_score: m.relevance_score, content: m.content, category: m.category });
+    loadedItems.push(m);
     wordCount += words;
   }
 
-  for (const m of activeList) {
+  for (const m of allActive) {
     const words = countWords(m.content);
     if (wordCount + words > MAX_WORDS) break;
-    loadedItems.push({ id: m.id, relevance_score: m.relevance_score, content: m.content, category: m.category });
+    loadedItems.push(m);
     wordCount += words;
   }
 
   const loadedIds = loadedItems.map((m) => m.id);
 
-  // Fire-and-forget: increment relevance_score (capped at 100) and update last_accessed
-  // for every memory actually injected into the prompt.
+  // Fire-and-forget: bump relevance scores for everything loaded.
   if (loadedItems.length > 0) {
-    const serviceRole = createServiceRoleClient();
     Promise.all(
       loadedItems.map((m) =>
         serviceRole
@@ -205,7 +277,11 @@ export function buildSystemPrompt(
   const situational = `## Chat context
 
 This is a private standalone conversation.
-Keep responses appropriately concise. Do not pad. Do not summarize back what was just said.`;
+Keep responses appropriately concise. Do not pad. Do not summarize back what was just said.
+
+## Formatting
+
+When presenting structured data — tables, plans, items with multiple attributes — prefer formatted lists or clearly sectioned prose over markdown tables. If a table is genuinely the clearest format, keep it to two columns maximum. Avoid wide multi-column tables; they do not render well on mobile.`;
 
   return `${LAYER_IDENTITY}\n\n${LAYER_HOUSEHOLD}\n\n${memberLayer}\n\n${situational}`;
 }
@@ -237,7 +313,7 @@ Files: ${filesSummary}`;
   }
 
   if (project.memberNames.length > 1) {
-    projectBlock += `\n\n## Group participation rule\n\nYou are a participant in this group project chat, not the default responder. Read every message for context but do not reply unless a message is clearly addressed to you — by name, @ mention, or direct question. Member-to-member conversation is never a trigger. If it is ambiguous whether a message is meant for you or the group, stay silent. Never send the first message. No greeting, no acknowledgment of your presence. When you do respond, be brief and direct.\n\nWrite in plain conversational prose. Never use bullet points, numbered lists, bold, italic, headers, or any markdown formatting. If you feel the urge to use a bullet list, write it as a sentence instead. Responses should be short and direct — two to four sentences maximum unless the question genuinely requires more.`;
+    projectBlock += `\n\n## Group participation rule\n\nYou are a participant in this group project chat, not the default responder. Read every message for context but do not reply unless a message is clearly addressed to you — by name, @ mention, or direct question. Member-to-member conversation is never a trigger. If it is ambiguous whether a message is meant for you or the group, stay silent. Never send the first message. No greeting, no acknowledgment of your presence. When you do respond, be brief and direct.\n\nWrite in plain conversational prose. Never use bullet points, numbered lists, bold, italic, headers, or any markdown formatting. If you feel the urge to use a bullet list, write it as a sentence instead. Responses should be short and direct — two to four sentences maximum unless the question genuinely requires more. Never use markdown tables; write structured information as prose or natural sentences instead.`;
   }
 
   projectBlock += "\n---";
@@ -246,7 +322,11 @@ Files: ${filesSummary}`;
 
 This is a project workspace conversation.
 
-${projectBlock}`;
+${projectBlock}
+
+## Formatting
+
+When presenting structured data — tables, plans, items with multiple attributes — prefer formatted lists or clearly sectioned prose over markdown tables. If a table is genuinely the clearest format, keep it to two columns maximum. Avoid wide multi-column tables; they do not render well on mobile.`;
 
   return `${LAYER_IDENTITY}\n\n${LAYER_HOUSEHOLD}\n\n${memberLayer}\n\n${situational}`;
 }
@@ -268,7 +348,7 @@ You are a participant in this group chat, not the default responder. Read every 
 
 ## Response format
 
-Write in plain conversational prose. Never use bullet points, numbered lists, bold, italic, headers, or any markdown formatting. If you feel the urge to use a bullet list, write it as a sentence instead. Responses should be short and direct — two to four sentences maximum unless the question genuinely requires more.
+Write in plain conversational prose. Never use bullet points, numbered lists, bold, italic, headers, or any markdown formatting. If you feel the urge to use a bullet list, write it as a sentence instead. Responses should be short and direct — two to four sentences maximum unless the question genuinely requires more. Never use markdown tables; write structured information as prose or natural sentences instead.
 
 ## Three-tier judgment rule
 

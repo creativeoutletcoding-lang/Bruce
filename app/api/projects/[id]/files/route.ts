@@ -133,14 +133,7 @@ export async function DELETE(request: NextRequest, { params }: Props) {
       .single();
 
     if (projectMember?.role !== "owner") {
-      const { data: userProfile } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-      if (userProfile?.role !== "admin") {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
   }
 

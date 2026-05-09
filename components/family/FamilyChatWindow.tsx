@@ -83,13 +83,33 @@ export default function FamilyChatWindow({
   const isStreamingRef = useRef(false);
   const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingFlushRef = useRef(false);
+  const memoryFiredRef = useRef(false);
+  const messagesRef = useRef(messages);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollTouchStartY = useRef<number>(-1);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+
   useEffect(() => {
     return () => { if (flushTimerRef.current) clearInterval(flushTimerRef.current); };
+  }, []);
+
+  // Fire memory generation on unmount
+  useEffect(() => {
+    return () => {
+      if (!memoryFiredRef.current && messagesRef.current.length >= 2) {
+        memoryFiredRef.current = true;
+        fetch("/api/memory/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId }),
+          keepalive: true,
+        }).catch(() => {});
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Presence heartbeat — tells the server this chat is open so it can suppress

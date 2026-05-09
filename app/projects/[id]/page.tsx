@@ -24,7 +24,7 @@ export default async function ProjectPage({ params }: Props) {
 
   const { data: project } = await supabase
     .from("projects")
-    .select("id, name, icon, instructions, owner_id")
+    .select("id, name, icon, instructions, isolate_memory, owner_id")
     .eq("id", projectId)
     .single();
   if (!project) notFound();
@@ -75,6 +75,7 @@ export default async function ProjectPage({ params }: Props) {
       projectName={project.name as string}
       projectIcon={project.icon as string}
       projectInstructions={(project.instructions as string) ?? ""}
+      projectIsolateMemory={!!(project.isolate_memory as boolean | null)}
       projectOwnerId={project.owner_id as string}
       members={members}
       files={(files as BruceFile[]) ?? []}
