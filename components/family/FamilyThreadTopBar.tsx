@@ -35,7 +35,7 @@ export default function FamilyThreadTopBar({
     setIsDeleting(true);
     try {
       await fetch(`/api/family/threads/${threadId}`, { method: "DELETE" });
-      router.push("/family");
+      router.push("/chat");
     } catch {
       setIsDeleting(false);
       setDeleteModalOpen(false);
@@ -64,11 +64,11 @@ export default function FamilyThreadTopBar({
   return (
     <>
       <div style={styles.bar}>
-        {/* Back to family */}
+        {/* Back to chat */}
         <button
-          onClick={() => router.push("/family")}
+          onClick={() => router.push("/chat")}
           style={styles.backButton}
-          aria-label="Back to Family"
+          aria-label="Back"
         >
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
             <path

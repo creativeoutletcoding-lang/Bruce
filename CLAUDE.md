@@ -293,6 +293,8 @@ Every migration file in `migrations/` must be applied manually in the Supabase S
 - ✅ Image generation via Replicate
 - ✅ Web search via Perplexity
 - ✅ Mobile UI — removed bottom nav bar, fixed sidebar close behavior (overlay tap + X button)
+- ✅ URL browsing via Jina Reader — `browse_url` tool available in all chat contexts
+- ✅ Family thread back navigation — back button and post-delete redirect now go to `/chat`; `/family` redirects to `/chat` when no family_group chat exists
 
 ### Planned Additions
 
@@ -304,10 +306,6 @@ Every migration file in `migrations/` must be applied manually in the Supabase S
 - Clear all chats within a project
 
 All deletes are soft-delete where possible (status field), hard delete for chats and messages. Confirmation prompt required before any delete action.
-
-**URL browsing via Jina Reader**
-
-Fetch any public URL, return clean markdown, inject as prompt context. Triggered when a URL is provided in conversation. Similar integration pattern to existing Perplexity web search.
 
 **"Continue in new group chat"**
 

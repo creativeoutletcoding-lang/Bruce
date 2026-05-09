@@ -31,14 +31,7 @@ export default async function FamilyPage() {
   const adminSupabase = createServiceRoleClient();
 
   if (!existingChat) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: "0.5rem" }}>
-        <FamilyTopBar />
-        <p style={{ color: "var(--text-secondary)", fontSize: "0.9375rem" }}>
-          No family chat yet.
-        </p>
-      </div>
-    );
+    redirect("/chat");
   }
 
   const chatId = existingChat.id as string;
