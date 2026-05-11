@@ -182,6 +182,26 @@ export default function ChatWindow({
     setIsStreaming(true);
 
     try {
+      // Upload each file individually via proxy before the main request — avoids 413
+      const uploadedAttachments = filesToSend.length > 0
+        ? await Promise.all(
+            filesToSend.map(async (f) => {
+              try {
+                const upRes = await fetch("/api/files/upload", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ base64: f.base64, mediaType: f.mediaType, filename: f.filename, type: f.type, isIncognito: incognito }),
+                });
+                if (upRes.ok) {
+                  const data = await upRes.json() as { file_id: string | null; url: string };
+                  return { file_id: data.file_id, url: data.url, type: f.type, filename: f.filename };
+                }
+              } catch { /* silent */ }
+              return { file_id: null, url: "", type: f.type, filename: f.filename };
+            })
+          )
+        : [];
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -191,9 +211,7 @@ export default function ChatWindow({
           isIncognito: incognito,
           currentLocation,
           userTimestamp: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }),
-          attachments: filesToSend.length > 0
-            ? filesToSend.map((f) => ({ base64: f.base64, mediaType: f.mediaType, filename: f.filename, type: f.type }))
-            : undefined,
+          attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
         }),
       });
 

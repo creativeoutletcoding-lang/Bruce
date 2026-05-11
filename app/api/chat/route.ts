@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { uploadToAnthropicFiles } from "@/lib/anthropic/uploadFile";
 import {
   assembleMemoryBlock,
   buildSystemPrompt,
@@ -52,7 +51,7 @@ export async function POST(request: NextRequest) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  let body: { message: string; chatId: string | null; isIncognito: boolean; currentLocation?: string; userTimestamp?: string; attachments?: Array<{ base64: string; mediaType: string; filename: string; type: "image" | "document" }> };
+  let body: { message: string; chatId: string | null; isIncognito: boolean; currentLocation?: string; userTimestamp?: string; attachments?: Array<{ file_id: string | null; url: string; type: "image" | "document"; filename: string }> };
   try {
     body = await request.json();
   } catch {
@@ -154,47 +153,14 @@ export async function POST(request: NextRequest) {
   let currentChatId = chatId;
   let chatTitle: string | undefined;
 
-  // Upload attachments: Supabase storage (for display) + Anthropic Files API (for API calls).
-  // Run both in parallel when not incognito; Anthropic only in incognito (no DB row needed).
-  const attachmentMeta: Array<{ url: string; type: string; filename?: string }> = [];
-  let fileIds: (string | null)[] = new Array(attachments.length).fill(null);
-
-  if (attachments.length > 0) {
-    const anthropicUploads = attachments.map((att) =>
-      uploadToAnthropicFiles(att.base64, att.mediaType, att.filename)
-    );
-
-    if (!isIncognito) {
-      const supabaseUploads = attachments.map(async (att, i) => {
-        try {
-          const fileExt = att.type === "image"
-            ? (att.mediaType.split("/")[1] ?? "jpg")
-            : (att.filename.split(".").pop() ?? "bin");
-          const filePath = `${user.id}/${Date.now()}_${i}.${fileExt}`;
-          const { error: uploadErr } = await adminSupabase.storage
-            .from("message-images")
-            .upload(filePath, Buffer.from(att.base64, "base64"), {
-              contentType: att.mediaType,
-              upsert: false,
-            });
-          if (!uploadErr) {
-            const { data: urlData } = adminSupabase.storage.from("message-images").getPublicUrl(filePath);
-            return { url: urlData.publicUrl, type: att.type, filename: att.type === "document" ? att.filename : undefined };
-          }
-        } catch { /* silent */ }
-        return { url: "", type: att.type, filename: att.type === "document" ? att.filename : undefined };
-      });
-
-      const [supabaseMeta, anthropicIds] = await Promise.all([
-        Promise.all(supabaseUploads),
-        Promise.all(anthropicUploads),
-      ]);
-      attachmentMeta.push(...supabaseMeta);
-      fileIds = anthropicIds;
-    } else {
-      fileIds = await Promise.all(anthropicUploads);
-    }
-  }
+  // Attachments are pre-uploaded via /api/files/upload before this request is sent.
+  // file_id comes from the Anthropic Files API; url comes from Supabase storage.
+  const attachmentMeta = attachments.map((att) => ({
+    url: att.url,
+    type: att.type,
+    filename: att.type === "document" ? att.filename : undefined,
+  }));
+  const fileIds = attachments.map((att) => att.file_id);
 
   if (!isIncognito) {
     if (!currentChatId) {
@@ -239,42 +205,21 @@ export async function POST(request: NextRequest) {
   }
 
   let userContent: Anthropic.Messages.MessageParam["content"];
-  try {
-    if (attachments.length > 0) {
-      const blocks: Anthropic.Messages.ContentBlockParam[] = [];
-      for (let i = 0; i < attachments.length; i++) {
-        const att = attachments[i];
-        const fileId = fileIds[i] ?? null;
-        if (att.type === "image") {
-          if (fileId) {
-            blocks.push({ type: "image", source: { type: "file", file_id: fileId } } as unknown as Anthropic.Messages.ContentBlockParam);
-          } else {
-            const VALID_IMG = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
-            const imgMediaType = (VALID_IMG.has(att.mediaType) ? att.mediaType : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
-            blocks.push({ type: "image" as const, source: { type: "base64" as const, media_type: imgMediaType, data: att.base64 } });
-          }
-        } else {
-          if (fileId) {
-            blocks.push({ type: "document", source: { type: "file", file_id: fileId }, title: att.filename } as unknown as Anthropic.Messages.ContentBlockParam);
-          } else {
-            blocks.push({
-              type: "document" as const,
-              source: att.mediaType === "application/pdf"
-                ? { type: "base64" as const, media_type: "application/pdf" as const, data: att.base64 }
-                : { type: "text" as const, media_type: "text/plain" as const, data: att.base64 },
-              title: att.filename,
-            });
-          }
-        }
+  if (attachments.length > 0) {
+    const blocks: Anthropic.Messages.ContentBlockParam[] = [];
+    for (const att of attachments) {
+      if (!att.file_id) continue;
+      if (att.type === "image") {
+        blocks.push({ type: "image", source: { type: "file", file_id: att.file_id } } as unknown as Anthropic.Messages.ContentBlockParam);
+      } else {
+        blocks.push({ type: "document", source: { type: "file", file_id: att.file_id }, title: att.filename } as unknown as Anthropic.Messages.ContentBlockParam);
       }
-      if (message.trim()) blocks.push({ type: "text" as const, text: message });
-      userContent = blocks as Anthropic.Messages.MessageParam["content"];
-    } else {
-      userContent = message;
     }
-  } catch (contentErr) {
-    console.error('[api/chat] content block construction failed:', contentErr);
-    return new Response("Content processing failed", { status: 500 });
+    if (message.trim()) blocks.push({ type: "text" as const, text: message });
+    if (blocks.length === 0) blocks.push({ type: "text" as const, text: message || "[attachment]" });
+    userContent = blocks as Anthropic.Messages.MessageParam["content"];
+  } else {
+    userContent = message;
   }
 
   const anthropicMessages: Anthropic.Messages.MessageParam[] = [

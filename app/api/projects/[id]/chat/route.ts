@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { uploadToAnthropicFiles } from "@/lib/anthropic/uploadFile";
 import { assembleMemoryBlock, buildMemberCombination, buildProjectSystemPrompt, generateChatTitle, IMAGE_SYSTEM_BLOCK, IMAGE_VISION_BLOCK } from "@/lib/anthropic";
 import { getFileContent } from "@/lib/google/drive";
 import { type ImageQuality } from "@/lib/images/generate";
@@ -42,33 +41,6 @@ interface Props {
 }
 
 export async function POST(request: NextRequest, { params }: Props) {
-  // Startup log — confirms route is being hit and shows attachment shape
-  console.log("[api/projects/chat] POST start", {
-    projectId: (await params).id,
-    url: request.url,
-    contentType: request.headers.get("content-type"),
-  });
-
-  let outerErr: unknown;
-  try {
-  return await _POST(request, { params });
-  } catch (err) {
-    outerErr = err;
-    console.error("[api/projects/chat] UNHANDLED outer error:", {
-      errorType: err instanceof Error ? err.constructor.name : typeof err,
-      errorMessage: err instanceof Error ? err.message : String(err),
-      errorStatus: (err as Record<string, unknown>)?.status,
-      errorBody: (err as Record<string, unknown>)?.error,
-      stack: err instanceof Error ? err.stack : undefined,
-    });
-    return new Response(
-      JSON.stringify({ error: String(outerErr) }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
-  }
-}
-
-async function _POST(request: NextRequest, { params }: Props) {
   const { id: projectId } = await params;
   const supabase = await createClient();
   const {
@@ -76,7 +48,7 @@ async function _POST(request: NextRequest, { params }: Props) {
   } = await supabase.auth.getUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  let body: { message: string; chatId: string | null; currentLocation?: string; userTimestamp?: string; attachments?: Array<{ base64: string; mediaType: string; filename: string; type: "image" | "document" }> };
+  let body: { message: string; chatId: string | null; currentLocation?: string; userTimestamp?: string; attachments?: Array<{ file_id: string | null; url: string; type: "image" | "document"; filename: string }> };
   try {
     body = await request.json();
   } catch {
@@ -86,16 +58,6 @@ async function _POST(request: NextRequest, { params }: Props) {
   const { message, chatId, currentLocation, userTimestamp: rawTimestamp, attachments: rawAttachments } = body;
   const attachments = rawAttachments ?? [];
   const userTimestamp = rawTimestamp ?? new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
-
-  console.log("[api/projects/chat] request parsed", {
-    projectId,
-    chatId,
-    messageLength: message?.length ?? 0,
-    attachmentCount: attachments.length,
-    attachmentTypes: attachments.map((a) => a.type),
-    attachmentMediaTypes: attachments.map((a) => a.mediaType),
-    attachmentBase64Lengths: attachments.map((a) => a.base64?.length ?? 0),
-  });
 
   if (!message?.trim() && attachments.length === 0) return new Response("Message required", { status: 400 });
 
@@ -294,39 +256,14 @@ async function _POST(request: NextRequest, { params }: Props) {
     }
   }
 
-  // Upload attachments: Supabase storage (for display) + Anthropic Files API (for API calls).
-  // Run both in parallel.
-  const attachmentMeta: Array<{ url: string; type: string; filename?: string }> = [];
-  let fileIds: (string | null)[] = new Array(attachments.length).fill(null);
-
-  if (attachments.length > 0) {
-    const supabaseUploads = attachments.map(async (att, i) => {
-      try {
-        const fileExt = att.type === "image"
-          ? (att.mediaType.split("/")[1] ?? "jpg")
-          : (att.filename.split(".").pop() ?? "bin");
-        const filePath = `${user.id}/${Date.now()}_${i}.${fileExt}`;
-        const { error: uploadErr } = await adminSupabase.storage
-          .from("message-images")
-          .upload(filePath, Buffer.from(att.base64, "base64"), {
-            contentType: att.mediaType,
-            upsert: false,
-          });
-        if (!uploadErr) {
-          const { data: urlData } = adminSupabase.storage.from("message-images").getPublicUrl(filePath);
-          return { url: urlData.publicUrl, type: att.type, filename: att.type === "document" ? att.filename : undefined };
-        }
-      } catch { /* silent */ }
-      return { url: "", type: att.type, filename: att.type === "document" ? att.filename : undefined };
-    });
-
-    const [supabaseMeta, anthropicIds] = await Promise.all([
-      Promise.all(supabaseUploads),
-      Promise.all(attachments.map((att) => uploadToAnthropicFiles(att.base64, att.mediaType, att.filename))),
-    ]);
-    attachmentMeta.push(...supabaseMeta);
-    fileIds = anthropicIds;
-  }
+  // Attachments are pre-uploaded via /api/files/upload before this request is sent.
+  // file_id comes from the Anthropic Files API; url comes from Supabase storage.
+  const attachmentMeta = attachments.map((att) => ({
+    url: att.url,
+    type: att.type,
+    filename: att.type === "document" ? att.filename : undefined,
+  }));
+  const fileIds = attachments.map((att) => att.file_id);
 
   // Insert user message
   const firstAtt = attachments[0];
@@ -349,42 +286,21 @@ async function _POST(request: NextRequest, { params }: Props) {
   }
 
   let userContent: Anthropic.Messages.MessageParam["content"];
-  try {
-    if (attachments.length > 0) {
-      const blocks: Anthropic.Messages.ContentBlockParam[] = [];
-      for (let i = 0; i < attachments.length; i++) {
-        const att = attachments[i];
-        const fileId = fileIds[i] ?? null;
-        if (att.type === "image") {
-          if (fileId) {
-            blocks.push({ type: "image", source: { type: "file", file_id: fileId } } as unknown as Anthropic.Messages.ContentBlockParam);
-          } else {
-            const VALID_IMG = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
-            const imgMediaType = (VALID_IMG.has(att.mediaType) ? att.mediaType : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
-            blocks.push({ type: "image" as const, source: { type: "base64" as const, media_type: imgMediaType, data: att.base64 } });
-          }
-        } else {
-          if (fileId) {
-            blocks.push({ type: "document", source: { type: "file", file_id: fileId }, title: att.filename } as unknown as Anthropic.Messages.ContentBlockParam);
-          } else {
-            blocks.push({
-              type: "document" as const,
-              source: att.mediaType === "application/pdf"
-                ? { type: "base64" as const, media_type: "application/pdf" as const, data: att.base64 }
-                : { type: "text" as const, media_type: "text/plain" as const, data: att.base64 },
-              title: att.filename,
-            });
-          }
-        }
+  if (attachments.length > 0) {
+    const blocks: Anthropic.Messages.ContentBlockParam[] = [];
+    for (const att of attachments) {
+      if (!att.file_id) continue;
+      if (att.type === "image") {
+        blocks.push({ type: "image", source: { type: "file", file_id: att.file_id } } as unknown as Anthropic.Messages.ContentBlockParam);
+      } else {
+        blocks.push({ type: "document", source: { type: "file", file_id: att.file_id }, title: att.filename } as unknown as Anthropic.Messages.ContentBlockParam);
       }
-      if (message.trim()) blocks.push({ type: "text" as const, text: message });
-      userContent = blocks as Anthropic.Messages.MessageParam["content"];
-    } else {
-      userContent = message;
     }
-  } catch (contentErr) {
-    console.error("[api/projects/chat] content block construction failed:", contentErr instanceof Error ? contentErr.message : String(contentErr));
-    return new Response("Content processing failed", { status: 500 });
+    if (message.trim()) blocks.push({ type: "text" as const, text: message });
+    if (blocks.length === 0) blocks.push({ type: "text" as const, text: message || "[attachment]" });
+    userContent = blocks as Anthropic.Messages.MessageParam["content"];
+  } else {
+    userContent = message;
   }
 
   const anthropicMessages: Anthropic.Messages.MessageParam[] = [
@@ -448,15 +364,6 @@ async function _POST(request: NextRequest, { params }: Props) {
         let currentMessages = [...anthropicMessages];
         let webSearchUsed = false;
         let browseUrlUsed = false;
-
-        console.log("[api/projects/chat] starting Anthropic stream", {
-          model: preferredModel,
-          messageCount: currentMessages.length,
-          lastMessageRole: currentMessages.at(-1)?.role,
-          lastMessageContentType: Array.isArray(currentMessages.at(-1)?.content)
-            ? (currentMessages.at(-1)?.content as Array<{ type: string }>).map((b) => b.type)
-            : typeof currentMessages.at(-1)?.content,
-        });
 
         while (true) {
           const stream = anthropic.messages.stream({
@@ -583,17 +490,7 @@ async function _POST(request: NextRequest, { params }: Props) {
 
         controller.close();
       } catch (err) {
-        console.error("[api/projects/chat] Stream error:", {
-          errorType: err instanceof Error ? err.constructor.name : typeof err,
-          errorMessage: err instanceof Error ? err.message : String(err),
-          errorStatus: (err as Record<string, unknown>)?.status,
-          errorBody: (err as Record<string, unknown>)?.error,
-          attachmentCount: attachments.length,
-          attachmentTypes: attachments.map((a) => a.type),
-          attachmentMediaTypes: attachments.map((a) => a.mediaType),
-          attachmentSizes: attachments.map((a) => (a as Record<string, unknown>).fileSize ?? "unknown"),
-          fullError: String(err),
-        });
+        console.error("[api/projects/chat] Stream error:", err instanceof Error ? err.message : String(err));
         // Best-effort: save any partial response received before the error
         if (currentChatId && fullResponse) {
           const cleanResponse = fullResponse
