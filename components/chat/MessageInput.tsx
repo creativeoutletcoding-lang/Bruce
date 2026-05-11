@@ -37,6 +37,31 @@ const EXT_MEDIA_TYPE: Record<string, string> = {
   gif: "image/gif", webp: "image/webp", bmp: "image/jpeg",
 };
 
+// Resize image to max 1568px on the longest side before upload.
+// Anthropic vision models are optimized at this resolution; larger images
+// waste tokens without improving quality.
+function resizeImage(base64: string, mediaType: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1568;
+      if (img.width <= MAX && img.height <= MAX) { resolve(base64); return; }
+      const ratio = Math.min(MAX / img.width, MAX / img.height);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * ratio);
+      canvas.height = Math.round(img.height * ratio);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { resolve(base64); return; }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const outType = mediaType === "image/png" ? "image/png" : "image/jpeg";
+      const resized = canvas.toDataURL(outType, 0.85).split(",")[1];
+      resolve(resized ?? base64);
+    };
+    img.onerror = () => resolve(base64);
+    img.src = `data:${mediaType};base64,${base64}`;
+  });
+}
+
 function processFile(file: File): Promise<FileAttachment | null> {
   // Mobile camera capture often delivers file.type as "" — fall back to extension
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();
@@ -54,10 +79,11 @@ function processFile(file: File): Promise<FileAttachment | null> {
 
   return new Promise((resolve) => {
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const dataUrl = ev.target?.result as string;
-      const base64 = dataUrl?.split(",")[1];
-      if (!base64) { resolve(null); return; }
+      const rawBase64 = dataUrl?.split(",")[1];
+      if (!rawBase64) { resolve(null); return; }
+      const base64 = isImage ? await resizeImage(rawBase64, mediaType) : rawBase64;
       resolve({ type, base64, mediaType, filename: file.name, fileSize: file.size, previewUrl });
     };
     reader.onerror = async () => {
@@ -67,7 +93,8 @@ function processFile(file: File): Promise<FileAttachment | null> {
         const bytes = new Uint8Array(buf);
         let binary = "";
         for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-        const base64 = btoa(binary);
+        const rawBase64 = btoa(binary);
+        const base64 = await resizeImage(rawBase64, mediaType);
         resolve({ type, base64, mediaType, filename: file.name, fileSize: file.size, previewUrl });
       } catch {
         resolve(null);

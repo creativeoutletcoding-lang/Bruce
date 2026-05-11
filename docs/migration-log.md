@@ -19,3 +19,8 @@ This file tracks which migrations have been applied to the production Supabase i
 | 014 | Admin dev messages table — creates `admin_dev_messages` table for the Bruce Dev workspace persistent history (`id`, `role`, `content`, `created_at`); service role only, no RLS | ✅ |
 | 015 | Admin dev sessions — creates `admin_dev_sessions` table, adds `session_id` FK column to `admin_dev_messages`, migrates any existing messages into a "Session 1" session | ✅ |
 | 016 | Fix RLS admin overrides — removes `is_admin()` from 14 policies across 6 tables (`projects`, `project_members`, `chats`, `chat_members`, `messages`, `files`); drops and recreates each violating policy without the admin bypass | ⬜ |
+| 017 | Memory architecture — private/shared memory types, `owner_id`, `member_combination`, `project_id` on `memory` table | ✅ |
+| 018 | Memory metrics function — `get_memory_metrics()` SECURITY DEFINER function for admin panel | ✅ |
+| 019 | Memory metrics left join fix — updates `get_memory_metrics()` to use LEFT JOIN | ✅ |
+| 020 | Message delete policy — RLS policy allowing users to delete their own messages | ✅ |
+| 021 | Anthropic Files API — adds `file_ids JSONB` to `messages`; stores Anthropic file IDs parallel to `metadata.attachments` for context-window-efficient history replay | ⬜ |

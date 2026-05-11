@@ -228,6 +228,7 @@ CREATE TABLE messages (
   image_url           TEXT,                                 -- user-uploaded image or document URL
   attachment_type     TEXT,                                 -- 'image' or 'document'
   attachment_filename TEXT,                                 -- original filename for documents
+  file_ids            JSONB,                                -- Anthropic Files API IDs, parallel to metadata.attachments
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

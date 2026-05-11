@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { uploadToAnthropicFiles } from "@/lib/anthropic/uploadFile";
 import {
   assembleMemoryBlock,
   buildSystemPrompt,
@@ -72,12 +73,13 @@ export async function POST(request: NextRequest) {
     user.id
   );
 
-  // Load conversation history — replace image messages with a brief note
-  let history: Array<{ role: string; content: string }> = [];
+  // Load conversation history — use file_ids for attachment references when available
+  type HistoryEntry = { role: string; content: string | Anthropic.Messages.ContentBlockParam[] };
+  let history: HistoryEntry[] = [];
   if (chatId) {
     const { data: msgs } = await supabase
       .from("messages")
-      .select("role, content, metadata")
+      .select("role, content, metadata, file_ids")
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true });
     history = (msgs ?? []).map((m) => {
@@ -87,6 +89,26 @@ export async function POST(request: NextRequest) {
       }
       const text = (m.content as string) ?? "";
       const metaAttachments = meta?.attachments as Array<{ type: string; filename?: string }> | undefined;
+      const fileIds = m.file_ids as (string | null)[] | null;
+
+      // Reconstruct content blocks from stored file_ids
+      if (fileIds && fileIds.length > 0 && metaAttachments && metaAttachments.length > 0) {
+        const blocks: Anthropic.Messages.ContentBlockParam[] = [];
+        for (let i = 0; i < fileIds.length; i++) {
+          const fileId = fileIds[i];
+          const att = metaAttachments[i];
+          if (!fileId || !att) continue;
+          if (att.type === "image") {
+            blocks.push({ type: "image", source: { type: "file", file_id: fileId } } as unknown as Anthropic.Messages.ContentBlockParam);
+          } else {
+            blocks.push({ type: "document", source: { type: "file", file_id: fileId }, title: att.filename ?? "document" } as unknown as Anthropic.Messages.ContentBlockParam);
+          }
+        }
+        if (text.trim()) blocks.push({ type: "text", text });
+        if (blocks.length > 0) return { role: m.role as string, content: blocks };
+      }
+
+      // Fallback: text placeholder for messages without file_ids
       if (metaAttachments && metaAttachments.length > 0 && !text.trim()) {
         const desc = metaAttachments
           .map((a) => a.type === "document" ? `[document: ${a.filename ?? "file"}]` : "[image]")
@@ -94,7 +116,10 @@ export async function POST(request: NextRequest) {
         return { role: m.role as string, content: desc };
       }
       return { role: m.role as string, content: text };
-    }).filter((m) => m.content.trim().length > 0);
+    }).filter((m) => {
+      const c = m.content;
+      return typeof c === "string" ? c.trim().length > 0 : Array.isArray(c) && c.length > 0;
+    });
   }
 
   // Fetch user profile for name, home location, and preferred model
@@ -129,31 +154,45 @@ export async function POST(request: NextRequest) {
   let currentChatId = chatId;
   let chatTitle: string | undefined;
 
-  // Upload attachments to storage and collect metadata
+  // Upload attachments: Supabase storage (for display) + Anthropic Files API (for API calls).
+  // Run both in parallel when not incognito; Anthropic only in incognito (no DB row needed).
   const attachmentMeta: Array<{ url: string; type: string; filename?: string }> = [];
-  if (!isIncognito) {
-    for (let i = 0; i < attachments.length; i++) {
-      const att = attachments[i];
-      try {
-        const fileExt = att.type === "image"
-          ? (att.mediaType.split("/")[1] ?? "jpg")
-          : (att.filename.split(".").pop() ?? "bin");
-        const filePath = `${user.id}/${Date.now()}_${i}.${fileExt}`;
-        const { error: uploadErr } = await adminSupabase.storage
-          .from("message-images")
-          .upload(filePath, Buffer.from(att.base64, "base64"), {
-            contentType: att.mediaType,
-            upsert: false,
-          });
-        if (!uploadErr) {
-          const { data: urlData } = adminSupabase.storage.from("message-images").getPublicUrl(filePath);
-          attachmentMeta.push({ url: urlData.publicUrl, type: att.type, filename: att.type === "document" ? att.filename : undefined });
-        } else {
-          attachmentMeta.push({ url: "", type: att.type, filename: att.type === "document" ? att.filename : undefined });
-        }
-      } catch {
-        attachmentMeta.push({ url: "", type: att.type, filename: att.type === "document" ? att.filename : undefined });
-      }
+  let fileIds: (string | null)[] = new Array(attachments.length).fill(null);
+
+  if (attachments.length > 0) {
+    const anthropicUploads = attachments.map((att) =>
+      uploadToAnthropicFiles(att.base64, att.mediaType, att.filename)
+    );
+
+    if (!isIncognito) {
+      const supabaseUploads = attachments.map(async (att, i) => {
+        try {
+          const fileExt = att.type === "image"
+            ? (att.mediaType.split("/")[1] ?? "jpg")
+            : (att.filename.split(".").pop() ?? "bin");
+          const filePath = `${user.id}/${Date.now()}_${i}.${fileExt}`;
+          const { error: uploadErr } = await adminSupabase.storage
+            .from("message-images")
+            .upload(filePath, Buffer.from(att.base64, "base64"), {
+              contentType: att.mediaType,
+              upsert: false,
+            });
+          if (!uploadErr) {
+            const { data: urlData } = adminSupabase.storage.from("message-images").getPublicUrl(filePath);
+            return { url: urlData.publicUrl, type: att.type, filename: att.type === "document" ? att.filename : undefined };
+          }
+        } catch { /* silent */ }
+        return { url: "", type: att.type, filename: att.type === "document" ? att.filename : undefined };
+      });
+
+      const [supabaseMeta, anthropicIds] = await Promise.all([
+        Promise.all(supabaseUploads),
+        Promise.all(anthropicUploads),
+      ]);
+      attachmentMeta.push(...supabaseMeta);
+      fileIds = anthropicIds;
+    } else {
+      fileIds = await Promise.all(anthropicUploads);
     }
   }
 
@@ -181,6 +220,7 @@ export async function POST(request: NextRequest) {
 
     const firstAtt = attachments[0];
     const firstDocFilename = attachments.find((a) => a.type === "document")?.filename ?? null;
+    const hasFileIds = fileIds.some(Boolean);
     const { error: msgError } = await adminSupabase.from("messages").insert({
       chat_id: currentChatId,
       sender_id: user.id,
@@ -190,6 +230,7 @@ export async function POST(request: NextRequest) {
       attachment_type: firstAtt?.type ?? null,
       attachment_filename: firstDocFilename,
       ...(attachmentMeta.length > 0 ? { metadata: { attachments: attachmentMeta } } : {}),
+      ...(hasFileIds ? { file_ids: fileIds } : {}),
     });
 
     if (msgError) {
@@ -200,31 +241,30 @@ export async function POST(request: NextRequest) {
   let userContent: Anthropic.Messages.MessageParam["content"];
   try {
     if (attachments.length > 0) {
-      const blocks: Array<
-        | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } }
-        | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } | { type: "text"; media_type: "text/plain"; data: string }; title: string }
-        | { type: "text"; text: string }
-      > = [];
-      for (const att of attachments) {
+      const blocks: Anthropic.Messages.ContentBlockParam[] = [];
+      for (let i = 0; i < attachments.length; i++) {
+        const att = attachments[i];
+        const fileId = fileIds[i] ?? null;
         if (att.type === "image") {
-          const VALID_IMG = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
-          const imgMediaType = (VALID_IMG.has(att.mediaType) ? att.mediaType : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
-          blocks.push({
-            type: "image" as const,
-            source: {
-              type: "base64" as const,
-              media_type: imgMediaType,
-              data: att.base64,
-            },
-          });
+          if (fileId) {
+            blocks.push({ type: "image", source: { type: "file", file_id: fileId } } as unknown as Anthropic.Messages.ContentBlockParam);
+          } else {
+            const VALID_IMG = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+            const imgMediaType = (VALID_IMG.has(att.mediaType) ? att.mediaType : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+            blocks.push({ type: "image" as const, source: { type: "base64" as const, media_type: imgMediaType, data: att.base64 } });
+          }
         } else {
-          blocks.push({
-            type: "document" as const,
-            source: att.mediaType === "application/pdf"
-              ? { type: "base64" as const, media_type: "application/pdf" as const, data: att.base64 }
-              : { type: "text" as const, media_type: "text/plain" as const, data: att.base64 },
-            title: att.filename,
-          });
+          if (fileId) {
+            blocks.push({ type: "document", source: { type: "file", file_id: fileId }, title: att.filename } as unknown as Anthropic.Messages.ContentBlockParam);
+          } else {
+            blocks.push({
+              type: "document" as const,
+              source: att.mediaType === "application/pdf"
+                ? { type: "base64" as const, media_type: "application/pdf" as const, data: att.base64 }
+                : { type: "text" as const, media_type: "text/plain" as const, data: att.base64 },
+              title: att.filename,
+            });
+          }
         }
       }
       if (message.trim()) blocks.push({ type: "text" as const, text: message });
@@ -242,12 +282,16 @@ export async function POST(request: NextRequest) {
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({
         role: m.role as "user" | "assistant",
-        content: m.content,
+        content: m.content as Anthropic.Messages.MessageParam["content"],
       })),
     { role: "user" as const, content: userContent },
   ];
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  // Files API beta header needed so Anthropic recognises { type:"file" } sources
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    defaultHeaders: { "anthropic-beta": "files-api-2025-04-14" },
+  });
 
   const responseHeaders: Record<string, string> = {
     "Content-Type": "text/plain; charset=utf-8",
