@@ -502,7 +502,17 @@ export async function POST(request: NextRequest, { params }: Props) {
 
         controller.close();
       } catch (err) {
-        console.error("[api/projects/chat] Stream error:", err instanceof Error ? err.message : String(err));
+        console.error("[api/projects/chat] Stream error:", {
+          errorType: err instanceof Error ? err.constructor.name : typeof err,
+          errorMessage: err instanceof Error ? err.message : String(err),
+          errorStatus: (err as Record<string, unknown>)?.status,
+          errorBody: (err as Record<string, unknown>)?.error,
+          attachmentCount: attachments.length,
+          attachmentTypes: attachments.map((a) => a.type),
+          attachmentMediaTypes: attachments.map((a) => a.mediaType),
+          attachmentSizes: attachments.map((a) => a.fileSize),
+          fullError: String(err),
+        });
         // Best-effort: save any partial response received before the error
         if (currentChatId && fullResponse) {
           const cleanResponse = fullResponse
