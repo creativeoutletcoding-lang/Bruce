@@ -53,6 +53,7 @@ export default async function ChatIdPage({ params }: Props) {
       initialTitle={chat.title ?? "Chat"}
       userColorHex={userColorHex}
       initialModel={preferredModel}
+      currentUserId={user.id}
     />
   );
 }

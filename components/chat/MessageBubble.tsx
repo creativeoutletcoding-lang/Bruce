@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { marked } from "marked";
 import type { MessageRole } from "@/lib/types";
 
@@ -25,6 +25,8 @@ interface MessageBubbleProps {
   imageUrl?: string;
   attachmentType?: string;
   attachmentFilename?: string;
+  canDelete?: boolean;
+  onDelete?: () => void;
 }
 
 function formatTimestamp(dateStr: string): string {
@@ -49,8 +51,45 @@ export default function MessageBubble({
   imageUrl,
   attachmentType,
   attachmentFilename,
+  canDelete = false,
+  onDelete,
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
+  const [longPressActive, setLongPressActive] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressDismiss = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleTouchStart() {
+    if (!canDelete) return;
+    longPressTimer.current = setTimeout(() => {
+      setLongPressActive(true);
+      longPressDismiss.current = setTimeout(() => setLongPressActive(false), 3000);
+    }, 500);
+  }
+
+  function handleTouchMove() {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  }
+
+  function handleTouchEnd() {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  }
+
+  function handleContextMenu(e: React.MouseEvent) {
+    if (!canDelete) return;
+    e.preventDefault();
+    setLongPressActive(true);
+    if (longPressDismiss.current) clearTimeout(longPressDismiss.current);
+    longPressDismiss.current = setTimeout(() => setLongPressActive(false), 3000);
+  }
+
+  function handleDelete() {
+    setLongPressActive(false);
+    if (longPressDismiss.current) clearTimeout(longPressDismiss.current);
+    onDelete?.();
+  }
+
+  const showDeleteBtn = canDelete && (hovered || longPressActive);
   const isUser = isOwn !== undefined ? isOwn : role === "user";
   const isHumanMessage = role === "user";
   const showSenderLabel = isOwn === false && isHumanMessage && Boolean(senderName);
@@ -69,6 +108,10 @@ export default function MessageBubble({
       style={{ ...styles.wrapper, justifyContent: isUser ? "flex-end" : "flex-start" }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onContextMenu={handleContextMenu}
     >
       <div className="msg-group" data-role={role} style={{ ...styles.messageGroup, ...(isUser ? {} : { width: "100%" }) }}>
         {showSenderLabel && (
@@ -162,16 +205,36 @@ export default function MessageBubble({
             )}
           </div>
         )}
-        {timestamp && (
-          <div
-            className="msg-timestamp"
-            style={{
-              ...styles.timestamp,
-              textAlign: isUser ? "right" : "left",
-              visibility: hovered ? "visible" : "hidden",
-            }}
-          >
-            {formatTimestamp(timestamp)}
+        {(timestamp || showDeleteBtn) && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            justifyContent: isUser ? "flex-end" : "flex-start",
+          }}>
+            {showDeleteBtn && (
+              <button
+                onClick={handleDelete}
+                style={styles.deleteButton}
+                aria-label="Delete message"
+              >
+                <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <path d="M2 3.5h10M5.5 3.5V2.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1M3 3.5l.75 7.5a.5.5 0 0 0 .5.5h5.5a.5.5 0 0 0 .5-.5L11 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Delete
+              </button>
+            )}
+            {timestamp && (
+              <span
+                className="msg-timestamp"
+                style={{
+                  ...styles.timestamp,
+                  visibility: hovered ? "visible" : "hidden",
+                }}
+              >
+                {formatTimestamp(timestamp)}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -240,6 +303,20 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.6875rem",
     color: "var(--text-tertiary)",
     padding: "0 2px",
+    flexShrink: 0,
+  },
+  deleteButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "2px 7px",
+    fontSize: "0.6875rem",
+    color: "var(--text-tertiary)",
+    background: "transparent",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-sm)",
+    cursor: "pointer",
+    flexShrink: 0,
   },
   docChip: {
     display: "flex",

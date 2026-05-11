@@ -586,19 +586,7 @@ async function _POST(request: NextRequest, { params }: Props) {
             }
           }
         }
-        // DEBUG: surface error in the chat UI instead of silently failing
-        // REVERT THIS BEFORE SHIPPING
-        const errStatus = (err as Record<string, unknown>)?.status;
-        const errBody = (err as Record<string, unknown>)?.error;
-        const debugText = [
-          `[DEBUG] API error — ${err instanceof Error ? err.constructor.name : typeof err}`,
-          `status: ${errStatus ?? "none"}`,
-          `message: ${err instanceof Error ? err.message : String(err)}`,
-          `body: ${errBody ? JSON.stringify(errBody) : "none"}`,
-          `attachments: ${attachments.map((a) => `${a.type}/${a.mediaType}(b64len=${a.base64?.length ?? 0})`).join(", ")}`,
-        ].join("\n");
-        controller.enqueue(encoder.encode(debugText));
-        controller.close();
+        controller.error(err);
       }
     },
   });

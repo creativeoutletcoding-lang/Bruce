@@ -428,8 +428,9 @@ export default function ProjectChatView({
         }
       }
     } catch (err) {
-      console.error("[ProjectChatView] Send error:", err);
-      setError("Something went wrong. Tap to retry.");
+      console.error("[ProjectChatView] sendMessage failed:", err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setError(`${errMsg} — tap to retry`);
       setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
     } finally {
       setIsStreaming(false);
@@ -441,6 +442,14 @@ export default function ProjectChatView({
   }
 
   function handleSend() { sendMessage(input.trim()); }
+
+  async function deleteMessage(msgId: string) {
+    if (msgId.startsWith("tmp-")) return;
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    const supabase = createClient();
+    const { error } = await supabase.from("messages").delete().eq("id", msgId);
+    if (error) console.error("[ProjectChatView] deleteMessage failed:", error);
+  }
 
   function handleRetry() {
     setError(null);
@@ -466,6 +475,7 @@ export default function ProjectChatView({
         userColorHex={userColorHex}
         streamingStatus={workingStatus}
         currentUserId={currentUserId}
+        onDeleteMessage={deleteMessage}
       />
 
       {error && (

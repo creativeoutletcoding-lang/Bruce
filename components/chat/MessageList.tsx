@@ -37,9 +37,10 @@ interface MessageListProps {
   userColorHex?: string;
   streamingStatus?: string | null;
   currentUserId?: string;
+  onDeleteMessage?: (id: string) => void;
 }
 
-export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus, currentUserId }: MessageListProps) {
+export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus, currentUserId, onDeleteMessage }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -152,6 +153,13 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 senderName={msg.senderName}
                 senderColorHex={msg.senderColorHex}
                 attachments={resolvedAttachments}
+                canDelete={
+                  !msg.isStreaming &&
+                  !msg.id.startsWith("tmp-") &&
+                  currentUserId !== undefined &&
+                  msg.sender_id === currentUserId
+                }
+                onDelete={onDeleteMessage ? () => onDeleteMessage(msg.id) : undefined}
               />
               );
             }

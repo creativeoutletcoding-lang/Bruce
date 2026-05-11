@@ -694,7 +694,13 @@ CREATE POLICY "messages_insert"
     )
   );
 
--- Messages are never updated or deleted by users
+CREATE POLICY "messages_delete"
+  ON messages FOR DELETE
+  USING (
+    sender_id = auth.uid()
+  );
+
+-- Messages are never updated by users
 
 -- Family thread message access: membership-gated (replaces type-only policies from mig 007).
 CREATE POLICY "family_thread_messages_select"

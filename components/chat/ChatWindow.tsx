@@ -17,6 +17,7 @@ interface ChatWindowProps {
   initialTitle: string;
   userColorHex?: string;
   initialModel?: string;
+  currentUserId?: string;
 }
 
 export default function ChatWindow({
@@ -25,6 +26,7 @@ export default function ChatWindow({
   initialTitle,
   userColorHex,
   initialModel,
+  currentUserId,
 }: ChatWindowProps) {
   const { incognito } = useChatContext();
   const [isClient, setIsClient] = useState(() => typeof window !== "undefined");
@@ -38,6 +40,7 @@ export default function ChatWindow({
       imageUrl: (m.image_url as string | undefined) ?? undefined,
       attachmentType: (m.attachment_type as string | undefined) ?? undefined,
       attachmentFilename: (m.attachment_filename as string | undefined) ?? undefined,
+      sender_id: m.sender_id ?? undefined,
     }))
   );
   const [title, setTitle] = useState(initialTitle);
@@ -58,15 +61,16 @@ export default function ChatWindow({
     const supabase = createClient();
     const { data } = await supabase
       .from("messages")
-      .select("id, role, content, created_at, metadata, image_url, attachment_type, attachment_filename")
+      .select("id, sender_id, role, content, created_at, metadata, image_url, attachment_type, attachment_filename")
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true })
       .limit(100);
     if (!data) return;
     setMessages(
-      (data as Array<{ id: string; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null; image_url?: string | null; attachment_type?: string | null; attachment_filename?: string | null }>).map(
+      (data as Array<{ id: string; sender_id: string | null; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null; image_url?: string | null; attachment_type?: string | null; attachment_filename?: string | null }>).map(
         (m) => ({
           id: m.id,
+          sender_id: m.sender_id ?? undefined,
           role: m.role as MessageRole,
           content: m.content,
           created_at: m.created_at,
@@ -162,6 +166,7 @@ export default function ChatWindow({
       role: "user",
       content: text,
       created_at: new Date().toISOString(),
+      sender_id: currentUserId,
       attachments: filesToSend.length > 0
         ? filesToSend.map((f) => ({ url: f.previewUrl ?? "", type: f.type, filename: f.filename }))
         : undefined,
@@ -354,8 +359,9 @@ export default function ChatWindow({
         }
       }
     } catch (err) {
-      console.error("[ChatWindow] Send error:", err);
-      setError("Something went wrong. Tap to retry.");
+      console.error("[ChatWindow] handleSend failed:", err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setError(`${errMsg} — tap to retry`);
       setMessages((prev) =>
         prev.filter((m) => m.id !== streamMsgId)
       );
@@ -367,12 +373,19 @@ export default function ChatWindow({
 
   function handleRetry() {
     setError(null);
-    // Re-send the last user message
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     if (lastUser) {
       setInput(lastUser.content);
       setMessages((prev) => prev.filter((m) => m.id !== lastUser.id));
     }
+  }
+
+  async function deleteMessage(msgId: string) {
+    if (msgId.startsWith("tmp-")) return;
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    const supabase = createClient();
+    const { error } = await supabase.from("messages").delete().eq("id", msgId);
+    if (error) console.error("[ChatWindow] deleteMessage failed:", error);
   }
 
   return (
@@ -390,7 +403,7 @@ export default function ChatWindow({
         </div>
       )}
 
-      <MessageList messages={messages} onRefresh={loadMessages} userColorHex={userColorHex} streamingStatus={workingStatus} />
+      <MessageList messages={messages} onRefresh={loadMessages} userColorHex={userColorHex} streamingStatus={workingStatus} currentUserId={currentUserId} onDeleteMessage={deleteMessage} />
 
       {error && (
         <div style={styles.errorRow}>
