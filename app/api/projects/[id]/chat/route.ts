@@ -41,6 +41,33 @@ interface Props {
 }
 
 export async function POST(request: NextRequest, { params }: Props) {
+  // Startup log — confirms route is being hit and shows attachment shape
+  console.log("[api/projects/chat] POST start", {
+    projectId: (await params).id,
+    url: request.url,
+    contentType: request.headers.get("content-type"),
+  });
+
+  let outerErr: unknown;
+  try {
+  return await _POST(request, { params });
+  } catch (err) {
+    outerErr = err;
+    console.error("[api/projects/chat] UNHANDLED outer error:", {
+      errorType: err instanceof Error ? err.constructor.name : typeof err,
+      errorMessage: err instanceof Error ? err.message : String(err),
+      errorStatus: (err as Record<string, unknown>)?.status,
+      errorBody: (err as Record<string, unknown>)?.error,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    return new Response(
+      JSON.stringify({ error: String(outerErr) }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+}
+
+async function _POST(request: NextRequest, { params }: Props) {
   const { id: projectId } = await params;
   const supabase = await createClient();
   const {
@@ -58,6 +85,16 @@ export async function POST(request: NextRequest, { params }: Props) {
   const { message, chatId, currentLocation, userTimestamp: rawTimestamp, attachments: rawAttachments } = body;
   const attachments = rawAttachments ?? [];
   const userTimestamp = rawTimestamp ?? new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+
+  console.log("[api/projects/chat] request parsed", {
+    projectId,
+    chatId,
+    messageLength: message?.length ?? 0,
+    attachmentCount: attachments.length,
+    attachmentTypes: attachments.map((a) => a.type),
+    attachmentMediaTypes: attachments.map((a) => a.mediaType),
+    attachmentBase64Lengths: attachments.map((a) => a.base64?.length ?? 0),
+  });
 
   if (!message?.trim() && attachments.length === 0) return new Response("Message required", { status: 400 });
 
@@ -315,7 +352,17 @@ export async function POST(request: NextRequest, { params }: Props) {
       userContent = message;
     }
   } catch (contentErr) {
-    console.error('[api/projects/chat] content block construction failed:', contentErr);
+    console.error("[api/projects/chat] content block construction failed:", {
+      errorType: contentErr instanceof Error ? contentErr.constructor.name : typeof contentErr,
+      errorMessage: contentErr instanceof Error ? contentErr.message : String(contentErr),
+      attachments: attachments.map((a) => ({
+        type: a.type,
+        mediaType: a.mediaType,
+        filename: a.filename,
+        base64Length: a.base64?.length ?? 0,
+        base64Prefix: a.base64?.slice(0, 20),
+      })),
+    });
     return new Response("Content processing failed", { status: 500 });
   }
 
@@ -376,6 +423,15 @@ export async function POST(request: NextRequest, { params }: Props) {
         let currentMessages = [...anthropicMessages];
         let webSearchUsed = false;
         let browseUrlUsed = false;
+
+        console.log("[api/projects/chat] starting Anthropic stream", {
+          model: preferredModel,
+          messageCount: currentMessages.length,
+          lastMessageRole: currentMessages.at(-1)?.role,
+          lastMessageContentType: Array.isArray(currentMessages.at(-1)?.content)
+            ? (currentMessages.at(-1)?.content as Array<{ type: string }>).map((b) => b.type)
+            : typeof currentMessages.at(-1)?.content,
+        });
 
         while (true) {
           const stream = anthropic.messages.stream({
