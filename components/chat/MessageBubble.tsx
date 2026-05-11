@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { marked } from "marked";
+import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
 
 export interface MessageAttachment {
@@ -55,41 +57,66 @@ export default function MessageBubble({
   onDelete,
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
-  const [longPressActive, setLongPressActive] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressDismiss = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressActive = useRef(false);
 
-  function handleTouchStart() {
+  // ── Dismiss context menu on outside click/touch (same pattern as Sidebar) ──
+  useEffect(() => {
+    if (!ctxMenu) return;
+    function dismiss(e: Event) {
+      if (ctxMenuRef.current?.contains(e.target as Node)) return;
+      setCtxMenu(null);
+    }
+    const timerId = setTimeout(() => {
+      document.addEventListener("mousedown", dismiss);
+      document.addEventListener("touchstart", dismiss, { passive: true });
+    }, 0);
+    return () => {
+      clearTimeout(timerId);
+      document.removeEventListener("mousedown", dismiss);
+      document.removeEventListener("touchstart", dismiss);
+    };
+  }, [ctxMenu]);
+
+  function handleLongPressStart(e: React.TouchEvent) {
     if (!canDelete) return;
+    const touch = e.touches[0];
+    const x = touch.clientX;
+    const y = touch.clientY;
     longPressTimer.current = setTimeout(() => {
-      setLongPressActive(true);
-      longPressDismiss.current = setTimeout(() => setLongPressActive(false), 3000);
+      lightHaptic();
+      longPressActive.current = true;
+      setCtxMenu({ x, y });
+      longPressTimer.current = null;
     }, 500);
   }
 
-  function handleTouchMove() {
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  function handleLongPressMove() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
   }
 
-  function handleTouchEnd() {
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  function handleLongPressEnd(e: React.TouchEvent) {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    if (longPressActive.current) {
+      e.preventDefault();
+      longPressActive.current = false;
+    }
   }
 
   function handleContextMenu(e: React.MouseEvent) {
     if (!canDelete) return;
     e.preventDefault();
-    setLongPressActive(true);
-    if (longPressDismiss.current) clearTimeout(longPressDismiss.current);
-    longPressDismiss.current = setTimeout(() => setLongPressActive(false), 3000);
+    setCtxMenu({ x: e.clientX, y: e.clientY });
   }
 
-  function handleDelete() {
-    setLongPressActive(false);
-    if (longPressDismiss.current) clearTimeout(longPressDismiss.current);
-    onDelete?.();
-  }
-
-  const showDeleteBtn = canDelete && (hovered || longPressActive);
   const isUser = isOwn !== undefined ? isOwn : role === "user";
   const isHumanMessage = role === "user";
   const showSenderLabel = isOwn === false && isHumanMessage && Boolean(senderName);
@@ -108,9 +135,9 @@ export default function MessageBubble({
       style={{ ...styles.wrapper, justifyContent: isUser ? "flex-end" : "flex-start" }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onTouchStart={handleLongPressStart}
+      onTouchMove={handleLongPressMove}
+      onTouchEnd={handleLongPressEnd}
       onContextMenu={handleContextMenu}
     >
       <div className="msg-group" data-role={role} style={{ ...styles.messageGroup, ...(isUser ? {} : { width: "100%" }) }}>
@@ -205,39 +232,46 @@ export default function MessageBubble({
             )}
           </div>
         )}
-        {(timestamp || showDeleteBtn) && (
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-            justifyContent: isUser ? "flex-end" : "flex-start",
-          }}>
-            {showDeleteBtn && (
-              <button
-                onClick={handleDelete}
-                style={styles.deleteButton}
-                aria-label="Delete message"
-              >
-                <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <path d="M2 3.5h10M5.5 3.5V2.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1M3 3.5l.75 7.5a.5.5 0 0 0 .5.5h5.5a.5.5 0 0 0 .5-.5L11 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                Delete
-              </button>
-            )}
-            {timestamp && (
-              <span
-                className="msg-timestamp"
-                style={{
-                  ...styles.timestamp,
-                  visibility: hovered ? "visible" : "hidden",
-                }}
-              >
-                {formatTimestamp(timestamp)}
-              </span>
-            )}
+        {timestamp && (
+          <div
+            className="msg-timestamp"
+            style={{
+              ...styles.timestamp,
+              textAlign: isUser ? "right" : "left",
+              visibility: hovered ? "visible" : "hidden",
+            }}
+          >
+            {formatTimestamp(timestamp)}
           </div>
         )}
       </div>
+
+      {/* Floating context menu — portal to body, same pattern as Sidebar */}
+      {ctxMenu && createPortal(
+        <div
+          ref={ctxMenuRef}
+          style={{
+            position: "fixed",
+            top: ctxMenu.y,
+            left: ctxMenu.x,
+            zIndex: 9999,
+            backgroundColor: "var(--bg-primary)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-md)",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
+            overflow: "hidden",
+            minWidth: "130px",
+          }}
+        >
+          <button
+            style={styles.contextMenuItem}
+            onClick={() => { setCtxMenu(null); onDelete?.(); }}
+          >
+            Delete
+          </button>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -303,20 +337,19 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.6875rem",
     color: "var(--text-tertiary)",
     padding: "0 2px",
-    flexShrink: 0,
   },
-  deleteButton: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "4px",
-    padding: "2px 7px",
-    fontSize: "0.6875rem",
-    color: "var(--text-tertiary)",
-    background: "transparent",
-    border: "1px solid var(--border)",
-    borderRadius: "var(--radius-sm)",
+  contextMenuItem: {
+    width: "100%",
+    padding: "10px 14px",
+    textAlign: "left" as const,
+    fontSize: "0.875rem",
+    fontWeight: "500",
+    color: "#c0392b",
     cursor: "pointer",
-    flexShrink: 0,
+    backgroundColor: "transparent",
+    transition: "background-color var(--transition)",
+    display: "block",
+    border: "none",
   },
   docChip: {
     display: "flex",
