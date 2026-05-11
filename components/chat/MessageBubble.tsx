@@ -76,89 +76,92 @@ export default function MessageBubble({
             {senderName}
           </div>
         )}
-        <div
-          style={
-            isHumanMessage
-              ? {
-                  ...styles.bubble,
-                  whiteSpace: "pre-wrap",
-                  ...styles.userBubble,
-                  backgroundColor: isUser
-                    ? (bubbleColorHex ?? "var(--accent)")
-                    : (senderColorHex ?? "var(--accent)"),
-                }
-              : styles.assistantContent
-          }
-        >
-          {showDots ? (
-            <span style={{ display: "inline-flex", flexDirection: "column", gap: "4px" }}>
-              <span style={styles.dotsRow}>
-                <span style={styles.dot1} />
-                <span style={styles.dot2} />
-                <span style={styles.dot3} />
+        {/* Images rendered directly in thread — no bubble wrapper */}
+        {imageAttachments.length > 0 && (
+          <div style={{
+            display: "flex",
+            gap: "6px",
+            flexWrap: "wrap",
+            justifyContent: isUser ? "flex-end" : "flex-start",
+          }}>
+            {imageAttachments.map((img, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={i}
+                src={img.url}
+                alt=""
+                style={{
+                  maxWidth: "260px",
+                  width: imageAttachments.length > 1 ? "128px" : undefined,
+                  height: imageAttachments.length > 1 ? "128px" : "auto",
+                  borderRadius: "var(--radius-lg)",
+                  objectFit: "cover",
+                  display: "block",
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Doc chips rendered directly in thread — no bubble wrapper */}
+        {docAttachments.length > 0 && (
+          <div style={{
+            display: "flex",
+            gap: "4px",
+            flexWrap: "wrap",
+            justifyContent: isUser ? "flex-end" : "flex-start",
+          }}>
+            {docAttachments.map((doc, i) => (
+              <div key={i} style={styles.docChip}>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: "var(--text-secondary)" }}>
+                  <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                  <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+                <span style={styles.docChipName}>{doc.filename ?? "Document"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Bubble only when there is text content or streaming dots */}
+        {(showDots || content) && (
+          <div
+            style={
+              isHumanMessage
+                ? {
+                    ...styles.bubble,
+                    whiteSpace: "pre-wrap",
+                    ...styles.userBubble,
+                    backgroundColor: isUser
+                      ? (bubbleColorHex ?? "var(--accent)")
+                      : (senderColorHex ?? "var(--accent)"),
+                  }
+                : styles.assistantContent
+            }
+          >
+            {showDots ? (
+              <span style={{ display: "inline-flex", flexDirection: "column", gap: "4px" }}>
+                <span style={styles.dotsRow}>
+                  <span style={styles.dot1} />
+                  <span style={styles.dot2} />
+                  <span style={styles.dot3} />
+                </span>
+                {workingStatus && (
+                  <span style={styles.indicatorStatus}>{workingStatus}</span>
+                )}
               </span>
-              {workingStatus && (
-                <span style={styles.indicatorStatus}>{workingStatus}</span>
-              )}
-            </span>
-          ) : (
-            <>
-              {imageAttachments.length > 0 && (
-                <div style={{
-                  display: "flex",
-                  gap: "4px",
-                  flexWrap: "wrap",
-                  marginBottom: content || docAttachments.length > 0 ? "8px" : 0,
-                }}>
-                  {imageAttachments.map((img, i) => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={i}
-                      src={img.url}
-                      alt=""
-                      style={{
-                        maxWidth: "240px",
-                        width: imageAttachments.length > 1 ? "112px" : "100%",
-                        height: imageAttachments.length > 1 ? "112px" : "auto",
-                        borderRadius: "var(--radius-md)",
-                        objectFit: "cover",
-                        display: "block",
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-              {docAttachments.length > 0 && (
-                <div style={{
-                  display: "flex",
-                  gap: "4px",
-                  flexWrap: "wrap",
-                  marginBottom: content ? "8px" : 0,
-                }}>
-                  {docAttachments.map((doc, i) => (
-                    <div key={i} style={styles.docChip}>
-                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                        <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-                        <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                      </svg>
-                      <span style={styles.docChipName}>{doc.filename ?? "Document"}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {content && (
-                role === "assistant" ? (
-                  <div
-                    className="bruce-md"
-                    dangerouslySetInnerHTML={{ __html: marked(content) as string }}
-                  />
-                ) : (
-                  <span style={styles.content}>{content}</span>
-                )
-              )}
-            </>
-          )}
-        </div>
+            ) : (
+              role === "assistant" ? (
+                <div
+                  className="bruce-md"
+                  dangerouslySetInnerHTML={{ __html: marked(content) as string }}
+                />
+              ) : (
+                <span style={styles.content}>{content}</span>
+              )
+            )}
+          </div>
+        )}
         {timestamp && (
           <div
             className="msg-timestamp"
@@ -244,8 +247,9 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "6px",
     padding: "6px 10px",
     borderRadius: "var(--radius-sm)",
-    border: "1px solid rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(255,255,255,0.1)",
+    border: "0.5px solid var(--border-strong)",
+    backgroundColor: "var(--bg-secondary)",
+    color: "var(--text-secondary)",
   },
   docChipName: {
     fontSize: "0.8125rem",
@@ -253,5 +257,6 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
     maxWidth: "180px",
+    color: "var(--text-primary)",
   },
 };

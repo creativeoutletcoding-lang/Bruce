@@ -14,17 +14,28 @@ import type {
 } from "@/lib/types";
 
 const MAX_ATTACH_SIZE = 10 * 1024 * 1024;
+const HOME_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp"]);
+const HOME_EXT_MEDIA: Record<string, string> = {
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+  gif: "image/gif", webp: "image/webp", bmp: "image/jpeg",
+};
 
 function processAttachment(file: File): Promise<FileAttachment | null> {
-  const isImage = file.type.startsWith("image/");
+  // Mobile camera capture often delivers file.type as "" — fall back to extension
+  const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+  const isImage = file.type.startsWith("image/") || HOME_IMAGE_EXTS.has(ext);
   const type: "image" | "document" = isImage ? "image" : "document";
-  const mediaType = isImage ? (file.type || "image/jpeg") : (file.type || "text/plain");
+  const mediaType = isImage
+    ? (file.type.startsWith("image/") ? file.type : (HOME_EXT_MEDIA[ext] ?? "image/jpeg"))
+    : (file.type || "text/plain");
   const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
-      resolve({ type, base64: dataUrl.split(",")[1], mediaType, filename: file.name, fileSize: file.size, previewUrl });
+      const base64 = dataUrl?.split(",")[1];
+      if (!base64) { resolve(null); return; }
+      resolve({ type, base64, mediaType, filename: file.name, fileSize: file.size, previewUrl });
     };
     reader.onerror = () => resolve(null);
     reader.readAsDataURL(file);

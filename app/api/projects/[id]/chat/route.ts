@@ -289,11 +289,13 @@ export async function POST(request: NextRequest, { params }: Props) {
       > = [];
       for (const att of attachments) {
         if (att.type === "image") {
+          const VALID_IMG = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+          const imgMediaType = (VALID_IMG.has(att.mediaType) ? att.mediaType : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
           blocks.push({
             type: "image" as const,
             source: {
               type: "base64" as const,
-              media_type: att.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+              media_type: imgMediaType,
               data: att.base64,
             },
           });

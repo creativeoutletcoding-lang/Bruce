@@ -31,17 +31,33 @@ function normalizeDocMimeType(file: File): string {
   return "text/plain";
 }
 
+const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp"]);
+const EXT_MEDIA_TYPE: Record<string, string> = {
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+  gif: "image/gif", webp: "image/webp", bmp: "image/jpeg",
+};
+
 function processFile(file: File): Promise<FileAttachment | null> {
-  const isImage = file.type.startsWith("image/");
+  // Mobile camera capture often delivers file.type as "" — fall back to extension
+  const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+  const isImage = file.type.startsWith("image/") || IMAGE_EXTS.has(ext);
   const type: "image" | "document" = isImage ? "image" : "document";
-  const mediaType = isImage ? file.type || "image/jpeg" : normalizeDocMimeType(file);
+
+  let mediaType: string;
+  if (isImage) {
+    mediaType = file.type.startsWith("image/") ? file.type : (EXT_MEDIA_TYPE[ext] ?? "image/jpeg");
+  } else {
+    mediaType = normalizeDocMimeType(file);
+  }
+
   const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
 
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
-      const base64 = dataUrl.split(",")[1];
+      const base64 = dataUrl?.split(",")[1];
+      if (!base64) { resolve(null); return; }
       resolve({ type, base64, mediaType, filename: file.name, fileSize: file.size, previewUrl });
     };
     reader.onerror = async () => {
