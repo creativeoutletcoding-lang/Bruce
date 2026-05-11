@@ -222,11 +222,11 @@ async function moveToFolder(
   fileId: string,
   folderId: string
 ): Promise<void> {
-  // Get current parents
   const meta = await fetch(
     `${DRIVE_API}/files/${fileId}?fields=parents`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
+  if (!meta.ok) throw new Error(`Drive metadata fetch failed: ${meta.status}`);
   const { parents } = (await meta.json()) as { parents?: string[] };
   const removeParents = (parents ?? []).join(",");
 
@@ -235,11 +235,15 @@ async function moveToFolder(
   if (removeParents) url.searchParams.set("removeParents", removeParents);
   url.searchParams.set("fields", "id");
 
-  await fetch(url.toString(), {
+  const res = await fetch(url.toString(), {
     method: "PATCH",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({}),
   });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Drive move to folder failed: ${res.status} — ${err}`);
+  }
 }
 
 // ── Public API ───────────────────────────────────────────────
@@ -288,7 +292,7 @@ export async function createSheet(
   if (data) {
     const values = buildRowValues(data);
     if (values.length > 0) {
-      await sheetsPut(token, `/${fileId}/values/A1`, {
+      await sheetsPut(token, `/${fileId}/values/A1?valueInputOption=USER_ENTERED`, {
         range: "A1",
         majorDimension: "ROWS",
         values,
@@ -333,7 +337,7 @@ export async function addTab(
   if (data) {
     const values = buildRowValues(data);
     if (values.length > 0) {
-      await sheetsPut(token, `/${fileId}/values/${encodeURIComponent(tabName + "!A1")}`, {
+      await sheetsPut(token, `/${fileId}/values/${encodeURIComponent(tabName + "!A1")}?valueInputOption=USER_ENTERED`, {
         range: `${tabName}!A1`,
         majorDimension: "ROWS",
         values,
@@ -385,7 +389,7 @@ export async function updateCells(
   const token = await getValidToken(userId);
   const fullRange = `${sheetName}!${range}`;
 
-  await sheetsPut(token, `/${fileId}/values/${encodeURIComponent(fullRange)}`, {
+  await sheetsPut(token, `/${fileId}/values/${encodeURIComponent(fullRange)}?valueInputOption=USER_ENTERED`, {
     range: fullRange,
     majorDimension: "ROWS",
     values,
