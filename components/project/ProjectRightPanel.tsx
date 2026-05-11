@@ -28,7 +28,6 @@ function formatRelativeTime(dateStr: string): string {
 const CONNECTORS = [
   { name: "Google Drive", icon: "🗂️" },
   { name: "Google Calendar", icon: "📅" },
-  { name: "QuickBooks", icon: "💼" },
   { name: "Precise Petcare", icon: "🐾" },
   { name: "Melio", icon: "💳" },
 ];
