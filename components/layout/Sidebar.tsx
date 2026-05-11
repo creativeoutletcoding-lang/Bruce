@@ -219,6 +219,14 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [isRenameSaving, setIsRenameSaving] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
+  // ── project last-viewed tracking (for activity dots) ────────────────────
+  const [projectLastViewed, setProjectLastViewed] = useState<Record<string, string>>(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      return JSON.parse(localStorage.getItem("bruce_project_last_viewed") ?? "{}") as Record<string, string>;
+    } catch { return {}; }
+  });
+
   // ── pull-to-refresh ──────────────────────────────────────────────────────
   const supabase = createClient();
   const contentRef = useRef<HTMLDivElement>(null);
@@ -256,6 +264,17 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const activeThreadId = pathname.startsWith("/family/threads/")
     ? pathname.split("/family/threads/")[1]?.split("/")[0]
     : null;
+
+  // Mark a project as viewed when the user navigates into it
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const now = new Date().toISOString();
+    setProjectLastViewed((prev) => {
+      const updated = { ...prev, [activeProjectId]: now };
+      localStorage.setItem("bruce_project_last_viewed", JSON.stringify(updated));
+      return updated;
+    });
+  }, [activeProjectId]);
 
   // ── data loaders ─────────────────────────────────────────────────────────
   const loadChats = useCallback(async () => {
@@ -874,12 +893,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
-  function getMemberPipColor(index: number): string {
-    const opacities = [1, 0.7, 0.45, 0.25];
-    const opacity = opacities[index] ?? 0.2;
-    return `rgba(15, 110, 86, ${opacity})`;
-  }
-
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -1098,11 +1111,10 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     >
                       {project.icon && <span style={styles.projectItemIcon}>{project.icon}</span>}
                       <span style={styles.projectItemName}>{project.name}</span>
-                      <div style={styles.memberPips}>
-                        {Array.from({ length: Math.min(project.member_count, 4) }).map((_, i) => (
-                          <div key={i} style={{ ...styles.memberPip, backgroundColor: getMemberPipColor(i) }} />
-                        ))}
-                      </div>
+                      {!isActive && project.last_chat_date != null &&
+                        (!projectLastViewed[project.id] || project.last_chat_date > projectLastViewed[project.id]) && (
+                        <div style={styles.projectActivityDot} />
+                      )}
                     </button>
                   );
                 })
@@ -1942,16 +1954,12 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  memberPips: {
-    display: "flex",
-    alignItems: "center",
-    gap: "3px",
-    flexShrink: 0,
-  },
-  memberPip: {
-    width: "6px",
-    height: "6px",
+  projectActivityDot: {
+    width: "7px",
+    height: "7px",
     borderRadius: "var(--radius-full)",
+    backgroundColor: "var(--accent)",
+    flexShrink: 0,
   },
 
   // Project edit mode — group headers

@@ -220,7 +220,7 @@ export default function MessageInput({
           style={{ ...styles.sendButton, ...(!canSend ? styles.sendButtonDisabled : {}) }}
           aria-label="Send message"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="M8 12V4M4 8l4-4 4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
@@ -317,7 +317,7 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "var(--bg-secondary)",
     border: "1px solid var(--border-strong)",
     borderRadius: "var(--radius-lg)",
-    padding: "8px 8px 8px 8px",
+    padding: "10px 10px 10px 14px",
     transition: "border-color var(--transition)",
     width: "100%",
     maxWidth: 780,
@@ -325,8 +325,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   attachButton: {
     flexShrink: 0,
-    width: "32px",
-    height: "32px",
+    width: "36px",
+    height: "36px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -347,16 +347,16 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: "1.5",
     resize: "none",
     outline: "none",
-    minHeight: "24px",
-    maxHeight: "120px",
+    minHeight: "44px",
+    maxHeight: "160px",
     overflowY: "auto",
-    padding: "4px 0",
+    padding: "6px 0",
     caretColor: "var(--accent)",
   },
   sendButton: {
     flexShrink: 0,
-    width: "32px",
-    height: "32px",
+    width: "36px",
+    height: "36px",
     borderRadius: "var(--radius-md)",
     backgroundColor: "var(--accent)",
     color: "#ffffff",

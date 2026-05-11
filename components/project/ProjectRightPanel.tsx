@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import type { ProjectMemberDetail, File as BruceFile } from "@/lib/types";
 
 function getMimeIcon(mimeType: string | null): string {
@@ -25,13 +24,6 @@ function formatRelativeTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-const CONNECTORS = [
-  { name: "Google Drive", icon: "🗂️" },
-  { name: "Google Calendar", icon: "📅" },
-  { name: "Precise Petcare", icon: "🐾" },
-  { name: "Melio", icon: "💳" },
-];
-
 interface ProjectRightPanelProps {
   projectId: string;
   canEdit: boolean;
@@ -54,39 +46,6 @@ interface ProjectRightPanelProps {
   onIsolateMemoryChange: (v: boolean) => void;
 }
 
-function SectionHeader({
-  label,
-  open,
-  onToggle,
-  action,
-}: {
-  label: string;
-  open: boolean;
-  onToggle: () => void;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div style={sectionStyles.header} onClick={onToggle}>
-      <span style={sectionStyles.label}>{label}</span>
-      <div style={sectionStyles.headerRight} onClick={(e) => e.stopPropagation()}>
-        {action}
-        <button style={sectionStyles.chevronBtn} onClick={onToggle} aria-label={open ? "Collapse" : "Expand"}>
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 150ms ease" }}
-            aria-hidden="true"
-          >
-            <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function ProjectRightPanel({
   canEdit,
   instructions,
@@ -103,209 +62,72 @@ export default function ProjectRightPanel({
   isolateMemory,
   onIsolateMemoryChange,
 }: ProjectRightPanelProps) {
-  const [open, setOpen] = useState({
-    instructions: true,
-    files: true,
-    connectors: false,
-    members: true,
-    memory: false,
-  });
-
-  function toggle(section: keyof typeof open) {
-    setOpen((prev) => ({ ...prev, [section]: !prev[section] }));
-  }
-
   return (
     <div style={styles.panel}>
       {/* Instructions */}
       <div style={styles.section}>
-        <SectionHeader
-          label="Instructions"
-          open={open.instructions}
-          onToggle={() => toggle("instructions")}
-          action={
-            isSavingInstructions ? (
-              <span style={styles.savingText}>Saving…</span>
-            ) : undefined
-          }
-        />
-        {open.instructions && (
-          <div style={styles.content}>
-            {canEdit ? (
-              <textarea
-                value={instructions}
-                onChange={(e) => onInstructionsChange(e.target.value)}
-                onBlur={onInstructionsSave}
-                placeholder="Describe how Bruce should behave in this project…"
-                style={styles.textarea}
-                rows={5}
-              />
-            ) : (
-              <p style={styles.readonlyText}>
-                {instructions || (
-                  <span style={{ color: "var(--text-tertiary)" }}>No instructions set.</span>
-                )}
-              </p>
-            )}
-          </div>
-        )}
+        <div style={styles.sectionHeader}>
+          <span style={styles.sectionLabel}>Instructions</span>
+          {isSavingInstructions && <span style={styles.savingText}>Saving…</span>}
+        </div>
+        <div style={styles.content}>
+          {canEdit ? (
+            <textarea
+              value={instructions}
+              onChange={(e) => onInstructionsChange(e.target.value)}
+              onBlur={onInstructionsSave}
+              placeholder="Describe how Bruce should behave in this project…"
+              style={styles.textarea}
+              rows={5}
+            />
+          ) : (
+            <p style={styles.readonlyText}>
+              {instructions || (
+                <span style={{ color: "var(--text-tertiary)" }}>No instructions set.</span>
+              )}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Files */}
       <div style={styles.section}>
-        <SectionHeader
-          label="Files"
-          open={open.files}
-          onToggle={() => toggle("files")}
-          action={
-            canEdit ? (
-              <button
-                style={styles.actionLink}
-                onClick={onOpenFilePicker}
-              >
-                Attach
-              </button>
-            ) : undefined
-          }
-        />
-        {open.files && (
-          <div style={styles.content}>
-            {files.length === 0 ? (
-              <p style={styles.empty}>No files attached.</p>
-            ) : (
-              <div style={styles.fileList}>
-                {files.map((f) => (
-                  <div key={f.id} style={styles.fileRow}>
-                    <span style={styles.fileIcon}>{getMimeIcon(f.mime_type)}</span>
-                    <div style={styles.fileInfo}>
-                      {f.drive_url ? (
-                        <a
-                          href={f.drive_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={styles.fileLink}
-                        >
-                          {f.name}
-                        </a>
-                      ) : (
-                        <span style={styles.fileName}>{f.name}</span>
-                      )}
-                      <span style={styles.fileMeta}>{formatRelativeTime(f.last_updated)}</span>
-                    </div>
-                    {canEdit && (
-                      <button
-                        style={styles.removeBtn}
-                        onClick={() => onDetachFile(f.id)}
-                        title={`Remove ${f.name}`}
+        <div style={styles.sectionHeader}>
+          <span style={styles.sectionLabel}>Files</span>
+          {canEdit && (
+            <button style={styles.actionLink} onClick={onOpenFilePicker}>
+              Attach
+            </button>
+          )}
+        </div>
+        <div style={styles.content}>
+          {files.length === 0 ? (
+            <p style={styles.empty}>No files attached.</p>
+          ) : (
+            <div style={styles.fileList}>
+              {files.map((f) => (
+                <div key={f.id} style={styles.fileRow}>
+                  <span style={styles.fileIcon}>{getMimeIcon(f.mime_type)}</span>
+                  <div style={styles.fileInfo}>
+                    {f.drive_url ? (
+                      <a
+                        href={f.drive_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={styles.fileLink}
                       >
-                        ×
-                      </button>
+                        {f.name}
+                      </a>
+                    ) : (
+                      <span style={styles.fileName}>{f.name}</span>
                     )}
+                    <span style={styles.fileMeta}>{formatRelativeTime(f.last_updated)}</span>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Connectors */}
-      <div style={styles.section}>
-        <SectionHeader
-          label="Connectors"
-          open={open.connectors}
-          onToggle={() => toggle("connectors")}
-        />
-        {open.connectors && (
-          <div style={styles.content}>
-            <div style={styles.connectorList}>
-              {CONNECTORS.map((c) => (
-                <div key={c.name} style={styles.connectorRow}>
-                  <span style={styles.connectorIcon}>{c.icon}</span>
-                  <span style={styles.connectorName}>{c.name}</span>
-                  <span style={styles.notConnected}>Not connected</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Memory */}
-      <div style={styles.section}>
-        <SectionHeader
-          label="Memory"
-          open={open.memory}
-          onToggle={() => toggle("memory")}
-        />
-        {open.memory && (
-          <div style={styles.content}>
-            <div style={styles.toggleRow}>
-              <div style={styles.toggleText}>
-                <span style={styles.toggleLabel}>Keep memories within this project</span>
-                <span style={styles.toggleSubtitle}>
-                  When on, memories from this project won&apos;t carry over into other conversations with the same members
-                </span>
-              </div>
-              <button
-                role="switch"
-                aria-checked={isolateMemory}
-                onClick={() => canEdit && onIsolateMemoryChange(!isolateMemory)}
-                style={{
-                  ...styles.toggleTrack,
-                  ...(isolateMemory ? styles.toggleTrackOn : {}),
-                  cursor: canEdit ? "pointer" : "default",
-                  opacity: canEdit ? 1 : 0.5,
-                }}
-              >
-                <span
-                  style={{
-                    ...styles.toggleThumb,
-                    ...(isolateMemory ? styles.toggleThumbOn : {}),
-                  }}
-                />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Members */}
-      <div style={styles.section}>
-        <SectionHeader
-          label="Members"
-          open={open.members}
-          onToggle={() => toggle("members")}
-          action={
-            canEdit ? (
-              <button style={styles.actionLink} onClick={onOpenMemberPicker}>
-                Add
-              </button>
-            ) : undefined
-          }
-        />
-        {open.members && (
-          <div style={styles.content}>
-            <div style={styles.memberList}>
-              {members.map((m) => (
-                <div key={m.id} style={styles.memberRow}>
-                  <div style={{ ...styles.memberAvatar, backgroundColor: m.color_hex }}>
-                    {m.name[0].toUpperCase()}
-                  </div>
-                  <span style={styles.memberName}>{m.name}</span>
-                  <span
-                    style={{
-                      ...styles.roleBadge,
-                      ...(m.role === "owner" ? styles.roleBadgeOwner : {}),
-                    }}
-                  >
-                    {m.role}
-                  </span>
-                  {canEdit && m.id !== userId && m.role !== "owner" && (
+                  {canEdit && (
                     <button
                       style={styles.removeBtn}
-                      onClick={() => onRemoveMember(m.id)}
-                      title={`Remove ${m.name}`}
+                      onClick={() => onDetachFile(f.id)}
+                      title={`Remove ${f.name}`}
                     >
                       ×
                     </button>
@@ -313,44 +135,81 @@ export default function ProjectRightPanel({
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* Members */}
+      <div style={styles.section}>
+        <div style={styles.sectionHeader}>
+          <span style={styles.sectionLabel}>Members</span>
+          {canEdit && (
+            <button style={styles.actionLink} onClick={onOpenMemberPicker}>
+              Add
+            </button>
+          )}
+        </div>
+        <div style={styles.content}>
+          <div style={styles.memberList}>
+            {members.map((m) => (
+              <div key={m.id} style={styles.memberRow}>
+                <div style={{ ...styles.memberAvatar, backgroundColor: m.color_hex }}>
+                  {m.name[0].toUpperCase()}
+                </div>
+                <span style={styles.memberName}>{m.name}</span>
+                <span
+                  style={{
+                    ...styles.roleBadge,
+                    ...(m.role === "owner" ? styles.roleBadgeOwner : {}),
+                  }}
+                >
+                  {m.role}
+                </span>
+                {canEdit && m.id !== userId && m.role !== "owner" && (
+                  <button
+                    style={styles.removeBtn}
+                    onClick={() => onRemoveMember(m.id)}
+                    title={`Remove ${m.name}`}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
-        )}
+        </div>
+      </div>
+
+      {/* Memory */}
+      <div style={styles.section}>
+        <div style={styles.memoryRow}>
+          <div style={styles.memoryLabelGroup}>
+            <span style={styles.sectionLabel}>Memory</span>
+            <span style={styles.memorySubtitle}>Keep memories within this project</span>
+          </div>
+          <button
+            role="switch"
+            aria-checked={isolateMemory}
+            onClick={() => canEdit && onIsolateMemoryChange(!isolateMemory)}
+            style={{
+              ...styles.toggleTrack,
+              ...(isolateMemory ? styles.toggleTrackOn : {}),
+              cursor: canEdit ? "pointer" : "default",
+              opacity: canEdit ? 1 : 0.5,
+            }}
+          >
+            <span
+              style={{
+                ...styles.toggleThumb,
+                ...(isolateMemory ? styles.toggleThumbOn : {}),
+              }}
+            />
+          </button>
+        </div>
       </div>
     </div>
   );
 }
-
-const sectionStyles: Record<string, React.CSSProperties> = {
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "10px 16px",
-    cursor: "pointer",
-    userSelect: "none",
-    borderBottom: "0.5px solid var(--border)",
-  },
-  label: {
-    fontSize: "0.6875rem",
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: "0.07em",
-    color: "var(--text-tertiary)",
-  },
-  headerRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-  },
-  chevronBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "var(--text-tertiary)",
-    cursor: "pointer",
-    padding: "2px",
-  },
-};
 
 const styles: Record<string, React.CSSProperties> = {
   panel: {
@@ -360,6 +219,20 @@ const styles: Record<string, React.CSSProperties> = {
   },
   section: {
     borderBottom: "0.5px solid var(--border)",
+  },
+  sectionHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "10px 16px",
+    borderBottom: "0.5px solid var(--border)",
+  },
+  sectionLabel: {
+    fontSize: "0.6875rem",
+    fontWeight: "600",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.07em",
+    color: "var(--text-tertiary)",
   },
   content: {
     padding: "12px 16px",
@@ -438,48 +311,22 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
 
-  // Connectors
-  connectorList: { display: "flex", flexDirection: "column", gap: "8px" },
-  connectorRow: { display: "flex", alignItems: "center", gap: "8px" },
-  connectorIcon: { fontSize: "1rem", flexShrink: 0 },
-  connectorName: {
-    flex: 1,
-    fontSize: "0.8125rem",
-    fontWeight: "500",
-    color: "var(--text-primary)",
-  },
-  notConnected: {
-    fontSize: "0.6875rem",
-    fontWeight: "500",
-    padding: "2px 7px",
-    borderRadius: "var(--radius-full)",
-    backgroundColor: "var(--bg-secondary)",
-    border: "0.5px solid var(--border)",
-    color: "var(--text-tertiary)",
-    flexShrink: 0,
-  },
-
-  // Memory toggle
-  toggleRow: {
+  // Memory
+  memoryRow: {
     display: "flex",
-    alignItems: "flex-start",
-    gap: "12px",
+    alignItems: "center",
     justifyContent: "space-between",
+    padding: "12px 16px",
+    gap: "12px",
   },
-  toggleText: {
+  memoryLabelGroup: {
     display: "flex",
     flexDirection: "column",
-    gap: "3px",
+    gap: "2px",
     flex: 1,
     minWidth: 0,
   },
-  toggleLabel: {
-    fontSize: "0.8125rem",
-    fontWeight: "500",
-    color: "var(--text-primary)",
-    lineHeight: 1.4,
-  },
-  toggleSubtitle: {
+  memorySubtitle: {
     fontSize: "0.75rem",
     color: "var(--text-tertiary)",
     lineHeight: 1.4,
@@ -494,7 +341,6 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     padding: 0,
     transition: "background-color 150ms ease",
-    marginTop: "2px",
   },
   toggleTrackOn: {
     backgroundColor: "var(--accent)",
