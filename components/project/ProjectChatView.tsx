@@ -66,7 +66,18 @@ export default function ProjectChatView({
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
-  const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const key = `bruce_project_initial_files_${chatId}`;
+      const stored = sessionStorage.getItem(key);
+      if (stored) {
+        sessionStorage.removeItem(key);
+        return JSON.parse(stored) as FileAttachment[];
+      }
+    } catch { /* sessionStorage unavailable */ }
+    return [];
+  });
 
   const messagesRef = useRef(messages);
   const instructionsFiredRef = useRef(false);
@@ -190,9 +201,11 @@ export default function ProjectChatView({
   }, [chatId, currentUserId]);
 
   useEffect(() => {
-    if (initialInput && !initialSentRef.current) {
+    const hasInitialFiles = attachedFiles.length > 0;
+    if ((initialInput || hasInitialFiles) && !initialSentRef.current) {
       initialSentRef.current = true;
-      sendMessage(initialInput, undefined);
+      sendMessage(initialInput ?? "", hasInitialFiles ? attachedFiles : undefined);
+      if (hasInitialFiles) setAttachedFiles([]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

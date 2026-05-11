@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import ProjectRightPanel from "./ProjectRightPanel";
+import type { FileAttachment } from "@/components/chat/MessageInput";
 import type {
   ProjectMemberDetail,
   File as BruceFile,
@@ -11,6 +12,24 @@ import type {
   UserSummary,
   DriveFile,
 } from "@/lib/types";
+
+const MAX_ATTACH_SIZE = 10 * 1024 * 1024;
+
+function processAttachment(file: File): Promise<FileAttachment | null> {
+  const isImage = file.type.startsWith("image/");
+  const type: "image" | "document" = isImage ? "image" : "document";
+  const mediaType = isImage ? (file.type || "image/jpeg") : (file.type || "text/plain");
+  const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      resolve({ type, base64: dataUrl.split(",")[1], mediaType, filename: file.name, fileSize: file.size, previewUrl });
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
 
 interface ProjectHomeProps {
   projectId: string;
@@ -97,6 +116,8 @@ export default function ProjectHome({
   const [chats, setChats] = useState<ChatPreview[]>(initialChats);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [inlineInput, setInlineInput] = useState("");
+  const [inlineFiles, setInlineFiles] = useState<FileAttachment[]>([]);
+  const inlineFileInputRef = useRef<HTMLInputElement>(null);
 
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -267,9 +288,20 @@ export default function ProjectHome({
 
   // ── Chats ─────────────────────────────────────────────────────
 
+  async function handleInlineFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (!files.length) return;
+    const results = await Promise.all(
+      files.filter((f) => f.size <= MAX_ATTACH_SIZE).map(processAttachment)
+    );
+    const valid = results.filter((r): r is FileAttachment => r !== null);
+    if (valid.length > 0) setInlineFiles((prev) => [...prev, ...valid]);
+  }
+
   async function handleSendInlineMessage() {
     const text = inlineInput.trim();
-    if (!text || isCreatingChat) return;
+    if ((!text && !inlineFiles.length) || isCreatingChat) return;
     setIsCreatingChat(true);
     try {
       const { data: chat, error } = await supabase
@@ -284,7 +316,21 @@ export default function ProjectHome({
         .single();
 
       if (error || !chat) return;
-      router.push(`/projects/${projectId}/chat/${chat.id}?q=${encodeURIComponent(text)}`);
+
+      if (inlineFiles.length > 0) {
+        try {
+          // Strip previewUrl (object URLs won't survive navigation)
+          sessionStorage.setItem(
+            `bruce_project_initial_files_${chat.id}`,
+            JSON.stringify(inlineFiles.map(({ previewUrl: _, ...rest }) => rest))
+          );
+        } catch { /* sessionStorage unavailable */ }
+      }
+
+      const url = text
+        ? `/projects/${projectId}/chat/${chat.id}?q=${encodeURIComponent(text)}`
+        : `/projects/${projectId}/chat/${chat.id}`;
+      router.push(url);
     } finally {
       setIsCreatingChat(false);
     }
@@ -391,31 +437,78 @@ export default function ProjectHome({
             </div>
 
             {/* New chat input */}
-            <div style={styles.newChatBox}>
-              <textarea
-                value={inlineInput}
-                onChange={(e) => setInlineInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendInlineMessage();
-                  }
-                }}
-                placeholder={`Start a conversation about ${projectName}…`}
-                style={styles.newChatTextarea}
-                rows={2}
-                disabled={isCreatingChat}
-              />
-              <button
-                style={{
-                  ...styles.newChatSend,
-                  ...(!inlineInput.trim() || isCreatingChat ? styles.newChatSendDisabled : {}),
-                }}
-                onClick={handleSendInlineMessage}
-                disabled={!inlineInput.trim() || isCreatingChat}
-              >
-                {isCreatingChat ? "…" : "↑"}
-              </button>
+            <div style={styles.newChatWrapper}>
+              {inlineFiles.length > 0 && (
+                <div style={styles.newChatChipsRow}>
+                  {inlineFiles.map((file, i) => (
+                    <div key={i} style={styles.newChatChip}>
+                      {file.type === "image" && file.previewUrl ? (
+                        <div style={styles.newChatThumbWrapper}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={file.previewUrl} alt="" style={styles.newChatThumb} />
+                          <button onClick={() => setInlineFiles((p) => p.filter((_, idx) => idx !== i))} style={styles.newChatChipClose} aria-label="Remove">×</button>
+                        </div>
+                      ) : (
+                        <div style={styles.newChatDocChip}>
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: "var(--text-secondary)" }}>
+                            <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                            <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                          </svg>
+                          <span style={styles.newChatDocName}>{file.filename}</span>
+                          <button onClick={() => setInlineFiles((p) => p.filter((_, idx) => idx !== i))} style={styles.newChatChipClose} aria-label="Remove">×</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={styles.newChatBox}>
+                <input
+                  ref={inlineFileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.txt,.md,.csv,image/*"
+                  style={{ display: "none" }}
+                  onChange={handleInlineFileChange}
+                />
+                <button
+                  onClick={() => inlineFileInputRef.current?.click()}
+                  style={styles.newChatAttachBtn}
+                  aria-label="Attach file"
+                  type="button"
+                  disabled={isCreatingChat}
+                >
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                    <path d="M15 9.5l-5.5 5.5a4 4 0 0 1-5.657-5.657l6-6a2.5 2.5 0 0 1 3.535 3.535L7.5 12.5a1 1 0 0 1-1.414-1.414L11.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+                <textarea
+                  value={inlineInput}
+                  onChange={(e) => setInlineInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendInlineMessage();
+                    }
+                  }}
+                  placeholder={`Start a conversation about ${projectName}…`}
+                  style={styles.newChatTextarea}
+                  rows={1}
+                  disabled={isCreatingChat}
+                />
+                <button
+                  style={{
+                    ...styles.newChatSend,
+                    ...(!inlineInput.trim() && !inlineFiles.length || isCreatingChat ? styles.newChatSendDisabled : {}),
+                  }}
+                  onClick={handleSendInlineMessage}
+                  disabled={(!inlineInput.trim() && !inlineFiles.length) || isCreatingChat}
+                >
+                  <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M8 12V4M4 8l4-4 4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Chats list */}
@@ -736,14 +829,80 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   // New chat input
+  newChatWrapper: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+  },
+  newChatChipsRow: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap" as const,
+  },
+  newChatChip: {
+    flexShrink: 0,
+  },
+  newChatThumbWrapper: {
+    position: "relative" as const,
+    display: "inline-block",
+  },
+  newChatThumb: {
+    width: "48px",
+    height: "48px",
+    borderRadius: "var(--radius-md)",
+    objectFit: "cover" as const,
+    display: "block",
+  },
+  newChatDocChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "6px 10px",
+    borderRadius: "var(--radius-md)",
+    border: "1px solid var(--border)",
+    backgroundColor: "var(--bg-secondary)",
+    maxWidth: "200px",
+  },
+  newChatDocName: {
+    fontSize: "0.8125rem",
+    color: "var(--text-primary)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+    maxWidth: "120px",
+  },
+  newChatChipClose: {
+    fontSize: "0.875rem",
+    lineHeight: 1,
+    color: "var(--text-tertiary)",
+    cursor: "pointer",
+    padding: "2px 4px",
+    flexShrink: 0,
+    backgroundColor: "transparent",
+    border: "none",
+  },
   newChatBox: {
     display: "flex",
     alignItems: "flex-end",
     gap: "8px",
     backgroundColor: "var(--bg-secondary)",
-    border: "0.5px solid var(--border)",
+    border: "1px solid var(--border-strong)",
     borderRadius: "var(--radius-lg)",
-    padding: "12px 14px",
+    padding: "10px 10px 10px 14px",
+  },
+  newChatAttachBtn: {
+    flexShrink: 0,
+    width: "36px",
+    height: "36px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "var(--text-tertiary)",
+    cursor: "pointer",
+    borderRadius: "var(--radius-sm)",
+    border: "none",
+    background: "transparent",
+    padding: 0,
   },
   newChatTextarea: {
     flex: 1,
@@ -755,23 +914,25 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     outline: "none",
     fontFamily: "inherit",
-    padding: "0",
-    maxHeight: "120px",
+    padding: "6px 0",
+    minHeight: "44px",
+    maxHeight: "160px",
     overflowY: "auto" as const,
+    caretColor: "var(--accent)",
   },
   newChatSend: {
-    width: "32px",
-    height: "32px",
-    borderRadius: "var(--radius-full)",
+    width: "36px",
+    height: "36px",
+    borderRadius: "var(--radius-md)",
     backgroundColor: "var(--accent)",
     color: "#fff",
-    fontSize: "1.125rem",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     cursor: "pointer",
     flexShrink: 0,
     transition: "opacity var(--transition)",
+    border: "none",
   },
   newChatSendDisabled: {
     opacity: 0.35,
