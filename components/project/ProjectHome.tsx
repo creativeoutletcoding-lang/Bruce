@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import ProjectRightPanel from "./ProjectRightPanel";
+import { useChatContext } from "@/components/layout/ChatShell";
 import type { FileAttachment } from "@/components/chat/MessageInput";
 import type {
   ProjectMemberDetail,
@@ -94,6 +95,7 @@ export default function ProjectHome({
 }: ProjectHomeProps) {
   const router = useRouter();
   const supabase = createClient();
+  const { openDrawer } = useChatContext();
   const canEdit = userRole === "owner";
 
   // ── Instructions ──────────────────────────────────────────────
@@ -409,6 +411,21 @@ export default function ProjectHome({
 
   return (
     <div style={styles.page}>
+      {/* Mobile top bar with hamburger — hidden on desktop via .mobile-only */}
+      <div className="mobile-only" style={styles.mobileTopBar}>
+        <button
+          onClick={openDrawer}
+          style={styles.hamburger}
+          aria-label="Open menu"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </button>
+        <span style={styles.mobileTopBarTitle}>{projectName}</span>
+        <div style={{ width: 36 }} />
+      </div>
+
       <div className="ph-body">
         {/* Left column */}
         <div className="ph-left">
@@ -779,6 +796,38 @@ const styles: Record<string, React.CSSProperties> = {
     height: "100%",
     overflow: "hidden",
     backgroundColor: "var(--bg-primary)",
+  },
+
+  mobileTopBar: {
+    height: "var(--topbar-height)",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0 16px",
+    borderBottom: "1px solid var(--border)",
+    backgroundColor: "var(--bg-primary)",
+    flexShrink: 0,
+  },
+  hamburger: {
+    width: "36px",
+    height: "36px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "var(--text-secondary)",
+    borderRadius: "var(--radius-sm)",
+    cursor: "pointer",
+    border: "none",
+    background: "transparent",
+    padding: 0,
+    flexShrink: 0,
+  },
+  mobileTopBarTitle: {
+    fontSize: "0.9375rem",
+    fontWeight: "600",
+    color: "var(--text-primary)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
   },
 
   // Left column inner scroll content

@@ -510,7 +510,7 @@ export async function POST(request: NextRequest, { params }: Props) {
           attachmentCount: attachments.length,
           attachmentTypes: attachments.map((a) => a.type),
           attachmentMediaTypes: attachments.map((a) => a.mediaType),
-          attachmentSizes: attachments.map((a) => a.fileSize),
+          attachmentSizes: attachments.map((a) => (a as Record<string, unknown>).fileSize ?? "unknown"),
           fullError: String(err),
         });
         // Best-effort: save any partial response received before the error
