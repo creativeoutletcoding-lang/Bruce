@@ -26,6 +26,13 @@ import {
   BROWSE_SYSTEM_BLOCK,
   executeSearchTool,
 } from "@/lib/searchTools";
+import {
+  DOCUMENT_TOOLS,
+  DOCUMENT_TOOL_NAMES,
+  DOCUMENT_SYSTEM_BLOCK,
+  DOCUMENT_STATUS_SENTINEL,
+  executeDocumentTool,
+} from "@/lib/documents/documentTools";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -230,9 +237,10 @@ export async function POST(request: NextRequest) {
     GMAIL_SYSTEM_BLOCK +
     IMAGE_VISION_BLOCK +
     SEARCH_SYSTEM_BLOCK +
-    BROWSE_SYSTEM_BLOCK;
+    BROWSE_SYSTEM_BLOCK +
+    DOCUMENT_SYSTEM_BLOCK;
 
-  const tools = [...CALENDAR_TOOLS, ...GMAIL_TOOLS, SEARCH_TOOL, BROWSE_TOOL];
+  const tools = [...CALENDAR_TOOLS, ...GMAIL_TOOLS, SEARCH_TOOL, BROWSE_TOOL, ...DOCUMENT_TOOLS];
 
   let userContent: Anthropic.Messages.MessageParam["content"];
   try {
@@ -315,6 +323,10 @@ export async function POST(request: NextRequest) {
           );
           if (toolCalls.length === 0) break;
 
+          if (toolCalls.some((tc) => DOCUMENT_TOOL_NAMES.has(tc.name))) {
+            controller.enqueue(encoder.encode(DOCUMENT_STATUS_SENTINEL));
+          }
+
           const toolResults = await Promise.all(
             toolCalls.map(async (tc) => {
               let result: string;
@@ -326,6 +338,12 @@ export async function POST(request: NextRequest) {
                   );
                 } else if (GMAIL_TOOL_NAMES.has(tc.name)) {
                   result = await executeGmailTool(
+                    tc.name,
+                    tc.input as Record<string, unknown>,
+                    user.id
+                  );
+                } else if (DOCUMENT_TOOL_NAMES.has(tc.name)) {
+                  result = await executeDocumentTool(
                     tc.name,
                     tc.input as Record<string, unknown>,
                     user.id
