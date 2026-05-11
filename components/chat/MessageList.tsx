@@ -48,6 +48,7 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
   const touchStartY = useRef<number>(-1);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
 
   function handleTouchStart(e: React.TouchEvent<HTMLDivElement>) {
     if ((containerRef.current?.scrollTop ?? 1) === 0) {
@@ -160,6 +161,8 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                   msg.sender_id === currentUserId
                 }
                 onDelete={onDeleteMessage ? () => onDeleteMessage(msg.id) : undefined}
+                swipeOpen={openSwipeId === msg.id}
+                onSwipeOpen={() => setOpenSwipeId(msg.id)}
               />
               );
             }

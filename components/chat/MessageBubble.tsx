@@ -29,7 +29,13 @@ interface MessageBubbleProps {
   attachmentFilename?: string;
   canDelete?: boolean;
   onDelete?: () => void;
+  // Swipe coordination: parent controls whether this swipe is open
+  swipeOpen?: boolean;
+  onSwipeOpen?: () => void;
 }
+
+const REVEAL_WIDTH = 80;
+const SWIPE_THRESHOLD = 56;
 
 function formatTimestamp(dateStr: string): string {
   return new Date(dateStr).toLocaleTimeString("en-US", {
@@ -55,14 +61,34 @@ export default function MessageBubble({
   attachmentFilename,
   canDelete = false,
   onDelete,
+  swipeOpen = false,
+  onSwipeOpen,
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressActive = useRef(false);
 
-  // ── Dismiss context menu on outside click/touch (same pattern as Sidebar) ──
+  // ── Swipe state ──────────────────────────────────────────────────────────────
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const swipeOffsetRef = useRef(0);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const startOffset = useRef(0);
+  const isDragging = useRef(false);
+  const gestureAborted = useRef(false);
+
+  useEffect(() => { swipeOffsetRef.current = swipeOffset; }, [swipeOffset]);
+
+  // Close this swipe when the parent opens a different one
+  useEffect(() => {
+    if (!swipeOpen && swipeOffsetRef.current !== 0) {
+      setIsSwiping(false);
+      setSwipeOffset(0);
+    }
+  }, [swipeOpen]);
+
+  // ── Dismiss context menu on outside click ────────────────────────────────────
   useEffect(() => {
     if (!ctxMenu) return;
     function dismiss(e: Event) {
@@ -71,50 +97,73 @@ export default function MessageBubble({
     }
     const timerId = setTimeout(() => {
       document.addEventListener("mousedown", dismiss);
-      document.addEventListener("touchstart", dismiss, { passive: true });
     }, 0);
     return () => {
       clearTimeout(timerId);
       document.removeEventListener("mousedown", dismiss);
-      document.removeEventListener("touchstart", dismiss);
     };
   }, [ctxMenu]);
 
-  function handleLongPressStart(e: React.TouchEvent) {
-    if (!canDelete) return;
-    const touch = e.touches[0];
-    const x = touch.clientX;
-    const y = touch.clientY;
-    longPressTimer.current = setTimeout(() => {
-      lightHaptic();
-      longPressActive.current = true;
-      setCtxMenu({ x, y });
-      longPressTimer.current = null;
-    }, 500);
-  }
-
-  function handleLongPressMove() {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  }
-
-  function handleLongPressEnd(e: React.TouchEvent) {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-    if (longPressActive.current) {
-      e.preventDefault();
-      longPressActive.current = false;
-    }
-  }
-
+  // Desktop right-click only — on touch devices, long-press shows the native
+  // text selection menu (don't intercept it).
   function handleContextMenu(e: React.MouseEvent) {
     if (!canDelete) return;
+    const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+    if (isTouchDevice) return;
     e.preventDefault();
     setCtxMenu({ x: e.clientX, y: e.clientY });
+  }
+
+  // ── Swipe touch handlers ─────────────────────────────────────────────────────
+  function handleSwipeTouchStart(e: React.TouchEvent) {
+    if (!canDelete) return;
+    const t = e.touches[0];
+    touchStartX.current = t.clientX;
+    touchStartY.current = t.clientY;
+    startOffset.current = swipeOffsetRef.current;
+    isDragging.current = false;
+    gestureAborted.current = false;
+  }
+
+  function handleSwipeTouchMove(e: React.TouchEvent) {
+    if (!canDelete || gestureAborted.current) return;
+    const t = e.touches[0];
+    const totalDx = t.clientX - touchStartX.current;
+    const totalDy = Math.abs(t.clientY - touchStartY.current);
+
+    if (!isDragging.current) {
+      if (Math.abs(totalDx) < 6 && totalDy < 6) return;
+      if (totalDy > Math.abs(totalDx)) {
+        gestureAborted.current = true;
+        return;
+      }
+      isDragging.current = true;
+      onSwipeOpen?.();
+    }
+
+    const newOffset = Math.max(-REVEAL_WIDTH, Math.min(0, startOffset.current + totalDx));
+    setIsSwiping(true);
+    setSwipeOffset(newOffset);
+  }
+
+  function handleSwipeTouchEnd() {
+    if (!isDragging.current) {
+      // Tap (no drag) — close if open
+      if (swipeOffsetRef.current < 0) {
+        setIsSwiping(false);
+        setSwipeOffset(0);
+      }
+      return;
+    }
+    isDragging.current = false;
+    setIsSwiping(false);
+    const currentOffset = swipeOffsetRef.current;
+    if (currentOffset < -SWIPE_THRESHOLD) {
+      lightHaptic();
+      setSwipeOffset(-REVEAL_WIDTH);
+    } else {
+      setSwipeOffset(0);
+    }
   }
 
   const isUser = isOwn !== undefined ? isOwn : role === "user";
@@ -131,15 +180,37 @@ export default function MessageBubble({
   const docAttachments = resolvedAttachments.filter((a) => a.type === "document");
 
   return (
-    <div
-      style={{ ...styles.wrapper, justifyContent: isUser ? "flex-end" : "flex-start" }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onTouchStart={handleLongPressStart}
-      onTouchMove={handleLongPressMove}
-      onTouchEnd={handleLongPressEnd}
-      onContextMenu={handleContextMenu}
-    >
+    <div style={{ position: "relative", overflow: "hidden" }}>
+      {/* Delete button — revealed by swipe, sits behind the content layer */}
+      {canDelete && (
+        <button
+          style={styles.deleteReveal}
+          onClick={() => { setSwipeOffset(0); onDelete?.(); }}
+          aria-label="Delete message"
+        >
+          Delete
+        </button>
+      )}
+
+      {/* Content row — translates left to reveal delete button */}
+      <div
+        style={{
+          ...styles.wrapper,
+          justifyContent: isUser ? "flex-end" : "flex-start",
+          transform: swipeOffset !== 0 ? `translateX(${swipeOffset}px)` : undefined,
+          transition: isSwiping ? "none" : "transform 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",
+          position: "relative",
+          zIndex: 1,
+          touchAction: canDelete ? "pan-y" : undefined,
+          backgroundColor: "var(--bg-primary)",
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onTouchStart={handleSwipeTouchStart}
+        onTouchMove={handleSwipeTouchMove}
+        onTouchEnd={handleSwipeTouchEnd}
+        onContextMenu={handleContextMenu}
+      >
       <div className="msg-group" data-role={role} style={{ ...styles.messageGroup, ...(isUser ? {} : { width: "100%" }) }}>
         {showSenderLabel && (
           <div style={{ fontSize: "0.6875rem", fontWeight: 500, color: senderColorHex ?? "var(--text-secondary)", padding: "0 2px", marginBottom: "1px" }}>
@@ -245,8 +316,9 @@ export default function MessageBubble({
           </div>
         )}
       </div>
+      </div>
 
-      {/* Floating context menu — portal to body, same pattern as Sidebar */}
+      {/* Floating context menu — portal to body (desktop right-click) */}
       {ctxMenu && createPortal(
         <div
           ref={ctxMenuRef}
@@ -278,6 +350,21 @@ export default function MessageBubble({
 
 const styles: Record<string, React.CSSProperties> = {
   wrapper: { display: "flex", padding: "2px 16px" },
+  deleteReveal: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: `${REVEAL_WIDTH}px`,
+    backgroundColor: "#c0392b",
+    color: "#ffffff",
+    fontSize: "0.875rem",
+    fontWeight: "600",
+    border: "none",
+    cursor: "pointer",
+    zIndex: 0,
+    letterSpacing: "0.01em",
+  },
   messageGroup: { display: "flex", flexDirection: "column", gap: "3px" },
   bubble: {
     padding: "10px 14px",
