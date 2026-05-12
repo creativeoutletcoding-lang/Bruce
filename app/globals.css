@@ -8,7 +8,6 @@
   /* Accent */
   --accent: #0f6e56;
   --accent-hover: #0a5a45;
-  --color-bruce-text-accent: #0a5240;
 
   /* Backgrounds */
   --bg-primary: #ffffff;
@@ -58,8 +57,6 @@
 
     --border: #27272a;
     --border-strong: #3f3f46;
-
-    --color-bruce-text-accent: #4a9e8a;
 
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4),
@@ -1172,7 +1169,7 @@ span[class*="typingDots"] > span:nth-child(3),
 .bruce-md li { margin: 0.25em 0; line-height: 1.5; }
 .bruce-md li p { margin: 0; }
 .bruce-md > * + * { margin-top: 0.35em; }
-.bruce-md strong, .bruce-md b { font-weight: 600; color: var(--color-bruce-text-accent); }
+.bruce-md strong, .bruce-md b { font-weight: 600; color: inherit; }
 .bruce-md em { font-style: italic; }
 .bruce-md hr { border: none; border-top: 1px solid rgba(255,255,255,0.15); margin: 0.4em 0; }
 .bruce-md code { background: rgba(255,255,255,0.08); padding: 0.1em 0.3em; border-radius: 3px; font-family: monospace; font-size: 0.9em; }
