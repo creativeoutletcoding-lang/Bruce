@@ -9,6 +9,7 @@ import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import type { FileAttachment } from "./MessageInput";
 import type { ChatMessage } from "./MessageList";
+import { DEFAULT_MODEL } from "@/lib/models";
 
 interface NewChatOrchestratorProps {
   userName: string;
@@ -27,9 +28,19 @@ export default function NewChatOrchestrator({
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
+  const [model, setModel] = useState<string>(() => {
+    if (typeof window === "undefined") return DEFAULT_MODEL;
+    return localStorage.getItem("bruce:model") ?? DEFAULT_MODEL;
+  });
 
-  function handleSuggestion(text: string) {
-    setInput(text);
+  async function handleModelChange(id: string) {
+    setModel(id);
+    if (typeof window !== "undefined") localStorage.setItem("bruce:model", id);
+    await fetch("/api/users/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_model: id }),
+    }).catch(() => {});
   }
 
   const handleSend = useCallback(async () => {
@@ -181,15 +192,17 @@ export default function NewChatOrchestrator({
     return (
       <div style={styles.container}>
         <TopBar title="New Chat" hasMessages={false} />
-        <WelcomeScreen userName={userName} onSuggestion={handleSuggestion} />
-        <MessageInput
-          value={input}
-          onChange={setInput}
+        <WelcomeScreen
+          userName={userName}
+          inputValue={input}
+          onInputChange={setInput}
           onSend={handleSend}
           disabled={isStreaming}
           attachedFiles={attachedFiles}
           onFilesAttach={(files) => setAttachedFiles((prev) => [...prev, ...files])}
           onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
+          model={model}
+          onModelChange={handleModelChange}
         />
       </div>
     );

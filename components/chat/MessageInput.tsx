@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, type ReactNode } from "react";
 import { lightHaptic } from "@/lib/utils/haptics";
 
 export interface FileAttachment {
@@ -113,6 +113,8 @@ interface MessageInputProps {
   attachedFiles?: FileAttachment[];
   onFilesAttach?: (files: FileAttachment[]) => void;
   onFileRemove?: (index: number) => void;
+  containerStyle?: React.CSSProperties;
+  modelPicker?: ReactNode;
 }
 
 export default function MessageInput({
@@ -124,6 +126,8 @@ export default function MessageInput({
   attachedFiles = [],
   onFilesAttach,
   onFileRemove,
+  containerStyle,
+  modelPicker,
 }: MessageInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -189,7 +193,7 @@ export default function MessageInput({
   const canSend = !disabled && (value.trim().length > 0 || attachedFiles.length > 0);
 
   return (
-    <div className="msg-input-container" style={styles.container}>
+    <div className="msg-input-container" style={{ ...styles.container, ...containerStyle }}>
       {attachmentErrors.length > 0 && (
         <div style={styles.errorsBlock}>
           {attachmentErrors.map((err, i) => (
@@ -260,6 +264,7 @@ export default function MessageInput({
           style={styles.textarea}
           aria-label="Message input"
         />
+        {modelPicker}
         <button
           onClick={() => { if (canSend) { lightHaptic(); onSend(); } }}
           disabled={!canSend}

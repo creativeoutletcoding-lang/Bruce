@@ -299,6 +299,59 @@ span[class*="typingDots"] > span:nth-child(3),
 }
 
 /* ============================================================
+   WELCOME SCREEN — pill buttons + input card reset
+   ============================================================ */
+
+.welcome-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+.welcome-pill:hover {
+  border-color: #0F6E56;
+  color: #0F6E56;
+  background-color: rgba(15, 110, 86, 0.06);
+}
+.welcome-pill:active {
+  background-color: rgba(15, 110, 86, 0.12);
+}
+
+.welcome-pills-row {
+  scrollbar-width: none;
+}
+.welcome-pills-row::-webkit-scrollbar {
+  display: none;
+}
+
+/* On mobile, the welcome input is a centered card — undo the flat-bar overrides */
+@media (max-width: 768px) {
+  .welcome-input-wrapper .msg-input-container {
+    padding: 0 !important;
+    border-top: none !important;
+    border-radius: 0 !important;
+  }
+  .welcome-input-wrapper .msg-input-row {
+    border-radius: var(--radius-lg) !important;
+    border: 1px solid var(--border-strong) !important;
+    background-color: var(--bg-secondary) !important;
+    max-width: 780px !important;
+    margin: 0 auto !important;
+    padding: 10px 10px 10px 14px !important;
+  }
+}
+
+/* ============================================================
    FOCUS RINGS
    ============================================================ */
 
