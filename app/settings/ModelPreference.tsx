@@ -36,7 +36,7 @@ export default function ModelPreference({ initialModel }: ModelPreferenceProps) 
             padding: "14px 16px",
             borderRadius: "var(--radius-md)",
             border: `1px solid ${currentModel === m.id ? "var(--accent)" : "var(--border)"}`,
-            backgroundColor: currentModel === m.id ? "rgba(15, 110, 86, 0.06)" : "transparent",
+            backgroundColor: currentModel === m.id ? "var(--active-bg)" : "transparent",
             cursor: "pointer",
             textAlign: "left",
             width: "100%",

@@ -34,6 +34,9 @@
   --topbar-height: 52px;
   --mobile-nav-height: 56px;
 
+  /* Active / selection highlight */
+  --active-bg: rgba(15, 110, 86, 0.35);
+
   /* Animation */
   --transition: 150ms ease;
 
@@ -57,6 +60,8 @@
 
     --border: #27272a;
     --border-strong: #3f3f46;
+
+    --active-bg: rgba(15, 110, 86, 0.50);
 
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4),
@@ -398,7 +403,7 @@ span[class*="typingDots"] > span:nth-child(3),
 .admin-nav-item--active {
   color: #ffffff;
   font-weight: 600;
-  background-color: rgba(15, 110, 86, 0.08);
+  background-color: var(--active-bg);
   border-left-color: var(--accent);
 }
 
@@ -1182,8 +1187,8 @@ span[class*="typingDots"] > span:nth-child(3),
 .bruce-md th, .bruce-md td { white-space: nowrap; padding: 0.4em 0.75em; border: 1px solid rgba(255,255,255,0.15); font-size: 0.9em; }
 .bruce-md th { font-weight: 600; background: rgba(255,255,255,0.06); }
 
-/* Bubble tint: 15% opacity in light, 18% in dark */
-.bubble-tint { background-color: color-mix(in srgb, var(--bubble-color, #6b7280) 15%, transparent); }
+/* Bubble tint: 25% opacity in light, 40% in dark */
+.bubble-tint { background-color: color-mix(in srgb, var(--bubble-color, #6b7280) 25%, transparent); }
 @media (prefers-color-scheme: dark) {
-  .bubble-tint { background-color: color-mix(in srgb, var(--bubble-color, #6b7280) 18%, transparent); }
+  .bubble-tint { background-color: color-mix(in srgb, var(--bubble-color, #6b7280) 40%, transparent); }
 }

@@ -1922,7 +1922,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "background-color var(--transition)",
   },
   projectItemActive: {
-    backgroundColor: "rgba(15, 110, 86, 0.12)",
+    backgroundColor: "var(--active-bg)",
     color: "#fff",
     fontWeight: "normal",
   },
@@ -1975,13 +1975,13 @@ const styles: Record<string, React.CSSProperties> = {
     borderLeft: "2px solid transparent",
   },
   chatItemActive: {
-    backgroundColor: "rgba(15, 110, 86, 0.12)",
+    backgroundColor: "var(--active-bg)",
     borderLeft: "2px solid #0F6E56",
     color: "#fff",
     fontWeight: "normal",
   },
   chatItemSelected: {
-    backgroundColor: "rgba(15, 110, 86, 0.06)",
+    backgroundColor: "var(--active-bg)",
     borderLeft: "2px solid var(--accent)",
   },
   chatItemTitle: {
@@ -2075,7 +2075,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "background-color var(--transition)",
   },
   familyButtonActive: {
-    backgroundColor: "rgba(15, 110, 86, 0.12)",
+    backgroundColor: "var(--active-bg)",
     borderLeft: "2px solid #0F6E56",
     color: "#fff",
     fontWeight: "normal",
@@ -2109,7 +2109,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "background-color var(--transition)",
   },
   threadItemActive: {
-    backgroundColor: "rgba(15, 110, 86, 0.12)",
+    backgroundColor: "var(--active-bg)",
     borderLeft: "2px solid #0F6E56",
     color: "#fff",
     fontWeight: "normal",
@@ -2274,7 +2274,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-primary)",
   },
   memberPickerRowChecked: {
-    backgroundColor: "rgba(15, 110, 86, 0.06)",
+    backgroundColor: "var(--active-bg)",
   },
   memberPickerCheck: {
     width: "16px",

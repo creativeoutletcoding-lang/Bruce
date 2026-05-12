@@ -476,7 +476,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid transparent",
   },
   memberRowSelected: {
-    backgroundColor: "rgba(15, 110, 86, 0.08)",
+    backgroundColor: "var(--active-bg)",
     border: "1px solid rgba(15, 110, 86, 0.3)",
   },
   memberAvatar: {
