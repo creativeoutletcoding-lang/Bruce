@@ -529,9 +529,10 @@ export default function FamilyChatWindow({
                         ...styles.senderName,
                         paddingLeft: isMe ? 0 : "2px",
                         paddingRight: isMe ? "2px" : 0,
+                        color: isBruce ? "var(--text-tertiary)" : isMe ? "var(--text-tertiary)" : memberColor,
                       }}
                     >
-                      {isBruce ? "Bruce" : (msg.sender_name ?? "Someone")}
+                      {isBruce ? "Bruce" : (msg.sender_name?.split(" ")[0] ?? "Someone")}
                     </div>
                   )}
 
@@ -541,7 +542,15 @@ export default function FamilyChatWindow({
                         ? { ...styles.bubble, ...styles.meBubble, backgroundColor: myColor }
                         : isBruce
                         ? styles.bruceContent
-                        : { ...styles.bubble, ...styles.memberBubble, borderColor: `${memberColor}50` }
+                        : {
+                            ...styles.bubble,
+                            display: "inline-block",
+                            maxWidth: "85%",
+                            backgroundColor: `${memberColor}1A`,
+                            borderLeft: `2.5px solid ${memberColor}`,
+                            borderRadius: "0 10px 10px 0",
+                            color: "var(--text-primary)",
+                          }
                     }
                   >
                     {msg.isStreaming && !msg.content ? (
@@ -676,7 +685,6 @@ const styles: Record<string, React.CSSProperties> = {
   bubble: { padding: "10px 14px", borderRadius: "var(--radius-lg)", fontSize: "0.9375rem", lineHeight: "1.55", wordBreak: "break-word", whiteSpace: "pre-wrap", userSelect: "text" },
   meBubble: { color: "#ffffff", borderBottomRightRadius: "4px" },
   bruceContent: { fontSize: "0.9375rem", lineHeight: "1.55", wordBreak: "break-word", color: "var(--text-primary)", padding: "8px 0", width: "100%", userSelect: "text", whiteSpace: "pre-wrap" },
-  memberBubble: { backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", border: "2px solid", borderBottomLeftRadius: "4px" },
   dotsRow: { display: "inline-flex", alignItems: "center", gap: "4px" },
   dot1: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "0ms" },
   dot2: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "150ms" },

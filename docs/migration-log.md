@@ -24,3 +24,4 @@ This file tracks which migrations have been applied to the production Supabase i
 | 019 | Memory metrics left join fix — updates `get_memory_metrics()` to use LEFT JOIN | ✅ |
 | 020 | Message delete policy — RLS policy allowing users to delete their own messages | ✅ |
 | 021 | Anthropic Files API — adds `file_ids JSONB` to `messages`; stores Anthropic file IDs parallel to `metadata.attachments` for context-window-efficient history replay | ⬜ |
+| 022 | Meals & Groceries project instructions — appends planning-first guidance to the project: lead with a plan, one round of questions max, conversational prose for questions in group chat | ⬜ |

@@ -31,14 +31,14 @@ Character: calm, reliable, consistent, intelligent, caring. Never reactive. Admi
 export const LAYER_HOUSEHOLD = `## The Johnson Family — Arlington, Virginia
 
 - Jake Johnson, 36. Admin. Account executive at Foundation Insurance Group, co-owner of Capital Petsitters.
-- Laurianne Johnson (Loubi), 33. Full member.
+- Laurianne Johnson, 33. Full member.
 - Jocelynn Johnson (Joce), 16. Treated as an adult. Full member.
 - Nana, 69. Jake's mother. Co-owner of Capital Petsitters.
 
 No accounts (context only): Elliot (8), Henry (5), Violette (5) — Jake and Laurianne's children.`;
 
 // Shared between multi-member project and family chat builders
-const PARTICIPATION_RULE = `You are a participant, not the default responder. Reply only when directly addressed — by name, mention, or a clear direct question. Member-to-member messages are never a trigger. Stay silent when ambiguous. Never send the first message.`;
+const PARTICIPATION_RULE = `You are a participant, not the default responder. Reply only when directly addressed — by name, a direct question to you, or an unambiguous request for your input. Member-to-member messages are never a trigger. When a message names or is clearly directed at a specific member who is not you, stay completely silent — no acknowledgment, no stepping-back comment, no "I'll let you two work that out." Nothing. Wait to be directly addressed again.`;
 
 // Plain prose formatting for group contexts (multi-member project, family)
 const GROUP_FORMAT = `Plain prose only. No bullets, numbered lists, bold, italic, headers, or markdown tables. Write lists as sentences. Two to four sentences per response unless more is genuinely needed.`;
@@ -57,7 +57,7 @@ function getToneInstruction(name: string): string {
   if (n === "jake" || n === "jake johnson") {
     return "Tone with Jake: technical and direct when building, professional and efficient for business topics. Always peer-level — no hand-holding.";
   }
-  if (n === "laurianne" || n === "loubi") {
+  if (n === "laurianne") {
     return "Tone with Laurianne: conversational, warm, collaborative.";
   }
   if (n === "jocelynn" || n === "joce") {

@@ -18,73 +18,11 @@ interface WelcomeScreenProps {
   onModelChange: (id: string) => void;
 }
 
-const PILLS: { label: string; text: string }[] = [
-  { label: "Strategize", text: "Help me think through a strategy for " },
-  { label: "Learn", text: "Explain " },
-  { label: "Write", text: "Help me write " },
-  { label: "Code", text: "Help me with this code: " },
-  { label: "From Calendar", text: "What's on my calendar today?" },
-];
-
 function getGreeting(name: string): string {
   const hour = new Date().getHours();
   if (hour < 12) return `Good morning, ${name}`;
   if (hour < 17) return `Good afternoon, ${name}`;
   return `Good evening, ${name}`;
-}
-
-function TargetIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.3" />
-      <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M7 1.5V4M7 10v2.5M1.5 7H4M10 7h2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function BookIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path d="M7 12.5C5.5 11 3.5 10.5 2 11V2.5C3.5 2 5.5 2.5 7 4M7 12.5C8.5 11 10.5 10.5 12 11V2.5C10.5 2 8.5 2.5 7 4M7 12.5V4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function PenIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path d="M9 2.5L11.5 5l-7 7H2v-2.5l7-7z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function CodeIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path d="M5 4L2 7l3 3M9 4l3 3-3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function CalendarIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <rect x="1.5" y="2.5" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M1.5 6h11M4.5 1v3M9.5 1v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function getPillIcon(label: string) {
-  switch (label) {
-    case "Strategize": return <TargetIcon />;
-    case "Learn": return <BookIcon />;
-    case "Write": return <PenIcon />;
-    case "Code": return <CodeIcon />;
-    case "From Calendar": return <CalendarIcon />;
-    default: return null;
-  }
 }
 
 export default function WelcomeScreen({
@@ -128,20 +66,6 @@ export default function WelcomeScreen({
                 <ModelPicker currentModel={model} onSelect={onModelChange} />
               }
             />
-          </div>
-
-          <div style={styles.pillsRow} className="welcome-pills-row">
-            {PILLS.map((pill) => (
-              <button
-                key={pill.label}
-                className="welcome-pill"
-                onClick={() => onInputChange(pill.text)}
-                type="button"
-              >
-                {getPillIcon(pill.label)}
-                {pill.label}
-              </button>
-            ))}
           </div>
         </div>
       </div>
@@ -199,12 +123,5 @@ const styles: Record<string, React.CSSProperties> = {
     borderTop: "none",
     padding: "0",
     backgroundColor: "transparent",
-  },
-  pillsRow: {
-    display: "flex",
-    gap: "8px",
-    overflowX: "auto",
-    width: "100%",
-    paddingBottom: "2px",
   },
 };

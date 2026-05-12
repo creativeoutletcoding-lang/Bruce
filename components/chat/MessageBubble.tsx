@@ -32,6 +32,7 @@ interface MessageBubbleProps {
   // Swipe coordination: parent controls whether this swipe is open
   swipeOpen?: boolean;
   onSwipeOpen?: () => void;
+  showBruceLabel?: boolean;
 }
 
 const REVEAL_WIDTH = 80;
@@ -63,6 +64,7 @@ export default function MessageBubble({
   onDelete,
   swipeOpen = false,
   onSwipeOpen,
+  showBruceLabel = false,
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
@@ -212,9 +214,14 @@ export default function MessageBubble({
         onContextMenu={handleContextMenu}
       >
       <div className="msg-group" data-role={role} style={{ ...styles.messageGroup, ...(isUser ? {} : { width: "100%" }) }}>
+        {showBruceLabel && role === "assistant" && !isStreaming && (
+          <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", padding: "0 2px", marginBottom: "2px" }}>
+            Bruce
+          </div>
+        )}
         {showSenderLabel && (
-          <div style={{ fontSize: "0.6875rem", fontWeight: 500, color: senderColorHex ?? "var(--text-secondary)", padding: "0 2px", marginBottom: "1px" }}>
-            {senderName}
+          <div style={{ fontSize: "0.75rem", fontWeight: 500, color: senderColorHex ?? "var(--text-secondary)", padding: "0 2px", marginBottom: "2px" }}>
+            {senderName?.split(" ")[0] ?? senderName}
           </div>
         )}
         {/* Images rendered directly in thread — no bubble wrapper */}
@@ -269,14 +276,18 @@ export default function MessageBubble({
           <div
             style={
               isHumanMessage
-                ? {
-                    ...styles.bubble,
-                    whiteSpace: "pre-wrap",
-                    ...styles.userBubble,
-                    backgroundColor: isUser
-                      ? (bubbleColorHex ?? "var(--accent)")
-                      : (senderColorHex ?? "var(--accent)"),
-                  }
+                ? isUser
+                  ? { ...styles.bubble, whiteSpace: "pre-wrap", ...styles.userBubble, backgroundColor: bubbleColorHex ?? "var(--accent)" }
+                  : {
+                      ...styles.bubble,
+                      whiteSpace: "pre-wrap",
+                      display: "inline-block",
+                      maxWidth: "85%",
+                      backgroundColor: senderColorHex ? `${senderColorHex}1A` : "var(--bg-secondary)",
+                      borderLeft: `2.5px solid ${senderColorHex ?? "var(--border-strong)"}`,
+                      borderRadius: "0 10px 10px 0",
+                      color: "var(--text-primary)",
+                    }
                 : styles.assistantContent
             }
           >

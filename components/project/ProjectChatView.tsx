@@ -54,7 +54,7 @@ export default function ProjectChatView({
         attachmentType: (m.attachment_type as string | undefined) ?? undefined,
         attachmentFilename: (m.attachment_filename as string | undefined) ?? undefined,
         sender_id: m.sender_id,
-        senderName: senderInfo?.name,
+        senderName: senderInfo?.name.split(" ")[0],
         senderColorHex: senderInfo?.color_hex,
       };
     })
@@ -189,7 +189,7 @@ export default function ProjectChatView({
                 attachmentType: msg.attachment_type ?? undefined,
                 attachmentFilename: msg.attachment_filename ?? undefined,
                 sender_id: msg.sender_id,
-                senderName: senderInfo?.name,
+                senderName: senderInfo?.name.split(" ")[0],
                 senderColorHex: senderInfo?.color_hex,
               },
             ];
@@ -242,7 +242,7 @@ export default function ProjectChatView({
           attachmentType: m.attachment_type ?? undefined,
           attachmentFilename: m.attachment_filename ?? undefined,
           sender_id: m.sender_id,
-          senderName: senderInfo?.name,
+          senderName: senderInfo?.name.split(" ")[0],
           senderColorHex: senderInfo?.color_hex,
         };
       })
@@ -494,6 +494,7 @@ export default function ProjectChatView({
         streamingStatus={workingStatus}
         currentUserId={currentUserId}
         onDeleteMessage={deleteMessage}
+        groupContext={members.length > 1}
       />
 
       {error && (

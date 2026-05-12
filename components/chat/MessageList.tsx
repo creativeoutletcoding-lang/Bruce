@@ -38,9 +38,10 @@ interface MessageListProps {
   streamingStatus?: string | null;
   currentUserId?: string;
   onDeleteMessage?: (id: string) => void;
+  groupContext?: boolean;
 }
 
-export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus, currentUserId, onDeleteMessage }: MessageListProps) {
+export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus, currentUserId, onDeleteMessage, groupContext = false }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -163,6 +164,7 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 onDelete={onDeleteMessage ? () => onDeleteMessage(msg.id) : undefined}
                 swipeOpen={openSwipeId === msg.id}
                 onSwipeOpen={() => setOpenSwipeId(msg.id)}
+                showBruceLabel={groupContext}
               />
               );
             }
