@@ -8,7 +8,6 @@ import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
 import type { UserSummary } from "@/lib/types";
-import { hexToRgba } from "@/lib/utils/colors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -538,12 +537,13 @@ export default function FamilyChatWindow({
                   )}
 
                   <div
+                    className={!isBruce ? "bubble-tint" : undefined}
                     style={
                       isBruce
                         ? styles.bruceContent
                         : {
                             ...styles.bubble,
-                            backgroundColor: hexToRgba(isMe ? myColor : memberColor, 0.10),
+                            ["--bubble-color" as string]: isMe ? myColor : memberColor,
                             ...(isMe
                               ? { borderRight: `2.5px solid ${myColor}`, borderRadius: "10px 0 0 10px" }
                               : { borderLeft: `2.5px solid ${memberColor}`, borderRadius: "0 10px 10px 0" }),

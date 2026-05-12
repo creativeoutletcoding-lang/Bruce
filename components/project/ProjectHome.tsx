@@ -1020,20 +1020,21 @@ const styles: Record<string, React.CSSProperties> = {
   chatList: {
     display: "flex",
     flexDirection: "column",
-    gap: "2px",
+    gap: 0,
   },
   chatRow: {
     width: "100%",
     display: "flex",
     flexDirection: "column",
     gap: "2px",
-    padding: "10px 12px",
+    padding: "12px 12px",
     borderRadius: "var(--radius-md)",
     textAlign: "left",
     cursor: "pointer",
     backgroundColor: "transparent",
     transition: "background-color var(--transition)",
     border: "none",
+    borderBottom: "0.5px solid var(--border)",
   },
   chatRowTop: {
     display: "flex",

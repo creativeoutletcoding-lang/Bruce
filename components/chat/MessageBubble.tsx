@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { marked } from "marked";
 import { lightHaptic } from "@/lib/utils/haptics";
-import { hexToRgba } from "@/lib/utils/colors";
 import type { MessageRole } from "@/lib/types";
 
 export interface MessageAttachment {
@@ -275,12 +274,13 @@ export default function MessageBubble({
         {/* Bubble only when there is text content or streaming dots */}
         {(showDots || content) && (
           <div
+            className={isHumanMessage ? "bubble-tint" : undefined}
             style={
               isHumanMessage
                 ? {
                     ...styles.bubble,
                     whiteSpace: "pre-wrap",
-                    backgroundColor: hexToRgba((isUser ? bubbleColorHex : senderColorHex) ?? "#6B7280", 0.10),
+                    ["--bubble-color" as string]: (isUser ? bubbleColorHex : senderColorHex) ?? "#6B7280",
                     ...(isUser
                       ? { borderRight: `2.5px solid ${bubbleColorHex ?? "#6B7280"}`, borderRadius: "10px 0 0 10px" }
                       : { borderLeft: `2.5px solid ${senderColorHex ?? "#6B7280"}`, borderRadius: "0 10px 10px 0" }),
