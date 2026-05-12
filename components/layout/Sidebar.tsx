@@ -77,7 +77,6 @@ function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-const ICON_OPTIONS = ["", "📁", "💼", "🏠", "🐾", "💰", "📋"];
 
 function ThreadAvatarStack({ members }: { members: ThreadMemberSummary[] }) {
   const shown = members.slice(0, 3);
@@ -172,7 +171,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   // ── new project modal ────────────────────────────────────────────────────
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
-  const [newProjectIcon, setNewProjectIcon] = useState("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [projectErrorMsg, setProjectErrorMsg] = useState("");
 
@@ -787,13 +785,12 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newProjectName.trim(), icon: newProjectIcon }),
+        body: JSON.stringify({ name: newProjectName.trim() }),
       });
       if (res.ok) {
         const project = await res.json();
         setShowNewProjectModal(false);
         setNewProjectName("");
-        setNewProjectIcon("");
         await loadProjects();
         router.push(`/projects/${project.id}`);
         onNavigate();
@@ -1027,7 +1024,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                             </svg>
                           )}
                         </div>
-                        {project.icon && <span style={{ fontSize: "0.9375rem", flexShrink: 0 }}>{project.icon}</span>}
                         <span style={{ ...styles.chatItemTitle, fontWeight: "600" }}>{project.name}</span>
                       </button>
 
@@ -1109,7 +1105,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                       onClick={() => handleSelectProject(project.id)}
                       style={{ ...styles.projectItem, ...(isActive ? styles.projectItemActive : {}) }}
                     >
-                      {project.icon && <span style={styles.projectItemIcon}>{project.icon}</span>}
                       <span style={styles.projectItemName}>{project.name}</span>
                       {!isActive && project.last_chat_date != null &&
                         (!projectLastViewed[project.id] || project.last_chat_date > projectLastViewed[project.id]) && (
@@ -1753,30 +1748,19 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       {showNewProjectModal && (
         <div
           style={styles.modalOverlay}
-          onClick={() => { setShowNewProjectModal(false); setNewProjectName(""); setNewProjectIcon(""); setProjectErrorMsg(""); }}
+          onClick={() => { setShowNewProjectModal(false); setNewProjectName(""); setProjectErrorMsg(""); }}
         >
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <span style={styles.modalTitle}>New project</span>
               <button
                 style={styles.modalClose}
-                onClick={() => { setShowNewProjectModal(false); setNewProjectName(""); setNewProjectIcon(""); setProjectErrorMsg(""); }}
+                onClick={() => { setShowNewProjectModal(false); setNewProjectName(""); setProjectErrorMsg(""); }}
               >
                 ×
               </button>
             </div>
             <div style={styles.modalBody}>
-              <div style={styles.iconPickerRow}>
-                {ICON_OPTIONS.map((icon) => (
-                  <button
-                    key={icon === "" ? "none" : icon}
-                    style={{ ...styles.iconOption, ...(newProjectIcon === icon ? styles.iconOptionSelected : {}) }}
-                    onClick={() => setNewProjectIcon(icon)}
-                  >
-                    {icon === "" ? <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>—</span> : icon}
-                  </button>
-                ))}
-              </div>
               <input
                 type="text"
                 placeholder="Project name"
@@ -1935,16 +1919,12 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     backgroundColor: "transparent",
     color: "var(--text-primary)",
-    borderLeft: "2px solid transparent",
     transition: "background-color var(--transition)",
   },
   projectItemActive: {
-    borderLeft: "2px solid var(--accent)",
-  },
-  projectItemIcon: {
-    fontSize: "1rem",
-    flexShrink: 0,
-    lineHeight: 1,
+    backgroundColor: "rgba(15, 110, 86, 0.12)",
+    color: "#fff",
+    fontWeight: "normal",
   },
   projectItemName: {
     flex: 1,
@@ -2235,28 +2215,6 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: "16px",
-  },
-  iconPickerRow: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
-  iconOption: {
-    fontSize: "1.375rem",
-    width: "40px",
-    height: "40px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: "var(--radius-md)",
-    border: "2px solid transparent",
-    cursor: "pointer",
-    transition: "border-color var(--transition), background-color var(--transition)",
-    backgroundColor: "var(--bg-secondary)",
-  },
-  iconOptionSelected: {
-    borderColor: "var(--accent)",
-    backgroundColor: "rgba(15, 110, 86, 0.08)",
   },
   nameInput: {
     width: "100%",
