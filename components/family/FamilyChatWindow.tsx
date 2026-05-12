@@ -544,8 +544,9 @@ export default function FamilyChatWindow({
                         : {
                             ...styles.bubble,
                             backgroundColor: hexToRgba(isMe ? myColor : memberColor, 0.10),
-                            borderLeft: `2.5px solid ${isMe ? myColor : memberColor}`,
-                            borderRadius: "0 10px 10px 0",
+                            ...(isMe
+                              ? { borderRight: `2.5px solid ${myColor}`, borderRadius: "10px 0 0 10px" }
+                              : { borderLeft: `2.5px solid ${memberColor}`, borderRadius: "0 10px 10px 0" }),
                             color: "var(--text-primary)",
                           }
                     }

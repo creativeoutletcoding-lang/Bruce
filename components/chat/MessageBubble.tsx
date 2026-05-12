@@ -281,8 +281,9 @@ export default function MessageBubble({
                     ...styles.bubble,
                     whiteSpace: "pre-wrap",
                     backgroundColor: hexToRgba((isUser ? bubbleColorHex : senderColorHex) ?? "#6B7280", 0.10),
-                    borderLeft: `2.5px solid ${(isUser ? bubbleColorHex : senderColorHex) ?? "#6B7280"}`,
-                    borderRadius: "0 10px 10px 0",
+                    ...(isUser
+                      ? { borderRight: `2.5px solid ${bubbleColorHex ?? "#6B7280"}`, borderRadius: "10px 0 0 10px" }
+                      : { borderLeft: `2.5px solid ${senderColorHex ?? "#6B7280"}`, borderRadius: "0 10px 10px 0" }),
                     color: "var(--text-primary)",
                   }
                 : styles.assistantContent
