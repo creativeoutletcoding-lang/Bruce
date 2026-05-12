@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { marked } from "marked";
 import { lightHaptic } from "@/lib/utils/haptics";
+import { hexToRgba } from "@/lib/utils/colors";
 import type { MessageRole } from "@/lib/types";
 
 export interface MessageAttachment {
@@ -213,7 +214,7 @@ export default function MessageBubble({
         onTouchEnd={handleSwipeTouchEnd}
         onContextMenu={handleContextMenu}
       >
-      <div className="msg-group" data-role={role} style={{ ...styles.messageGroup, ...(isUser ? {} : { width: "100%" }) }}>
+      <div className="msg-group" data-role={role} style={{ ...styles.messageGroup, ...(isHumanMessage ? { maxWidth: "85%", alignItems: isUser ? "flex-end" : "flex-start" } : { width: "100%" }) }}>
         {showBruceLabel && role === "assistant" && !isStreaming && (
           <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", padding: "0 2px", marginBottom: "2px" }}>
             Bruce
@@ -276,18 +277,14 @@ export default function MessageBubble({
           <div
             style={
               isHumanMessage
-                ? isUser
-                  ? { ...styles.bubble, whiteSpace: "pre-wrap", ...styles.userBubble, backgroundColor: bubbleColorHex ?? "var(--accent)" }
-                  : {
-                      ...styles.bubble,
-                      whiteSpace: "pre-wrap",
-                      display: "inline-block",
-                      maxWidth: "85%",
-                      backgroundColor: senderColorHex ? `${senderColorHex}1A` : "var(--bg-secondary)",
-                      borderLeft: `2.5px solid ${senderColorHex ?? "var(--border-strong)"}`,
-                      borderRadius: "0 10px 10px 0",
-                      color: "var(--text-primary)",
-                    }
+                ? {
+                    ...styles.bubble,
+                    whiteSpace: "pre-wrap",
+                    backgroundColor: hexToRgba((isUser ? bubbleColorHex : senderColorHex) ?? "#6B7280", 0.10),
+                    borderLeft: `2.5px solid ${(isUser ? bubbleColorHex : senderColorHex) ?? "#6B7280"}`,
+                    borderRadius: "0 10px 10px 0",
+                    color: "var(--text-primary)",
+                  }
                 : styles.assistantContent
             }
           >
@@ -384,7 +381,6 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: "1.55",
     wordBreak: "break-word",
   },
-  userBubble: { color: "#ffffff", borderBottomRightRadius: "4px" },
   assistantContent: {
     fontSize: "0.9375rem",
     lineHeight: "1.55",

@@ -8,6 +8,7 @@ import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
 import type { UserSummary } from "@/lib/types";
+import { hexToRgba } from "@/lib/utils/colors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -522,7 +523,7 @@ export default function FamilyChatWindow({
                 onTouchMove={handleTouchEnd}
                 onContextMenu={(e) => handleContextMenu(e, msg)}
               >
-                <div className="msg-group" style={{ ...styles.messageGroup, alignItems: isMe ? "flex-end" : "flex-start", ...(isBruce ? { width: "100%" } : {}) }}>
+                <div className="msg-group" style={{ ...styles.messageGroup, alignItems: isMe ? "flex-end" : "flex-start", ...(isBruce ? { width: "100%" } : { maxWidth: "85%" }) }}>
                   {!isSameSender && (
                     <div
                       style={{
@@ -538,16 +539,12 @@ export default function FamilyChatWindow({
 
                   <div
                     style={
-                      isMe
-                        ? { ...styles.bubble, ...styles.meBubble, backgroundColor: myColor }
-                        : isBruce
+                      isBruce
                         ? styles.bruceContent
                         : {
                             ...styles.bubble,
-                            display: "inline-block",
-                            maxWidth: "85%",
-                            backgroundColor: `${memberColor}1A`,
-                            borderLeft: `2.5px solid ${memberColor}`,
+                            backgroundColor: hexToRgba(isMe ? myColor : memberColor, 0.10),
+                            borderLeft: `2.5px solid ${isMe ? myColor : memberColor}`,
                             borderRadius: "0 10px 10px 0",
                             color: "var(--text-primary)",
                           }
@@ -683,7 +680,6 @@ const styles: Record<string, React.CSSProperties> = {
   messageGroup: { display: "flex", flexDirection: "column", gap: "3px" },
   senderName: { fontSize: "0.6875rem", fontWeight: "400", letterSpacing: "0.01em", marginBottom: "1px", color: "var(--text-tertiary)" },
   bubble: { padding: "10px 14px", borderRadius: "var(--radius-lg)", fontSize: "0.9375rem", lineHeight: "1.55", wordBreak: "break-word", whiteSpace: "pre-wrap", userSelect: "text" },
-  meBubble: { color: "#ffffff", borderBottomRightRadius: "4px" },
   bruceContent: { fontSize: "0.9375rem", lineHeight: "1.55", wordBreak: "break-word", color: "var(--text-primary)", padding: "8px 0", width: "100%", userSelect: "text", whiteSpace: "pre-wrap" },
   dotsRow: { display: "inline-flex", alignItems: "center", gap: "4px" },
   dot1: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "0ms" },

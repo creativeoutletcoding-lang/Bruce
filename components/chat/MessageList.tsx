@@ -164,7 +164,7 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 onDelete={onDeleteMessage ? () => onDeleteMessage(msg.id) : undefined}
                 swipeOpen={openSwipeId === msg.id}
                 onSwipeOpen={() => setOpenSwipeId(msg.id)}
-                showBruceLabel={groupContext}
+                showBruceLabel={true}
               />
               );
             }
