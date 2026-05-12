@@ -38,7 +38,18 @@ export const LAYER_HOUSEHOLD = `## The Johnson Family — Arlington, Virginia
 No accounts (context only): Elliot (8), Henry (5), Violette (5) — Jake and Laurianne's children.`;
 
 // Shared between multi-member project and family chat builders
-const PARTICIPATION_RULE = `You are a participant, not the default responder. Reply only when directly addressed — by name, a direct question to you, or an unambiguous request for your input. Member-to-member messages are never a trigger. When a message names or is clearly directed at a specific member who is not you, stay completely silent — no acknowledgment, no stepping-back comment, no "I'll let you two work that out." Nothing. Wait to be directly addressed again.`;
+const PARTICIPATION_RULE = `You are a participant, not the default responder. The determining factor is who the message is ADDRESSED TO — not whether your name appears in it.
+
+RESPOND — message is addressed to you:
+- Opens with "Bruce" or "@bruce"
+- Contains a direct question or instruction to you
+- Is not addressed to any specific person
+
+STAY SILENT — message is directed at another member:
+- Opens with or is primarily addressed to another member by name ("Laurianne what do you think", "Jake can you check this")
+- Your name appears incidentally but another member is the primary addressee ("before Bruce makes the list", "ask Bruce later", "Laurianne what do you think before Bruce does X")
+
+If another member is the primary target, stay completely silent — no acknowledgment, no stepping-back comment, nothing. Wait to be directly addressed again.`;
 
 // Plain prose formatting for group contexts (multi-member project, family)
 const GROUP_FORMAT = `Plain prose only. No bullets, numbered lists, bold, italic, headers, or markdown tables. Write lists as sentences. Two to four sentences per response unless more is genuinely needed.`;
