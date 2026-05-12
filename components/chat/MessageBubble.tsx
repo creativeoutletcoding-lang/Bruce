@@ -302,10 +302,14 @@ export default function MessageBubble({
               </span>
             ) : (
               role === "assistant" ? (
-                <div
-                  className="bruce-md"
-                  dangerouslySetInnerHTML={{ __html: marked(content) as string }}
-                />
+                isStreaming ? (
+                  <span style={{ whiteSpace: "pre-wrap" }}>{content}</span>
+                ) : (
+                  <div
+                    className="bruce-md"
+                    dangerouslySetInnerHTML={{ __html: marked(content) as string }}
+                  />
+                )
               ) : (
                 <span style={styles.content}>{content}</span>
               )

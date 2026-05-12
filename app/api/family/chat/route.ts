@@ -296,11 +296,14 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       const encoder = new TextEncoder();
       let fullResponse = "";
+      let currentTurnText = "";
 
       try {
         let currentMessages = [...anthropicMessages];
 
         while (true) {
+          currentTurnText = "";
+
           const stream = anthropic.messages.stream({
             model: "claude-sonnet-4-6",
             max_tokens: 2048,
@@ -311,12 +314,26 @@ export async function POST(request: NextRequest) {
 
           stream.on("text", (text) => {
             fullResponse += text;
+            currentTurnText += text;
             controller.enqueue(encoder.encode(text));
           });
 
           const finalMsg = await stream.finalMessage();
 
           if (finalMsg.stop_reason !== "tool_use") break;
+
+          // Save this turn's text immediately before executing tools
+          if (currentTurnText.trim()) {
+            const cleanTurnText = currentTurnText.trim();
+            if (cleanTurnText) {
+              await adminSupabase.from("messages").insert({
+                chat_id: chatId,
+                sender_id: null,
+                role: "assistant",
+                content: cleanTurnText,
+              });
+            }
+          }
 
           const toolCalls = finalMsg.content.filter(
             (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
@@ -374,14 +391,13 @@ export async function POST(request: NextRequest) {
           ];
         }
 
-        // Persist before close — Vercel may terminate the function once the
-        // stream ends, so the write must complete while the connection is open.
-        if (fullResponse) {
+        // Persist the final turn's text. Per-turn saves already wrote intermediate turns.
+        if (currentTurnText.trim()) {
           const { error: insertErr } = await adminSupabase.from("messages").insert({
             chat_id: chatId,
             sender_id: null,
             role: "assistant",
-            content: fullResponse,
+            content: currentTurnText.trim(),
           });
           if (insertErr) {
             console.error("[api/family/chat] Failed to persist Bruce message:", insertErr);
@@ -399,13 +415,13 @@ export async function POST(request: NextRequest) {
         controller.close();
       } catch (err) {
         console.error("[api/family/chat] Stream error:", err);
-        // Best-effort: save any partial response received before the error
-        if (fullResponse) {
+        // Best-effort: save current turn's partial text before the error
+        if (currentTurnText.trim()) {
           const { error: insertErr } = await adminSupabase.from("messages").insert({
             chat_id: chatId,
             sender_id: null,
             role: "assistant",
-            content: fullResponse,
+            content: currentTurnText.trim(),
           });
           if (insertErr) {
             console.error("[api/family/chat] Failed to persist partial Bruce message:", insertErr);

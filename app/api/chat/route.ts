@@ -252,6 +252,7 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       const encoder = new TextEncoder();
       let fullResponse = "";
+      let currentTurnText = "";
       // Lookahead buffer to prevent streaming the <image_request> tag to the client
       let pending = "";
 
@@ -299,6 +300,8 @@ export async function POST(request: NextRequest) {
         let browseUrlUsed = false;
 
         while (true) {
+          currentTurnText = "";
+
           const stream = anthropic.messages.stream({
             model: preferredModel,
             max_tokens: 2048,
@@ -309,12 +312,28 @@ export async function POST(request: NextRequest) {
 
           stream.on("text", (text) => {
             fullResponse += text;
+            currentTurnText += text;
             handleText(text);
           });
 
           const finalMsg = await stream.finalMessage();
 
           if (finalMsg.stop_reason !== "tool_use") break;
+
+          // Save this turn's text immediately before executing tools
+          if (!isIncognito && currentChatId && currentTurnText.trim()) {
+            const cleanTurnText = currentTurnText
+              .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+              .trim();
+            if (cleanTurnText) {
+              await adminSupabase.from("messages").insert({
+                chat_id: currentChatId,
+                sender_id: null,
+                role: "assistant",
+                content: cleanTurnText,
+              });
+            }
+          }
 
           const toolCalls = finalMsg.content.filter(
             (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
@@ -396,10 +415,10 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Persist before close — Vercel may terminate the function once the
-        // stream ends, so the write must complete while the connection is open.
-        if (!isIncognito && currentChatId && fullResponse) {
-          const cleanResponse = fullResponse
+        // Persist the final turn's text before close. Per-turn saves already wrote any
+        // intermediate turns above; this captures only the last assistant turn.
+        if (!isIncognito && currentChatId && currentTurnText.trim()) {
+          const cleanResponse = currentTurnText
             .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
             .trim();
           if (cleanResponse) {
@@ -431,9 +450,9 @@ export async function POST(request: NextRequest) {
           messageCount: anthropicMessages.length,
           error: err instanceof Error ? err.message : String(err),
         });
-        // Best-effort: save any partial response received before the error
-        if (!isIncognito && currentChatId && fullResponse) {
-          const cleanResponse = fullResponse
+        // Best-effort: save the current turn's partial text before the error
+        if (!isIncognito && currentChatId && currentTurnText.trim()) {
+          const cleanResponse = currentTurnText
             .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
             .trim();
           if (cleanResponse) {

@@ -37,6 +37,9 @@ export const LAYER_HOUSEHOLD = `## The Johnson Family — Arlington, Virginia
 
 No accounts (context only): Elliot (8), Henry (5), Violette (5) — Jake and Laurianne's children.`;
 
+// Applied to all chat contexts
+const TOOL_CALL_DISCIPLINE = `**Tool call discipline:** If you commit to performing an action in a response, execute it in that same response turn — do not state what you will do and defer execution to a later turn. Confirm and act simultaneously. If a tool call fails, say so explicitly rather than silently deferring.`;
+
 // Shared between multi-member project and family chat builders
 const PARTICIPATION_RULE = `You are a participant, not the default responder. The determining factor is who the message is ADDRESSED TO — not whether your name appears in it.
 
@@ -283,6 +286,8 @@ export function buildSystemPrompt(
 
 Private standalone conversation. Be concise. Do not pad or summarize back what was just said.
 
+${TOOL_CALL_DISCIPLINE}
+
 ${SOLO_FORMAT}`;
 
   return [LAYER_IDENTITY, LAYER_HOUSEHOLD, memberLayer, context].join("\n\n");
@@ -327,12 +332,16 @@ ${projectBlock}
 
 ${PARTICIPATION_RULE}
 
+${TOOL_CALL_DISCIPLINE}
+
 ${GROUP_FORMAT}`
     : `## Chat context
 
 Project workspace.
 
 ${projectBlock}
+
+${TOOL_CALL_DISCIPLINE}
 
 ${SOLO_FORMAT}`;
 
@@ -351,6 +360,8 @@ export function buildFamilyChatSystemPrompt(
 Family group chat.
 
 ${PARTICIPATION_RULE}
+
+${TOOL_CALL_DISCIPLINE}
 
 ${GROUP_FORMAT}
 

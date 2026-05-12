@@ -386,6 +386,11 @@ export default function ChatWindow({
     } finally {
       setIsStreaming(false);
       setWorkingStatus(null);
+      // Reload from DB to replace tmp-* IDs with real rows and surface any
+      // per-turn messages saved during multi-step tool calls.
+      if (!incognito) {
+        await loadMessages();
+      }
     }
   }
 

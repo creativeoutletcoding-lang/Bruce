@@ -453,9 +453,10 @@ export default function ProjectChatView({
     } finally {
       setIsStreaming(false);
       setWorkingStatus(null);
-      // Don't refetch from DB here — it races with the server's insert and causes
-      // the streamed message to flash and disappear. The realtime listener replaces
-      // the optimistic placeholder (tmp-stream-*) when the real DB row arrives.
+      // Reload from DB to replace tmp-* IDs with real rows and surface any
+      // per-turn messages saved during multi-step tool calls. Safe: the server
+      // inserts before controller.close(), so the rows exist before done===true.
+      await loadMessages();
     }
   }
 
