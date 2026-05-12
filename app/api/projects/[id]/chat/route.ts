@@ -430,10 +430,12 @@ export async function POST(request: NextRequest, { params }: Props) {
               } catch (err) {
                 result = `Error: ${err instanceof Error ? err.message : String(err)}`;
               }
+              const isToolError = result.startsWith("Error:");
               return {
                 type: "tool_result" as const,
                 tool_use_id: tc.id,
                 content: result,
+                ...(isToolError ? { is_error: true } : {}),
               };
             })
           );

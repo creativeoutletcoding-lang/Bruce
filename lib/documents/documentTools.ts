@@ -20,7 +20,7 @@ export const DOCUMENT_TOOLS: Anthropic.Messages.Tool[] = [
     description:
       "Create a new Google Sheet in the Bruce Drive folder and optionally populate it with data. " +
       "Use for payroll tables, tracking sheets, data exports, budgets, or any tabular data. " +
-      "IMPORTANT: Always confirm before creating — describe the sheet and ask 'I can create this — want me to go ahead?' " +
+      "IMPORTANT: Confirm before creating — describe the sheet and ask first. Once confirmed, call this tool immediately. " +
       "folder_path examples: 'Personal', 'Projects/CPS', 'Projects/FIG'. Default: Personal.",
     input_schema: {
       type: "object" as const,
@@ -167,7 +167,7 @@ export const DOCUMENT_TOOLS: Anthropic.Messages.Tool[] = [
     name: "create_document",
     description:
       "Create a new Google Doc in the Bruce Drive folder. " +
-      "IMPORTANT: Confirm before creating — describe the document and ask first. " +
+      "IMPORTANT: Confirm before creating — describe the document and ask first. Once confirmed, call this tool immediately. " +
       "Use for reports, meeting notes, letters, summaries, contracts, or any text document.",
     input_schema: {
       type: "object" as const,
@@ -330,6 +330,10 @@ You can create and manage Google Sheets, Google Docs, and CSV files in the Bruce
 - Updating or appending a document: medium stakes — describe the change and confirm.
 - Overwriting a document (update_document): high stakes — always read first, describe exactly what changes, get explicit yes.
 - Exporting or generating: medium stakes — describe the output and confirm.
+
+**After confirmation:** call the tool immediately — do not say "I'll now create..." or otherwise announce the tool call. Report the result (title, URL) once the tool returns.
+
+**If a tool returns an error:** surface the failure clearly. State what failed and why (e.g. "Couldn't create the document — the Google API returned a permission error"). Do not silently recover or pretend the operation succeeded.
 
 **Spreadsheet formatting for payroll and financial data:**
 Use \`currency_columns\` (array of 0-indexed column indices) to format monetary columns as $#,##0.00. Always freeze the header row (\`freeze_rows: 1\`) and bold headers.
