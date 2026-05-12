@@ -6,6 +6,65 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Universal Tinted Bubble Style — 2026-05-12
+
+**Decision:** All human messages (own and other members') use a consistent tinted bubble style across every chat context: private, group, project, and family. Own messages align right with a right-side accent border; other members' messages align left with a left-side accent border. Bruce's responses render as plain text with no bubble.
+
+**Styling spec:**
+- Own messages: `border-right: 2.5px solid <member-color>`, `border-radius: 10px 0 0 10px`, `background: rgba(r,g,b,0.10)`
+- Other members: `border-left: 2.5px solid <member-color>`, `border-radius: 0 10px 10px 0`, `background: rgba(r,g,b,0.10)`
+- Tint color is each member's `color_hex` from the database, converted via `hexToRgba(hex, 0.10)` (`lib/utils/colors.ts`)
+- `maxWidth: "85%"` sits on the `messageGroup` flex container, not the bubble element — avoids the inline-block/flex-context override bug
+- Bruce label ("Bruce") appears above every assistant message in all contexts, not just group chats
+
+**Reason:** Prior implementation used `display: inline-block` on bubble elements inside a flex column, which is overridden by the flex formatting context — bubbles stretched full-width. Moving `maxWidth` to the group container fixes this cleanly. The 8-digit hex approach (`color1A`) was also rendering at ~40% opacity in some contexts; `rgba()` with an explicit alpha is more reliable. Consistent style across all contexts reduces visual surprise when switching between chat types.
+
+**Alternatives considered:** Solid color own-message bubble (the previous approach). Rejected — jarring contrast against the lightly-styled app; the tinted style reads more cohesive. Different styles per context. Rejected — adds maintenance burden and visual inconsistency.
+
+**Notes:** Implementation lives in `MessageBubble.tsx` (private, project, group contexts) and `FamilyChatWindow.tsx` (family context). The `hexToRgba` helper is `lib/utils/colors.ts`.
+
+---
+
+### Welcome Screen Redesign — 2026-05-11
+
+**Decision:** The new-chat screen uses a vertically centered layout: time-aware greeting above a centered input box. No suggestion cards, no floating send button. The model picker ("Sonnet 4.6 ▾") sits inside the input bar as a subtle pill, and the selected model is persisted to `localStorage` and synced to `users.preferred_model` in the database.
+
+**Reason:** The previous layout (suggestion cards + floating send button) added visual clutter without measurable benefit. Suggestion cards were unused in practice. The centered input-first layout matches the mental model of a tool you open when you have something to say, not one that's prompting you to act.
+
+**Alternatives considered:** Keep suggestion cards as quick-access shortcuts. Rejected — they clutter the screen and become stale quickly. Separate model picker dropdown outside the input. Rejected — adds a second interactive zone; inside the input bar keeps it discoverable without dominating.
+
+**Notes:** Model selection persists via `localStorage` key `bruce:model` for instant UI feedback, with a background PATCH to `/api/users/me` for database persistence. The welcome screen's `MessageInput` uses `containerStyle` and `modelPicker` props to customize appearance without duplicating input logic. A `.welcome-input-wrapper` CSS class scopes mobile overrides so the flat-bar `!important` rules in `globals.css` don't flatten the centered card layout.
+
+---
+
+### Display Name Rules and Nickname Removal — 2026-05-11
+
+**Decision:** All chat UI labels display first name only (e.g. "Jake", "Laurianne", not "Jake Johnson"). The nickname "Loubi" was removed from all system prompt code and household context.
+
+**Reason:** First names are how the family actually addresses each other. Full names in chat labels are formal and wasteful of space. "Loubi" was a nickname added early in the build that Laurianne does not use; leaving it in the system prompt caused Bruce to occasionally address her by the wrong name.
+
+**Notes:** `senderName.split(" ")[0]` is applied at render time in `MessageBubble.tsx`, `FamilyChatWindow.tsx`, and `ProjectChatView.tsx`. `lib/anthropic/index.ts` `getToneInstruction` function and `LAYER_HOUSEHOLD` constant no longer reference "Loubi".
+
+---
+
+### Bruce Silence Rule — Strengthened 2026-05-11
+
+**Decision:** The `PARTICIPATION_RULE` constant in `lib/anthropic/index.ts` was strengthened to explicitly prohibit any acknowledgment — including "stepping back" comments — when a message is directed at a named member who is not Bruce. The rule now reads: "stay completely silent — no acknowledgment, no stepping-back comment, no 'I'll let you two work that out.' Nothing."
+
+**Reason:** Bruce was occasionally emitting low-stakes filler like "I'll let you two handle that" when a message was clearly between two members. This is worse than silence — it consumes attention, implies Bruce was always listening for an opening, and feels vaguely surveillance-like. Complete silence is the correct behavior.
+
+**Notes:** The silence rule is enforced at two levels: (1) the API route only makes an Anthropic call if the trigger regex fires (`/@bruce\b/i` or direct address); (2) the system prompt instructs Bruce to stay silent even when an Anthropic call does fire (e.g., a message that mentions Bruce's name in passing but isn't directed at him).
+
+---
+
+### Mobile Input Polish — 2026-05-11
+
+**Decision:** Three mobile input bugs fixed: (1) keyboard layout jump solved by adding `minHeight: 0` to the `MessageList` wrapper (allows the flex child to shrink when the keyboard opens, using `100dvh` instead of `100vh`); (2) textarea `WebkitAppearance: "none"` + explicit `borderRadius` applied to suppress iOS default styling; (3) refresh icon removed from the chat topbar (no user-facing value for a chat that updates in real time).
+
+**Notes:** `100dvh` (dynamic viewport height) accounts for iOS's collapsible browser chrome. Without `minHeight: 0` on flex children, they resist shrinking below their content height and the layout jumps when the keyboard opens.
+
+---
+
 ### "Continue in New Group Chat" — Deferred, 2026-05-09
 
 **Decision:** Deferred for now. Will evaluate based on actual usage before building.
@@ -265,3 +324,30 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 **Alternatives considered:** Keeping the toggle as an opt-in mute. Rejected — the three-tier rule and trigger model make it redundant. Per-member pause settings. Rejected — if someone doesn't want Bruce to respond, they simply don't address him.
 
 **Notes:** The `/@bruce\b/i` trigger regex (case-insensitive, word boundary) is defined in the family chat API route. No engagement window — if nobody addresses Bruce, no Anthropic API call is made. This is enforced in code, not via a database toggle.
+
+---
+
+## Current UI Rendering Reference
+
+*This section describes the current rendered state of the UI as of 2026-05-12. Bruce reads this to reason accurately about how messages appear to users.*
+
+### Message bubbles
+
+All human messages (every chat context: private, project, group, family) use a tinted bubble:
+- **Own messages** — right-aligned, `border-right: 2.5px solid <member-color>`, `border-radius: 10px 0 0 10px`, background is `rgba(r,g,b,0.10)` of the member's profile color
+- **Other members' messages** — left-aligned, `border-left: 2.5px solid <member-color>`, `border-radius: 0 10px 10px 0`, same 10% opacity tint
+- **Bruce's responses** — no bubble; plain text rendered directly, full-width, with a small "Bruce" label above each response in every chat context
+
+Sender label (first name only) appears above the first message in a run from a given sender. Own messages show the member's name in `var(--text-tertiary)`; other members' labels are colored with their profile color.
+
+### Welcome / new-chat screen
+
+Vertically centered layout: time-aware greeting (`Good morning/afternoon/evening, [first name]`) above a centered `MessageInput`. Model picker ("Sonnet 4.6 ▾" or whichever model is selected) sits inside the input bar as a small pill. No suggestion cards. The selected model is persisted in `localStorage` and synced to `users.preferred_model`.
+
+### Display names
+
+All UI labels use first name only. The household system prompt uses: Jake, Laurianne, Jocelynn (Joce), Nana. "Loubi" is not a recognized nickname and does not appear anywhere in the codebase or prompts.
+
+### Group chat silence
+
+Bruce does not respond to member-to-member messages. When a message names or is directed at a specific member who is not Bruce, Bruce produces nothing — no acknowledgment, no filler. Bruce only responds when directly addressed by name, a direct question, or an unambiguous request for input. This behavior is enforced at both the API route level (trigger regex gate) and the system prompt level.
