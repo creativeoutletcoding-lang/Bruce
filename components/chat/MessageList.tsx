@@ -199,6 +199,7 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
 const styles: Record<string, React.CSSProperties> = {
   wrapper: {
     flex: 1,
+    minHeight: 0,
     position: "relative",
     overflow: "hidden",
   },

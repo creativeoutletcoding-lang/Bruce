@@ -128,6 +128,7 @@ export default function MessageInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachmentErrors, setAttachmentErrors] = useState<string[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -223,7 +224,7 @@ export default function MessageInput({
         </div>
       )}
 
-      <div className="msg-input-row" style={styles.inputRow}>
+      <div className="msg-input-row" style={{ ...styles.inputRow, ...(isFocused ? styles.inputRowFocused : {}) }}>
         {onFilesAttach && (
           <>
             <input
@@ -252,6 +253,8 @@ export default function MessageInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           placeholder={placeholder}
           rows={1}
           style={styles.textarea}
@@ -395,6 +398,12 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: "auto",
     padding: "6px 0",
     caretColor: "var(--accent)",
+    WebkitAppearance: "none",
+    borderRadius: "var(--radius-sm)",
+  },
+  inputRowFocused: {
+    borderColor: "#0F6E56",
+    boxShadow: "0 0 0 3px rgba(15, 110, 86, 0.10)",
   },
   sendButton: {
     flexShrink: 0,

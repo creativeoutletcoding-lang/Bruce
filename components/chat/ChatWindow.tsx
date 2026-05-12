@@ -413,7 +413,7 @@ export default function ChatWindow({
         ...(incognito ? styles.incognitoFilter : {}),
       }}
     >
-      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} onRefresh={loadMessages} model={model} onModelChange={handleModelChange} />
+      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} model={model} onModelChange={handleModelChange} />
 
       {incognito && (
         <div style={styles.incognitoNotice}>
