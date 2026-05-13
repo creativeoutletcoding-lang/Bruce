@@ -9,6 +9,7 @@ import { createSheet, addTab, readSheet, updateCells, formatTab } from "@/lib/do
 import { createDoc, readDoc, updateDoc, appendDoc } from "@/lib/documents/docs";
 import { listFiles, moveFile, exportAsPDF, createFolder } from "@/lib/documents/drive";
 import { generateCSV, readCSV } from "@/lib/documents/csv";
+import { getFileContent } from "@/lib/google/drive";
 import type { TabFormatSpec, SheetData } from "@/lib/documents/sheets";
 import type { CSVColumn } from "@/lib/documents/csv";
 
@@ -399,12 +400,21 @@ export async function executeDocumentTool(
     }
 
     case "read_spreadsheet": {
-      const result = await readSheet(
-        userId,
-        input.file_id as string,
-        input.sheet_name as string | undefined
-      );
-      return JSON.stringify(result);
+      const fileId = input.file_id as string;
+      try {
+        const result = await readSheet(
+          userId,
+          fileId,
+          input.sheet_name as string | undefined
+        );
+        return JSON.stringify(result);
+      } catch {
+        // Sheets API rejects non-native-Sheet files (.xls HTML exports from Precise Petcare,
+        // Office binaries, etc.). Fall back to raw Drive download via ?alt=media.
+        const rawContent = await getFileContent(userId, fileId);
+        if (rawContent) return JSON.stringify({ raw: rawContent });
+        throw new Error(`Cannot read file ${fileId}: not a Google Sheet and raw content is unavailable`);
+      }
     }
 
     case "update_spreadsheet_cells": {
