@@ -225,27 +225,30 @@ export async function ensureProjectFolder(
 
 export async function listProjectFiles(
   userId: string,
-  projectId: string
+  projectId: string,
+  folderId?: string
 ): Promise<DriveFile[]> {
   const token = await getValidToken(userId);
 
-  // Look up project name
-  const supabase = createServiceRoleClient();
-  const { data: project } = await supabase
-    .from("projects")
-    .select("name")
-    .eq("id", projectId)
-    .single();
+  let targetFolderId = folderId;
 
-  if (!project) return [];
+  if (!targetFolderId) {
+    const supabase = createServiceRoleClient();
+    const { data: project } = await supabase
+      .from("projects")
+      .select("name")
+      .eq("id", projectId)
+      .single();
 
-  const folderId = await ensureProjectFolder(userId, project.name as string);
+    if (!project) return [];
+    targetFolderId = await ensureProjectFolder(userId, project.name as string);
+  }
 
   const data = await driveGet(token, "/files", {
-    q: `'${folderId}' in parents and trashed=false`,
+    q: `'${targetFolderId}' in parents and trashed=false`,
     fields: "files(id,name,mimeType,webViewLink,modifiedTime)",
-    orderBy: "modifiedTime desc",
-    pageSize: "50",
+    orderBy: "folder,name",
+    pageSize: "100",
   });
 
   const files = data.files as Array<{
@@ -262,6 +265,7 @@ export async function listProjectFiles(
     mimeType: f.mimeType,
     webViewLink: f.webViewLink ?? "",
     modifiedTime: f.modifiedTime,
+    isFolder: f.mimeType === FOLDER_MIME,
   }));
 }
 

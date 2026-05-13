@@ -65,7 +65,7 @@ function JoinContent() {
         // Embed the invite token in the redirectTo URL so the callback can read it
         redirectTo: `${window.location.origin}/auth/callback?invite_token=${encodeURIComponent(token)}`,
         scopes: [
-          "https://www.googleapis.com/auth/drive.file",
+          "https://www.googleapis.com/auth/drive",
           "https://www.googleapis.com/auth/documents",
           "https://www.googleapis.com/auth/spreadsheets",
           "https://www.googleapis.com/auth/presentations",

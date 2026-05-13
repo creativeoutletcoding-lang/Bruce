@@ -9,7 +9,7 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_req: NextRequest, { params }: Props) {
+export async function GET(req: NextRequest, { params }: Props) {
   const { id } = await params;
   const supabase = await createClient();
   const {
@@ -26,8 +26,10 @@ export async function GET(_req: NextRequest, { params }: Props) {
 
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const folderId = req.nextUrl.searchParams.get("folderId") ?? undefined;
+
   try {
-    const files: DriveFile[] = await listProjectFiles(user.id, id);
+    const files: DriveFile[] = await listProjectFiles(user.id, id, folderId);
     return NextResponse.json(files);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Drive error";

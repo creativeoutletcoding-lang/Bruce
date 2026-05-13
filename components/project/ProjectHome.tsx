@@ -113,6 +113,7 @@ export default function ProjectHome({
   const [isBrowseLoading, setIsBrowseLoading] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
   const [attachingId, setAttachingId] = useState<string | null>(null);
+  const [browsePath, setBrowsePath] = useState<Array<{ id: string; name: string }>>([]);
   const [uploadName, setUploadName] = useState("");
   const [uploadContent, setUploadContent] = useState("");
   const [uploadType, setUploadType] = useState<"doc" | "sheet" | "note">("note");
@@ -183,14 +184,18 @@ export default function ProjectHome({
     setShowFilePicker(true);
     setBrowseError(null);
     setUploadError(null);
-    if (tab === "browse") await loadDriveFiles();
+    setBrowsePath([]);
+    if (tab === "browse") await loadDriveFiles(undefined);
   }
 
-  async function loadDriveFiles() {
+  async function loadDriveFiles(folderId: string | undefined) {
     setIsBrowseLoading(true);
     setBrowseError(null);
     try {
-      const res = await fetch(`/api/projects/${projectId}/files/browse`);
+      const url = folderId
+        ? `/api/projects/${projectId}/files/browse?folderId=${encodeURIComponent(folderId)}`
+        : `/api/projects/${projectId}/files/browse`;
+      const res = await fetch(url);
       if (!res.ok) {
         const data = await res.json() as { error?: string };
         setBrowseError(data.error ?? "Could not load Drive files");
@@ -202,6 +207,18 @@ export default function ProjectHome({
     } finally {
       setIsBrowseLoading(false);
     }
+  }
+
+  async function handleBrowseFolder(folder: DriveFile) {
+    setBrowsePath((prev) => [...prev, { id: folder.id, name: folder.name }]);
+    await loadDriveFiles(folder.id);
+  }
+
+  async function handleBrowseUp(index: number) {
+    const newPath = browsePath.slice(0, index);
+    setBrowsePath(newPath);
+    const parentId = newPath.length > 0 ? newPath[newPath.length - 1].id : undefined;
+    await loadDriveFiles(parentId);
   }
 
   async function handleAttachDriveFile(driveFile: DriveFile) {
@@ -663,7 +680,7 @@ export default function ProjectHome({
                   style={{ ...styles.tab, ...(filePickerTab === t ? styles.tabActive : {}) }}
                   onClick={async () => {
                     setFilePickerTab(t);
-                    if (t === "browse" && driveFiles.length === 0 && !isBrowseLoading) await loadDriveFiles();
+                    if (t === "browse" && driveFiles.length === 0 && !isBrowseLoading) await loadDriveFiles(undefined);
                   }}
                 >
                   {t === "browse" ? "Browse Drive" : "Upload new"}
@@ -672,15 +689,34 @@ export default function ProjectHome({
             </div>
             {filePickerTab === "browse" && (
               <div style={styles.tabContent}>
+                {browsePath.length > 0 && (
+                  <div style={styles.breadcrumbs}>
+                    <button style={styles.breadcrumbItem} onClick={() => handleBrowseUp(0)}>
+                      Project folder
+                    </button>
+                    {browsePath.map((crumb, i) => (
+                      <span key={crumb.id} style={styles.breadcrumbRow}>
+                        <span style={styles.breadcrumbSep}>/</span>
+                        {i < browsePath.length - 1 ? (
+                          <button style={styles.breadcrumbItem} onClick={() => handleBrowseUp(i + 1)}>
+                            {crumb.name}
+                          </button>
+                        ) : (
+                          <span style={styles.breadcrumbCurrent}>{crumb.name}</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {isBrowseLoading ? (
-                  <p style={styles.tabEmpty}>Loading Drive files…</p>
+                  <p style={styles.tabEmpty}>Loading…</p>
                 ) : browseError ? (
                   <div>
                     <p style={styles.errorText}>{browseError}</p>
-                    <button style={styles.retryLink} onClick={loadDriveFiles}>Try again</button>
+                    <button style={styles.retryLink} onClick={() => loadDriveFiles(browsePath.length > 0 ? browsePath[browsePath.length - 1].id : undefined)}>Try again</button>
                   </div>
                 ) : driveFiles.length === 0 ? (
-                  <p style={styles.tabEmpty}>No files in your Bruce Drive folder.</p>
+                  <p style={styles.tabEmpty}>No files in this folder.</p>
                 ) : (
                   <div style={styles.fileList}>
                     {driveFiles.map((f) => {
@@ -690,9 +726,13 @@ export default function ProjectHome({
                           <span style={styles.fileIcon}>{getMimeIcon(f.mimeType)}</span>
                           <div style={styles.fileInfo}>
                             <span style={styles.driveFileName}>{f.name}</span>
-                            <span style={styles.fileMeta}>{formatRelativeTime(f.modifiedTime)}</span>
+                            {!f.isFolder && <span style={styles.fileMeta}>{formatRelativeTime(f.modifiedTime)}</span>}
                           </div>
-                          {attached ? (
+                          {f.isFolder ? (
+                            <button style={styles.attachButton} onClick={() => handleBrowseFolder(f)}>
+                              Open
+                            </button>
+                          ) : attached ? (
                             <span style={styles.attachedBadge}>Attached</span>
                           ) : (
                             <button
@@ -1125,6 +1165,26 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "12px",
     flex: 1,
   },
+  breadcrumbs: {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "2px",
+    marginBottom: "10px",
+    fontSize: "0.8125rem",
+  },
+  breadcrumbRow: { display: "flex", alignItems: "center", gap: "2px" },
+  breadcrumbSep: { color: "var(--text-tertiary)", padding: "0 2px" },
+  breadcrumbItem: {
+    color: "var(--accent)",
+    cursor: "pointer",
+    fontWeight: "500",
+    padding: "0",
+    background: "none",
+    border: "none",
+    fontSize: "0.8125rem",
+  },
+  breadcrumbCurrent: { color: "var(--text-primary)", fontWeight: "500" },
   tabEmpty: {
     fontSize: "0.875rem",
     color: "var(--text-tertiary)",

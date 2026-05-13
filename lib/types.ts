@@ -270,6 +270,7 @@ export interface DriveFile {
   mimeType: string;
   webViewLink: string;
   modifiedTime: string;
+  isFolder: boolean;
 }
 
 // ------------------------------------------------------------
