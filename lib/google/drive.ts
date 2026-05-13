@@ -281,7 +281,7 @@ export async function getFileContent(
   });
   const mimeType = meta.mimeType as string;
 
-  const MAX_CHARS = 2000;
+  const MAX_CHARS = 8000;
 
   async function fetchText(url: string): Promise<string> {
     const res = await fetch(url, {
@@ -302,12 +302,10 @@ export async function getFileContent(
   if (mimeType === "application/vnd.google-apps.presentation") {
     return fetchText(`${DRIVE_API}/files/${fileId}/export?mimeType=text%2Fplain`);
   }
-  if (mimeType.startsWith("text/")) {
-    return fetchText(`${DRIVE_API}/files/${fileId}?alt=media`);
-  }
-
-  console.warn(`[drive] getFileContent: unsupported mimeType ${mimeType} for file ${fileId}`);
-  return "";
+  // For all non-Google-Workspace types (text/*, application/vnd.ms-excel, octet-stream, etc.)
+  // fetch raw bytes through the Drive API using the stored OAuth token.
+  // .xls files exported from Precise Petcare are HTML tables — readable as text.
+  return fetchText(`${DRIVE_API}/files/${fileId}?alt=media`);
 }
 
 export async function uploadImageToPersonalFolder(

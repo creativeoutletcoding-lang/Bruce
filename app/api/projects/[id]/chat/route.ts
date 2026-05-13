@@ -106,8 +106,8 @@ export async function POST(request: NextRequest, { params }: Props) {
   const attachedFiles = (project.files as FileRow[]) ?? [];
   const fileNames = attachedFiles.map((f) => f.name);
 
-  // Fetch file content from Drive (capped at 3000 chars total)
-  const FILE_CHAR_CAP = 3000;
+  // Fetch file content from Drive (capped at 10000 chars total)
+  const FILE_CHAR_CAP = 10000;
   let fileContentBlock = "";
   let totalFileChars = 0;
   let skippedCount = 0;
