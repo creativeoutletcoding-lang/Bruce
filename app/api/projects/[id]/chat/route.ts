@@ -388,7 +388,7 @@ export async function POST(request: NextRequest, { params }: Props) {
 
           const stream = anthropic.messages.stream({
             model: preferredModel,
-            max_tokens: 2048,
+            max_tokens: 16000,
             system: systemPrompt,
             messages: currentMessages,
             tools,
