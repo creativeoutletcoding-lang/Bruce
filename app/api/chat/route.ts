@@ -44,7 +44,7 @@ import { type ImageQuality } from "@/lib/images/generate";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -358,33 +358,31 @@ export async function POST(request: NextRequest) {
             controller.enqueue(encoder.encode(DOCUMENT_STATUS_SENTINEL));
           }
 
+          const TOOL_TIMEOUT_MS = 90_000;
           const toolResults = await Promise.all(
             toolCalls.map(async (tc) => {
               let result: string;
               try {
-                if (tc.name === "web_search" || tc.name === "browse_url") {
-                  result = await executeSearchTool(
-                    tc.name,
-                    tc.input as Record<string, unknown>
-                  );
-                } else if (GMAIL_TOOL_NAMES.has(tc.name)) {
-                  result = await executeGmailTool(
-                    tc.name,
-                    tc.input as Record<string, unknown>,
-                    user.id
-                  );
-                } else if (DOCUMENT_TOOL_NAMES.has(tc.name)) {
-                  result = await executeDocumentTool(
-                    tc.name,
-                    tc.input as Record<string, unknown>,
-                    user.id
-                  );
-                } else {
-                  result = await executeCalendarTool(
-                    tc.name,
-                    tc.input as Record<string, unknown>
-                  );
-                }
+                const callPromise = (() => {
+                  if (tc.name === "web_search" || tc.name === "browse_url") {
+                    return executeSearchTool(tc.name, tc.input as Record<string, unknown>);
+                  } else if (GMAIL_TOOL_NAMES.has(tc.name)) {
+                    return executeGmailTool(tc.name, tc.input as Record<string, unknown>, user.id);
+                  } else if (DOCUMENT_TOOL_NAMES.has(tc.name)) {
+                    return executeDocumentTool(tc.name, tc.input as Record<string, unknown>, user.id);
+                  } else {
+                    return executeCalendarTool(tc.name, tc.input as Record<string, unknown>);
+                  }
+                })();
+                result = await Promise.race([
+                  callPromise,
+                  new Promise<never>((_, reject) =>
+                    setTimeout(
+                      () => reject(new Error(`"${tc.name}" did not complete within ${TOOL_TIMEOUT_MS / 1000}s`)),
+                      TOOL_TIMEOUT_MS
+                    )
+                  ),
+                ]);
               } catch (err) {
                 result = `Error: ${err instanceof Error ? err.message : String(err)}`;
               }

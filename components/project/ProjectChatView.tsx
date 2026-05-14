@@ -450,11 +450,19 @@ export default function ProjectChatView({
           console.error("[client] image generation catch:", err);
         }
       } else if (finalTask) {
-        // Task response — keep card visible while loadMessages() runs
+        // Resolve any steps still in "working" — stream ended before Claude could finalize them
+        const resolvedTask: TaskProgressData = {
+          ...finalTask,
+          steps: finalTask.steps.map((s) =>
+            s.status === "working"
+              ? { ...s, status: "error" as const, error: "Did not complete — try again" }
+              : s
+          ),
+        };
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? { ...m, content: finalText, isStreaming: false, taskData: finalTask as TaskProgressData, created_at: new Date().toISOString() }
+              ? { ...m, content: finalText, isStreaming: false, taskData: resolvedTask, created_at: new Date().toISOString() }
               : m
           )
         );
