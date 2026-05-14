@@ -358,7 +358,10 @@ export default function ChatWindow({
       setIsStreaming(false);
       setWorkingStatus(null);
       abortRef.current = null;
-      if (!incognito) {
+      // Skip loadMessages on abort: the optimistic message already shows the
+      // partial content. The server persists it asynchronously; the next send
+      // will load fresh state from DB.
+      if (!incognito && !abort.signal.aborted) {
         await loadMessages();
       }
     }

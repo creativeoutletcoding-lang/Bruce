@@ -121,7 +121,13 @@ async function executeOneTool(
 export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array> {
   const { anthropic, model, maxTokens, systemPrompt, initialMessages, tools, userId, handleImageRequest, persist } = opts;
 
+  // Aborted when the client disconnects (ReadableStream cancel callback below).
+  const clientAbort = new AbortController();
+
   return new ReadableStream({
+    cancel() {
+      clientAbort.abort();
+    },
     async start(controller) {
       const encoder = new TextEncoder();
       let fullResponse = "";
@@ -206,7 +212,7 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
             system: systemPrompt,
             messages: currentMessages,
             tools,
-          });
+          }, { signal: clientAbort.signal });
 
           stream.on("text", (text) => {
             fullResponse += text;
@@ -317,6 +323,14 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
 
         controller.close();
       } catch (err) {
+        if (clientAbort.signal.aborted) {
+          // Client disconnected — persist whatever was generated and close cleanly.
+          // Do NOT call controller.error() so the response closes without a noisy error.
+          const clean = cleanText(fullResponse);
+          if (clean) await persistAssistant(clean, { interrupted: true }).catch(() => {});
+          controller.close();
+          return;
+        }
         console.error("[streamHandler] Stream error:", err instanceof Error ? err.message : String(err));
         // Best-effort: save whatever the model produced up to the failure so
         // the user doesn't lose visible work.

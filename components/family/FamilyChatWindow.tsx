@@ -374,7 +374,9 @@ export default function FamilyChatWindow({
       setIsStreaming(false);
       setWorkingStatus(null);
       abortRef.current = null;
-      await loadMessages();
+      if (!abort.signal.aborted) {
+        await loadMessages();
+      }
     }
   }
 
