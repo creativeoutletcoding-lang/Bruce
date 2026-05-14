@@ -100,6 +100,14 @@ export function parseCSV(text: string): { headers: string[]; rows: string[][] } 
   return { headers, rows };
 }
 
+const CSV_TIMEOUT_MS = 30_000;
+
+function makeAbortSignal(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
+
 // ── Public API ───────────────────────────────────────────────
 
 export async function generateCSV(
@@ -109,11 +117,17 @@ export async function generateCSV(
   fileName: string,
   folderPath = "Personal"
 ): Promise<CSVResult> {
+  console.error(`[csv.generateCSV] start fileName="${fileName}" folderPath="${folderPath}" rows=${data.length}`);
+
   const token = await getValidToken(userId);
+  console.error(`[csv.generateCSV] got token`);
+
   const folderId = await resolveFolderPath(userId, folderPath);
+  console.error(`[csv.generateCSV] resolved folder "${folderPath}" → ${folderId}`);
 
   const csvName = fileName.endsWith(".csv") ? fileName : `${fileName}.csv`;
   const csvContent = serializeCSV(data, columns);
+  console.error(`[csv.generateCSV] serialized ${csvContent.length} chars, uploading to folderId=${folderId}`);
 
   const boundary = `bruce_csv_${Date.now()}`;
   const metadata = JSON.stringify({
@@ -131,24 +145,39 @@ export async function generateCSV(
     `${csvContent}\r\n` +
     `--${boundary}--`;
 
-  const res = await fetch(
-    `${UPLOAD_API}/files?uploadType=multipart&fields=id,webViewLink`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": `multipart/related; boundary=${boundary}`,
-      },
-      body,
+  const { signal, clear } = makeAbortSignal(CSV_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(
+      `${UPLOAD_API}/files?uploadType=multipart&fields=id,webViewLink`,
+      {
+        method: "POST",
+        signal,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": `multipart/related; boundary=${boundary}`,
+        },
+        body,
+      }
+    );
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      console.error(`[csv.generateCSV] upload timed out after ${CSV_TIMEOUT_MS / 1000}s`);
+      throw new Error(`Drive CSV upload timed out after ${CSV_TIMEOUT_MS / 1000}s`);
     }
-  );
+    throw err;
+  } finally {
+    clear();
+  }
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`CSV upload failed: ${res.status} — ${err}`);
+    console.error(`[csv.generateCSV] upload failed: ${res.status} — ${err}`);
+    throw new Error(`CSV upload failed ${res.status}: ${err}`);
   }
 
   const file = (await res.json()) as { id: string; webViewLink: string };
+  console.error(`[csv.generateCSV] upload ok fileId=${file.id}`);
 
   return {
     fileId: file.id,

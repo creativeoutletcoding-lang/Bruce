@@ -11,6 +11,13 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
+const DRIVE_TIMEOUT_MS = 30_000;
+
+function makeAbortSignal(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -53,14 +60,27 @@ async function driveGet(
 ): Promise<Record<string, unknown>> {
   const url = new URL(`${DRIVE_API}${path}`);
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Drive GET ${path} failed: ${res.status} — ${err}`);
+  const { signal, clear } = makeAbortSignal(DRIVE_TIMEOUT_MS);
+  try {
+    const res = await fetch(url.toString(), {
+      signal,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`[drive] GET ${path} failed: ${res.status} — ${err}`);
+      throw new Error(`Drive API error ${res.status}: ${err}`);
+    }
+    return res.json() as Promise<Record<string, unknown>>;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      console.error(`[drive] GET ${path} timed out after ${DRIVE_TIMEOUT_MS / 1000}s`);
+      throw new Error(`Drive API timed out after ${DRIVE_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clear();
   }
-  return res.json() as Promise<Record<string, unknown>>;
 }
 
 // Returns all folders with the given name under parentId, sorted oldest-first.
@@ -114,20 +134,33 @@ async function ensureFolderByName(
   const existing = await findFolderByName(token, name, parentId);
   if (existing) return existing;
 
-  const res = await fetch(`${DRIVE_API}/files`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Drive create folder failed: ${res.status} — ${err}`);
+  const { signal, clear } = makeAbortSignal(DRIVE_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${DRIVE_API}/files`, {
+      method: "POST",
+      signal,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`[drive] create folder "${name}" failed: ${res.status} — ${err}`);
+      throw new Error(`Drive create folder error ${res.status}: ${err}`);
+    }
+    const data = (await res.json()) as { id: string };
+    return data.id;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      console.error(`[drive] create folder "${name}" timed out after ${DRIVE_TIMEOUT_MS / 1000}s`);
+      throw new Error(`Drive folder creation timed out after ${DRIVE_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clear();
   }
-  const data = (await res.json()) as { id: string };
-  return data.id;
 }
 
 // ── Path resolution ──────────────────────────────────────────
