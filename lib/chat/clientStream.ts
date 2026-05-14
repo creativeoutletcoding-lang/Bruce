@@ -4,7 +4,7 @@ import {
   extractLatestTaskProgress,
   stripTaskProgressTags,
 } from "@/lib/chat/taskProgress";
-import type { TaskProgressData } from "@/lib/chat/taskProgress";
+import type { TaskProgressData, TaskStepStatus } from "@/lib/chat/taskProgress";
 
 // 24ms ≈ 42 fps — fluid enough that streamed text reads as continuous flow
 // without flooding React's reconciler. Lower than the original 40ms (25 fps)
@@ -12,6 +12,8 @@ import type { TaskProgressData } from "@/lib/chat/taskProgress";
 export const STREAM_FLUSH_INTERVAL_MS = 24;
 
 const STATUS_RE = /\x1eSTATUS:[^\x1e]*\x1e/g;
+const TASK_PROGRESS_RE = /\x1eTASK_PROGRESS:([^\x1e]+)\x1e/g;
+const TASK_PROGRESS_STRIP_RE = /\x1eTASK_PROGRESS:[^\x1e]*\x1e/g;
 
 export interface StreamTick {
   display: string;
@@ -31,9 +33,46 @@ export function parseStreamFrame(accumulated: string): StreamTick {
   const statusMatch = /\x1eSTATUS:([^\x1e]*)\x1e/.exec(raw);
   if (statusMatch) workingStatus = statusMatch[1];
 
-  const task = extractLatestTaskProgress(raw);
+  // Build live task progress from \x1eTASK_PROGRESS:{...}\x1e sentinels.
+  // Each sentinel carries one step completion event; we accumulate them into a
+  // TaskProgressData so the task card ticks as each tool call finishes.
+  // Prefer this over XML-tag extraction during streaming — the sentinels are
+  // emitted immediately after each tool executes, not at final-text time.
+  let sentinelTask: TaskProgressData | null = null;
+  {
+    TASK_PROGRESS_RE.lastIndex = 0;
+    const stepOrder: string[] = [];
+    const stepMap = new Map<string, { status: TaskStepStatus; detail?: string }>();
+    let m: RegExpExecArray | null;
+    while ((m = TASK_PROGRESS_RE.exec(raw)) !== null) {
+      try {
+        const ev = JSON.parse(m[1]) as { step: string; status: string; detail?: string };
+        if (!stepMap.has(ev.step)) stepOrder.push(ev.step);
+        stepMap.set(ev.step, { status: ev.status as TaskStepStatus, detail: ev.detail });
+      } catch { /* skip malformed */ }
+    }
+    if (stepOrder.length > 0) {
+      sentinelTask = {
+        task: "",
+        steps: stepOrder.map((label) => {
+          const s = stepMap.get(label)!;
+          return { id: label, label, status: s.status, ...(s.detail ? { detail: s.detail } : {}) };
+        }),
+      };
+    }
+  }
+
+  // XML-based extraction for the final turn (Bruce's summary text may include
+  // a <task_progress> block with the full task name and resolved step list).
+  const xmlTask = extractLatestTaskProgress(raw);
+
+  // Prefer XML when available (it has the task name and canonical step IDs);
+  // fall back to sentinel-built state during execution.
+  const task = xmlTask ?? sentinelTask;
+
   const display = stripTaskProgressTags(raw)
     .replace(STATUS_RE, "")
+    .replace(TASK_PROGRESS_STRIP_RE, "")
     .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
     .trimStart();
 

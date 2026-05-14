@@ -90,6 +90,59 @@ export interface StreamRunOptions {
 const IMAGE_TAG_RE = /<image_request>([\s\S]*?)<\/image_request>/;
 const TOOL_TIMEOUT_MS = 90_000;
 
+// Sentinel emitted after each tool call completes so the client can tick the
+// task card live without waiting for Bruce's final text response.
+// Format: \x1eTASK_PROGRESS:{"step":"...","status":"done"|"error","detail":"..."}\x1e
+// Uses \x1e (same family as STATUS sentinels) — never \x1f, which is reserved for IMAGE_REQ.
+export const TASK_PROGRESS_SENTINEL = "\x1eTASK_PROGRESS:";
+
+const TOOL_STEP_LABELS: Record<string, string> = {
+  list_drive_files: "List Drive files",
+  resolve_drive_path: "Resolve Drive path",
+  read_spreadsheet: "Read spreadsheet",
+  read_csv: "Read CSV",
+  read_document: "Read document",
+  create_spreadsheet: "Create spreadsheet",
+  add_spreadsheet_tab: "Write spreadsheet tab",
+  update_spreadsheet_cells: "Update cells",
+  format_spreadsheet_tab: "Format tab",
+  generate_csv: "Generate CSV",
+  create_document: "Create document",
+  update_document: "Update document",
+  append_document: "Append to document",
+  export_as_pdf: "Export PDF",
+  web_search: "Search the web",
+  browse_url: "Fetch URL",
+  create_event: "Create calendar event",
+  update_event: "Update calendar event",
+  delete_event: "Delete calendar event",
+  list_events: "List calendar events",
+  get_event: "Get calendar event",
+  respond_to_event: "Respond to event",
+  suggest_time: "Find meeting time",
+  send_email: "Send email",
+  read_email: "Read email",
+  list_emails: "List emails",
+  archive_email: "Archive email",
+  delete_email: "Delete email",
+};
+
+function extractStepDetail(toolName: string, result: string): string | undefined {
+  try {
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    if (typeof parsed.tab_name === "string") return `Tab ${parsed.tab_name}`;
+    if (typeof parsed.title === "string") return parsed.title;
+    if (typeof parsed.file_name === "string") {
+      const rows = typeof parsed.row_count === "number" ? ` (${parsed.row_count} rows)` : "";
+      return `${parsed.file_name}${rows}`;
+    }
+    if (Array.isArray(parsed.files)) return `${(parsed.files as unknown[]).length} files`;
+    if (typeof parsed.row_count === "number") return `${parsed.row_count} rows`;
+  } catch { /* ignore */ }
+  if (toolName === "web_search" || toolName === "browse_url") return undefined;
+  return undefined;
+}
+
 // ── Tool dispatch ────────────────────────────────────────────────────────────
 
 async function executeOneTool(
@@ -289,6 +342,20 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
                 result = `Error: ${err instanceof Error ? err.message : String(err)}`;
               }
               const isToolError = result.startsWith("Error:");
+
+              // Emit a task-progress sentinel so the client can tick the task card
+              // live as each tool completes, without waiting for Bruce's final text.
+              const stepLabel = TOOL_STEP_LABELS[tc.name] ?? tc.name;
+              const detail = isToolError
+                ? result.slice(0, 100)
+                : extractStepDetail(tc.name, result);
+              const sentinelPayload = JSON.stringify({
+                step: stepLabel,
+                status: isToolError ? "error" : "done",
+                ...(detail ? { detail } : {}),
+              });
+              controller.enqueue(encoder.encode(`${TASK_PROGRESS_SENTINEL}${sentinelPayload}\x1e`));
+
               return {
                 type: "tool_result" as const,
                 tool_use_id: tc.id,
