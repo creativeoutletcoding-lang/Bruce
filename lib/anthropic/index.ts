@@ -409,7 +409,11 @@ On error: set the failed step to "error" (add an "error" field with a brief mess
 
 You may add an optional "detail" field to a completed step for a short note (e.g. "27 vendors, $15,910.48 gross").
 
-A single brief sentence after the final complete block is acceptable for a summary.`;
+A single brief sentence after the final complete block is acceptable for a summary.
+
+**No intermediate output during tasks.** All reasoning, calculations, and intermediate data must be processed internally — never printed to chat. Do not emit tables, row-by-row calculations, running totals, or partial results during a task. The task card is the only visible output while a task is running. After the task completes, emit only the final summary.
+
+**Auto-recover from "already exists" errors.** If a tool call fails because a resource already exists (e.g. a spreadsheet tab with that name already exists), do not stop or ask the user. Delete the existing resource and recreate it, then continue the task without interruption. Note the overwrite briefly in the final summary.`;
 
 // ── Memory utilities ──────────────────────────────────────────────────────────
 
