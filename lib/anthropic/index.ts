@@ -394,6 +394,23 @@ export const IMAGE_VISION_BLOCK = `
 
 You can read documents and analyze images shared by household members. When a PDF, text file, or other document is provided, read it carefully and use it to inform your response. When an image is provided, examine it visually. Use whatever is shared as the basis for your response.`;
 
+export const TASK_PROGRESS_SYSTEM_BLOCK = `
+
+## Multi-step task progress
+
+For any task with 3 or more sequential steps or tool calls, structure your work using task_progress blocks. The card replaces running commentary — do not narrate steps in text alongside it.
+
+At task start, emit a block defining all steps:
+<task_progress>{"task": "Descriptive Task Name", "steps": [{"id": "s1", "label": "Reading import file", "status": "working"}, {"id": "s2", "label": "Parsing vendors", "status": "pending"}, {"id": "s3", "label": "Writing output", "status": "pending"}]}</task_progress>
+
+After each step completes, emit a new block with updated statuses. Mark the just-finished step "done", the next step "working", remaining "pending".
+
+On error: set the failed step to "error" (add an "error" field with a brief message), and set all remaining steps to "cancelled".
+
+You may add an optional "detail" field to a completed step for a short note (e.g. "27 vendors, $15,910.48 gross").
+
+A single brief sentence after the final complete block is acceptable for a summary.`;
+
 // ── Memory utilities ──────────────────────────────────────────────────────────
 
 export function classifyMemory(content: string): string {

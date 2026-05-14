@@ -7,7 +7,12 @@ import {
   generateChatTitle,
   IMAGE_SYSTEM_BLOCK,
   IMAGE_VISION_BLOCK,
+  TASK_PROGRESS_SYSTEM_BLOCK,
 } from "@/lib/anthropic";
+import {
+  extractLatestTaskProgress,
+  stripTaskProgressTags,
+} from "@/lib/chat/taskProgress";
 import {
   CALENDAR_TOOLS,
   CALENDAR_SYSTEM_BLOCK,
@@ -145,7 +150,8 @@ export async function POST(request: NextRequest) {
     IMAGE_VISION_BLOCK +
     SEARCH_SYSTEM_BLOCK +
     BROWSE_SYSTEM_BLOCK +
-    DOCUMENT_SYSTEM_BLOCK;
+    DOCUMENT_SYSTEM_BLOCK +
+    TASK_PROGRESS_SYSTEM_BLOCK;
 
   const tools = [...CALENDAR_TOOLS, ...GMAIL_TOOLS, SEARCH_TOOL, BROWSE_TOOL, ...DOCUMENT_TOOLS];
 
@@ -322,7 +328,7 @@ export async function POST(request: NextRequest) {
 
           // Save this turn's text immediately before executing tools
           if (!isIncognito && currentChatId && currentTurnText.trim()) {
-            const cleanTurnText = currentTurnText
+            const cleanTurnText = stripTaskProgressTags(currentTurnText)
               .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
               .trim();
             if (cleanTurnText) {
@@ -417,17 +423,27 @@ export async function POST(request: NextRequest) {
 
         // Persist the final turn's text before close. Per-turn saves already wrote any
         // intermediate turns above; this captures only the last assistant turn.
-        if (!isIncognito && currentChatId && currentTurnText.trim()) {
-          const cleanResponse = currentTurnText
+        if (!isIncognito && currentChatId) {
+          const taskData = extractLatestTaskProgress(fullResponse);
+          const cleanResponse = stripTaskProgressTags(currentTurnText)
             .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
             .trim();
-          if (cleanResponse) {
+          if (cleanResponse || taskData) {
+            const metadata: Record<string, unknown> = {};
+            if (webSearchUsed || browseUrlUsed) {
+              metadata.web_search_used = webSearchUsed;
+              metadata.browse_url_used = browseUrlUsed;
+            }
+            if (taskData) {
+              metadata.content_type = "task";
+              metadata.task_data = taskData;
+            }
             const { error: insertErr } = await adminSupabase.from("messages").insert({
               chat_id: currentChatId,
               sender_id: null,
               role: "assistant",
               content: cleanResponse,
-              ...(webSearchUsed || browseUrlUsed ? { metadata: { web_search_used: webSearchUsed, browse_url_used: browseUrlUsed } } : {}),
+              ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
             });
             if (insertErr) {
               console.error("[api/chat] Failed to persist assistant message:", insertErr);
@@ -452,7 +468,7 @@ export async function POST(request: NextRequest) {
         });
         // Best-effort: save the current turn's partial text before the error
         if (!isIncognito && currentChatId && currentTurnText.trim()) {
-          const cleanResponse = currentTurnText
+          const cleanResponse = stripTaskProgressTags(currentTurnText)
             .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
             .trim();
           if (cleanResponse) {

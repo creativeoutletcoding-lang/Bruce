@@ -6,7 +6,12 @@ import {
   buildFamilyChatSystemPrompt,
   buildMemberCombination,
   IMAGE_VISION_BLOCK,
+  TASK_PROGRESS_SYSTEM_BLOCK,
 } from "@/lib/anthropic";
+import {
+  extractLatestTaskProgress,
+  stripTaskProgressTags,
+} from "@/lib/chat/taskProgress";
 import { notifyUser } from "@/lib/notifications";
 import {
   CALENDAR_TOOLS,
@@ -238,7 +243,8 @@ export async function POST(request: NextRequest) {
     IMAGE_VISION_BLOCK +
     SEARCH_SYSTEM_BLOCK +
     BROWSE_SYSTEM_BLOCK +
-    DOCUMENT_SYSTEM_BLOCK;
+    DOCUMENT_SYSTEM_BLOCK +
+    TASK_PROGRESS_SYSTEM_BLOCK;
 
   const tools = [...CALENDAR_TOOLS, ...GMAIL_TOOLS, SEARCH_TOOL, BROWSE_TOOL, ...DOCUMENT_TOOLS];
 
@@ -324,7 +330,7 @@ export async function POST(request: NextRequest) {
 
           // Save this turn's text immediately before executing tools
           if (currentTurnText.trim()) {
-            const cleanTurnText = currentTurnText.trim();
+            const cleanTurnText = stripTaskProgressTags(currentTurnText).trim();
             if (cleanTurnText) {
               await adminSupabase.from("messages").insert({
                 chat_id: chatId,
@@ -392,22 +398,32 @@ export async function POST(request: NextRequest) {
         }
 
         // Persist the final turn's text. Per-turn saves already wrote intermediate turns.
-        if (currentTurnText.trim()) {
-          const { error: insertErr } = await adminSupabase.from("messages").insert({
-            chat_id: chatId,
-            sender_id: null,
-            role: "assistant",
-            content: currentTurnText.trim(),
-          });
-          if (insertErr) {
-            console.error("[api/family/chat] Failed to persist Bruce message:", insertErr);
-          } else {
-            const { error: updateErr } = await adminSupabase
-              .from("chats")
-              .update({ last_message_at: new Date().toISOString() })
-              .eq("id", chatId);
-            if (updateErr) {
-              console.error("[api/family/chat] Failed to update chat timestamp:", updateErr);
+        {
+          const taskData = extractLatestTaskProgress(fullResponse);
+          const cleanResponse = stripTaskProgressTags(currentTurnText).trim();
+          if (cleanResponse || taskData) {
+            const metadata: Record<string, unknown> = {};
+            if (taskData) {
+              metadata.content_type = "task";
+              metadata.task_data = taskData;
+            }
+            const { error: insertErr } = await adminSupabase.from("messages").insert({
+              chat_id: chatId,
+              sender_id: null,
+              role: "assistant",
+              content: cleanResponse,
+              ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+            });
+            if (insertErr) {
+              console.error("[api/family/chat] Failed to persist Bruce message:", insertErr);
+            } else {
+              const { error: updateErr } = await adminSupabase
+                .from("chats")
+                .update({ last_message_at: new Date().toISOString() })
+                .eq("id", chatId);
+              if (updateErr) {
+                console.error("[api/family/chat] Failed to update chat timestamp:", updateErr);
+              }
             }
           }
         }
@@ -417,14 +433,17 @@ export async function POST(request: NextRequest) {
         console.error("[api/family/chat] Stream error:", err);
         // Best-effort: save current turn's partial text before the error
         if (currentTurnText.trim()) {
-          const { error: insertErr } = await adminSupabase.from("messages").insert({
-            chat_id: chatId,
-            sender_id: null,
-            role: "assistant",
-            content: currentTurnText.trim(),
-          });
-          if (insertErr) {
-            console.error("[api/family/chat] Failed to persist partial Bruce message:", insertErr);
+          const cleanResponse = stripTaskProgressTags(currentTurnText).trim();
+          if (cleanResponse) {
+            const { error: insertErr } = await adminSupabase.from("messages").insert({
+              chat_id: chatId,
+              sender_id: null,
+              role: "assistant",
+              content: cleanResponse,
+            });
+            if (insertErr) {
+              console.error("[api/family/chat] Failed to persist partial Bruce message:", insertErr);
+            }
           }
         }
         controller.error(err);

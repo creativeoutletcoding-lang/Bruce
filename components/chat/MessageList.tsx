@@ -7,12 +7,14 @@ import type { MessageAttachment } from "./MessageBubble";
 import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
+import type { TaskProgressData } from "@/lib/chat/taskProgress";
 
 const ImageMessage = dynamic(() => import("./ImageMessage"), { ssr: false });
 const ImageMessageSkeleton = dynamic(
   () => import("./ImageMessage").then((m) => ({ default: m.ImageMessageSkeleton })),
   { ssr: false }
 );
+const TaskCard = dynamic(() => import("./TaskCard"), { ssr: false });
 
 export interface ChatMessage {
   id: string;
@@ -29,6 +31,7 @@ export interface ChatMessage {
   sender_id?: string | null;
   senderName?: string;
   senderColorHex?: string;
+  taskData?: TaskProgressData | null;
 }
 
 interface MessageListProps {
@@ -128,6 +131,21 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
               const isHD = msg.metadata.quality === "hd";
               if (!url) return <ImageMessageSkeleton key={msg.id} isHD={isHD} />;
               return <ImageMessage key={msg.id} url={url} prompt={prompt} isHD={isHD} />;
+            }
+            if (msg.taskData || msg.metadata?.content_type === "task") {
+              const data = (msg.taskData ?? msg.metadata?.task_data) as TaskProgressData | undefined;
+              if (data) {
+                return (
+                  <div key={msg.id} style={{ padding: "2px 16px" }}>
+                    <TaskCard data={data} isStreaming={msg.isStreaming} />
+                    {msg.content && !msg.isStreaming && (
+                      <div style={{ paddingTop: "6px", fontSize: "0.9375rem", lineHeight: "1.55", color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>
+                        {msg.content}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
             }
             {
               // Resolve attachment list: prefer explicit array, then metadata.attachments, then single legacy fields

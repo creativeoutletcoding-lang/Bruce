@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { assembleMemoryBlock, buildMemberCombination, buildProjectSystemPrompt, generateChatTitle, IMAGE_SYSTEM_BLOCK, IMAGE_VISION_BLOCK } from "@/lib/anthropic";
+import { assembleMemoryBlock, buildMemberCombination, buildProjectSystemPrompt, generateChatTitle, IMAGE_SYSTEM_BLOCK, IMAGE_VISION_BLOCK, TASK_PROGRESS_SYSTEM_BLOCK } from "@/lib/anthropic";
+import { extractLatestTaskProgress, stripTaskProgressTags } from "@/lib/chat/taskProgress";
 import { getFileContent } from "@/lib/google/drive";
 import { type ImageQuality } from "@/lib/images/generate";
 import {
@@ -212,7 +213,8 @@ export async function POST(request: NextRequest, { params }: Props) {
     IMAGE_VISION_BLOCK +
     SEARCH_SYSTEM_BLOCK +
     BROWSE_SYSTEM_BLOCK +
-    DOCUMENT_SYSTEM_BLOCK;
+    DOCUMENT_SYSTEM_BLOCK +
+    TASK_PROGRESS_SYSTEM_BLOCK;
 
   const tools = [...CALENDAR_TOOLS, ...GMAIL_TOOLS, SEARCH_TOOL, BROWSE_TOOL, ...DOCUMENT_TOOLS];
 
@@ -389,7 +391,7 @@ export async function POST(request: NextRequest, { params }: Props) {
 
           // Save this turn's text immediately before executing tools
           if (currentChatId && currentTurnText.trim()) {
-            const cleanTurnText = currentTurnText
+            const cleanTurnText = stripTaskProgressTags(currentTurnText)
               .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
               .trim();
             if (cleanTurnText) {
@@ -482,17 +484,27 @@ export async function POST(request: NextRequest, { params }: Props) {
         }
 
         // Persist the final turn's text. Per-turn saves already wrote intermediate turns.
-        if (currentChatId && currentTurnText.trim()) {
-          const cleanResponse = currentTurnText
+        if (currentChatId) {
+          const taskData = extractLatestTaskProgress(fullResponse);
+          const cleanResponse = stripTaskProgressTags(currentTurnText)
             .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
             .trim();
-          if (cleanResponse) {
+          if (cleanResponse || taskData) {
+            const metadata: Record<string, unknown> = {};
+            if (webSearchUsed || browseUrlUsed) {
+              metadata.web_search_used = webSearchUsed;
+              metadata.browse_url_used = browseUrlUsed;
+            }
+            if (taskData) {
+              metadata.content_type = "task";
+              metadata.task_data = taskData;
+            }
             const { error: insertErr } = await adminSupabase.from("messages").insert({
               chat_id: currentChatId,
               sender_id: null,
               role: "assistant",
               content: cleanResponse,
-              ...(webSearchUsed || browseUrlUsed ? { metadata: { web_search_used: webSearchUsed, browse_url_used: browseUrlUsed } } : {}),
+              ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
             });
             if (insertErr) {
               console.error("[api/projects/chat] Failed to persist assistant message:", insertErr);
@@ -513,7 +525,7 @@ export async function POST(request: NextRequest, { params }: Props) {
         console.error("[api/projects/chat] Stream error:", err instanceof Error ? err.message : String(err));
         // Best-effort: save current turn's partial text before the error
         if (currentChatId && currentTurnText.trim()) {
-          const cleanResponse = currentTurnText
+          const cleanResponse = stripTaskProgressTags(currentTurnText)
             .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
             .trim();
           if (cleanResponse) {

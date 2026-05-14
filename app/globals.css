@@ -251,6 +251,11 @@ span[class*="typingDots"] > span:nth-child(3),
   animation-delay: 0.4s;
 }
 
+@keyframes taskSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 @keyframes pull-refresh-indeterminate {
   0%   { left: -40%; }
   60%  { left: 100%; }

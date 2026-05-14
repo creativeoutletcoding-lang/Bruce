@@ -8,6 +8,14 @@ import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { MessageRole } from "@/lib/types";
 import type { UserSummary } from "@/lib/types";
+import {
+  extractLatestTaskProgress,
+  stripTaskProgressTags,
+} from "@/lib/chat/taskProgress";
+import type { TaskProgressData } from "@/lib/chat/taskProgress";
+import dynamic from "next/dynamic";
+
+const TaskCard = dynamic(() => import("@/components/chat/TaskCard"), { ssr: false });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +37,8 @@ export interface FamilyMessage {
   attachments?: FamilyMessageAttachment[];
   // Legacy single-attachment field for old DB rows
   imageUrl?: string;
+  metadata?: Record<string, unknown> | null;
+  taskData?: TaskProgressData | null;
 }
 
 interface ContextMenuState {
@@ -223,6 +233,7 @@ export default function FamilyChatWindow({
           sender_name: m.sender_id ? (memberMap.current[m.sender_id]?.name ?? null) : null,
           sender_avatar: m.sender_id ? (memberMap.current[m.sender_id]?.avatar_url ?? null) : null,
           attachments,
+          metadata: m.metadata ?? undefined,
         };
       })
     );
@@ -363,13 +374,18 @@ export default function FamilyChatWindow({
       flushTimerRef.current = setInterval(() => {
         if (!pendingFlushRef.current) return;
         pendingFlushRef.current = false;
-        const display = accumulated;
-        if (!hasFirstContent && display.trim()) {
+        const latestTask = extractLatestTaskProgress(accumulated);
+        const display = stripTaskProgressTags(accumulated);
+        if (!hasFirstContent && (display.trim() || latestTask)) {
           hasFirstContent = true;
           setBruceState("streaming");
         }
         setMessages((prev) =>
-          prev.map((m) => (m.id === streamMsgId ? { ...m, content: display } : m))
+          prev.map((m) =>
+            m.id === streamMsgId
+              ? { ...m, content: display, ...(latestTask !== null ? { taskData: latestTask } : {}) }
+              : m
+          )
         );
       }, 40);
 
@@ -384,9 +400,22 @@ export default function FamilyChatWindow({
       flushTimerRef.current = null;
 
       // Final flush
-      setMessages((prev) =>
-        prev.map((m) => (m.id === streamMsgId ? { ...m, content: accumulated, isStreaming: false } : m))
-      );
+      {
+        const finalTask = extractLatestTaskProgress(accumulated);
+        const finalDisplay = stripTaskProgressTags(accumulated);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamMsgId
+              ? {
+                  ...m,
+                  content: finalDisplay,
+                  isStreaming: false,
+                  ...(finalTask !== null ? { taskData: finalTask } : {}),
+                }
+              : m
+          )
+        );
+      }
     } catch (err) {
       console.error("[FamilyChatWindow] Send error:", err);
       setError("Something went wrong. Tap to retry.");
@@ -536,6 +565,19 @@ export default function FamilyChatWindow({
                     </div>
                   )}
 
+                  {isBruce && (msg.taskData || msg.metadata?.content_type === "task") ? (
+                    <div style={styles.bruceContent}>
+                      <TaskCard
+                        data={(msg.taskData ?? msg.metadata?.task_data) as TaskProgressData}
+                        isStreaming={msg.isStreaming}
+                      />
+                      {msg.content && !msg.isStreaming && (
+                        <div style={{ paddingTop: "6px", fontSize: "0.9375rem", lineHeight: "1.55", whiteSpace: "pre-wrap" }}>
+                          {msg.content}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
                   <div
                     className={!isBruce ? "bubble-tint" : undefined}
                     style={
@@ -600,6 +642,7 @@ export default function FamilyChatWindow({
                       </>
                     )}
                   </div>
+                  )}
                 </div>
               </div>
             );

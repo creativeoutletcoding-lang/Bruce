@@ -12,6 +12,11 @@ import type {
   MessageRole,
   ProjectMemberDetail,
 } from "@/lib/types";
+import {
+  extractLatestTaskProgress,
+  stripTaskProgressTags,
+} from "@/lib/chat/taskProgress";
+import type { TaskProgressData } from "@/lib/chat/taskProgress";
 
 interface ProjectChatViewProps {
   chatId: string;
@@ -324,16 +329,21 @@ export default function ProjectChatView({
         pendingFlushRef.current = false;
         const sentinelIdx = accumulated.indexOf("\x1f");
         const raw = sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated;
-        const display = raw
+        const latestTask = extractLatestTaskProgress(raw);
+        const display = stripTaskProgressTags(raw)
           .replace(STATUS_RE, "")
           .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
           .trimStart();
-        if (!hasFirstContent && display.trim()) {
+        if (!hasFirstContent && (display.trim() || latestTask)) {
           hasFirstContent = true;
           setWorkingStatus(null);
         }
         setMessages((prev) =>
-          prev.map((m) => m.id === streamMsgId ? { ...m, content: display } : m)
+          prev.map((m) =>
+            m.id === streamMsgId
+              ? { ...m, content: display, ...(latestTask !== null ? { taskData: latestTask } : {}) }
+              : m
+          )
         );
       }, 40);
 
@@ -353,19 +363,26 @@ export default function ProjectChatView({
       {
         const sentinelIdx = accumulated.indexOf("\x1f");
         const raw = sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated;
-        const display = raw
+        const latestTask = extractLatestTaskProgress(raw);
+        const display = stripTaskProgressTags(raw)
           .replace(STATUS_RE, "")
           .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
           .trimStart();
         setMessages((prev) =>
-          prev.map((m) => m.id === streamMsgId ? { ...m, content: display } : m)
+          prev.map((m) =>
+            m.id === streamMsgId
+              ? { ...m, content: display, ...(latestTask !== null ? { taskData: latestTask } : {}) }
+              : m
+          )
         );
       }
       setWorkingStatus(null);
 
       const sentinelParts = accumulated.split("\x1f");
       const imageReqSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_REQ:"));
-      const finalText = sentinelParts[0]
+      const sentinelRaw = sentinelParts[0];
+      const finalTask = extractLatestTaskProgress(sentinelRaw);
+      const finalText = stripTaskProgressTags(sentinelRaw)
         .replace(STATUS_RE, "")
         .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
         .trim();
@@ -432,6 +449,15 @@ export default function ProjectChatView({
         } catch (err) {
           console.error("[client] image generation catch:", err);
         }
+      } else if (finalTask) {
+        // Task response — keep card visible while loadMessages() runs
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamMsgId
+              ? { ...m, content: finalText, isStreaming: false, taskData: finalTask as TaskProgressData, created_at: new Date().toISOString() }
+              : m
+          )
+        );
       } else {
         if (finalText) {
           setMessages((prev) =>
