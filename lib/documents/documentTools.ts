@@ -113,17 +113,24 @@ export const DOCUMENT_TOOLS: Anthropic.Messages.Tool[] = [
       properties: {
         file_id: { type: "string", description: "Google Drive file ID of the existing spreadsheet." },
         tab_name: { type: "string", description: "Name for the new tab." },
+        title_row: {
+          type: "string",
+          description:
+            "Optional merged title spanning the full width of the tab (row 1). When set, " +
+            "column headers go in row 2 and data starts in row 3. freeze_rows defaults to 2. " +
+            "Example: \"Capital Petsitters Payroll  |  April 27, 2026 – May 10, 2026\"",
+        },
         headers: {
           type: "array",
           items: { type: "string" },
-          description: "Column headers for the first row.",
+          description: "Column headers. When title_row is set these go in row 2.",
         },
         rows: {
           type: "array",
           items: { type: "array", items: {} },
           description: "Data rows.",
         },
-        freeze_rows: { type: "number", description: "Rows to freeze. Default: 1." },
+        freeze_rows: { type: "number", description: "Rows to freeze. Default: 1, or 2 when title_row is set." },
         bold_headers: { type: "boolean", description: "Bold header row. Default: true." },
         currency_columns: {
           type: "array",
@@ -363,6 +370,15 @@ You can create and manage Google Sheets, Google Docs, and CSV files in the Bruce
 **Spreadsheet formatting for payroll and financial data:**
 Use \`currency_columns\` (array of 0-indexed column indices) to format monetary columns as $#,##0.00. Always freeze the header row (\`freeze_rows: 1\`) and bold headers.
 
+**CPS payroll tab format (add_spreadsheet_tab):**
+Every CPS payroll tab must match this exact layout:
+- \`tab_name\`: payment date in MMDDYYYY format (e.g. "05182026"). Use the payment date confirmed by the user — NOT the import file date.
+- \`title_row\`: \`"Capital Petsitters Payroll  |  [Period Start] – [Period End]"\` (e.g. "Capital Petsitters Payroll  |  April 27, 2026 – May 10, 2026"). This merges across all columns as row 1.
+- \`headers\` (row 2): \`["User", "Period Start", "Period End", "Visit Pay", "Tips", "Gross Pay", "WC Deduction", "Total Pay", "Notes"]\` — use these exact names, in this order.
+- \`rows\` (row 3+): one row per sitter with all 9 values. Period Start and Period End are the pay period dates (e.g. "April 27, 2026"). Visit Pay, Tips, Gross Pay, WC Deduction, Total Pay are dollar amounts. Notes can be empty string if none.
+- \`currency_columns\`: [3, 4, 5, 6, 7] (Visit Pay through Total Pay, 0-indexed).
+- \`freeze_rows\` is automatically set to 2 when \`title_row\` is provided.
+
 **When a file ID is needed:** use \`list_drive_files\` first to find existing files in the relevant folder. Never guess a file ID.
 
 **Navigating subfolders:** \`list_drive_files\` results include subfolders with \`isFolder: true\` and their Drive \`id\`. To list the contents of a subfolder, call \`list_drive_files\` with \`folder_id\` set to that entry's \`id\` — do not construct deep \`folder_path\` strings (path resolution only works one level under Projects/Personal/Shared). Example: list \`Projects/CPS PAYROLL\`, find the Imports entry (\`isFolder: true\`), then call \`list_drive_files\` with \`folder_id: "<that id>"\`.
@@ -459,8 +475,9 @@ export async function executeDocumentTool(
     case "add_spreadsheet_tab": {
       const headers = input.headers as string[] | undefined;
       const rows = (input.rows as (string | number | null)[][] | undefined) ?? [];
-      const data: SheetData | undefined = headers || rows.length > 0
-        ? { headers, rows }
+      const titleRow = input.title_row as string | undefined;
+      const data: SheetData | undefined = headers || rows.length > 0 || titleRow
+        ? { titleRow, headers, rows }
         : undefined;
 
       const currencyCols = input.currency_columns as number[] | undefined;

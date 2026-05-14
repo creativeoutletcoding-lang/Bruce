@@ -14,6 +14,7 @@ const DRIVE_API = "https://www.googleapis.com/drive/v3";
 // ── Types ────────────────────────────────────────────────────
 
 export interface SheetData {
+  titleRow?: string;      // merged spanning title above headers (e.g. "Capital Petsitters Payroll  |  April 27 – May 10")
   headers?: string[];
   rows: (string | number | null)[][];
 }
@@ -113,7 +114,8 @@ async function sheetsGet(
 function buildFormatRequests(
   sheetId: number,
   spec: TabFormatSpec,
-  numCols: number
+  numCols: number,
+  headerRowIndex: number = 0
 ): Record<string, unknown>[] {
   const requests: Record<string, unknown>[] = [];
   const bold = spec.boldHeaders !== false;
@@ -134,15 +136,15 @@ function buildFormatRequests(
     });
   }
 
-  // Bold + background on header row
+  // Bold + background on header row (shifted when a title row occupies row 0)
   if (bold) {
     const bg = spec.headerBackground ?? { red: 0.851, green: 0.918, blue: 0.827 };
     requests.push({
       repeatCell: {
         range: {
           sheetId,
-          startRowIndex: 0,
-          endRowIndex: 1,
+          startRowIndex: headerRowIndex,
+          endRowIndex: headerRowIndex + 1,
           startColumnIndex: 0,
           endColumnIndex: numCols || 26,
         },
@@ -157,11 +159,11 @@ function buildFormatRequests(
     });
   }
 
-  // Per-column formatting
+  // Per-column formatting (data starts one row below headers)
   if (spec.columns) {
     for (const [colIdxStr, colSpec] of Object.entries(spec.columns)) {
       const colIdx = Number(colIdxStr);
-      const startRow = colSpec.startRow ?? 1;
+      const startRow = colSpec.startRow ?? (headerRowIndex + 1);
 
       if (colSpec.numberFormat) {
         requests.push({
@@ -210,6 +212,9 @@ function buildRowValues(
   data: SheetData
 ): (string | number | null)[][] {
   const rows: (string | number | null)[][] = [];
+  if (data.titleRow) {
+    rows.push([data.titleRow]); // single cell — will be merged across full width
+  }
   if (data.headers && data.headers.length > 0) {
     rows.push(data.headers);
   }
@@ -321,13 +326,54 @@ export async function addTab(
   }>;
   const sheetId = replies[0].addSheet.properties.sheetId;
 
+  const hasTitleRow = !!data?.titleRow;
+  const headerRowIndex = hasTitleRow ? 1 : 0;
+  const numCols = data?.headers?.length ?? (data?.rows[0]?.length ?? 0);
+
+  // When a title row is present, default freeze to 2 (title + headers) instead of 1
+  const effectiveFormatting: TabFormatSpec | undefined = hasTitleRow
+    ? { boldHeaders: true, ...formatting, freezeRows: formatting?.freezeRows ?? 2 }
+    : formatting;
+
   const requests: Record<string, unknown>[] = [];
 
-  if (data) {
-    const numCols = data.headers?.length ?? (data.rows[0]?.length ?? 0);
-    if (formatting) {
-      requests.push(...buildFormatRequests(sheetId, formatting, numCols));
-    }
+  if (hasTitleRow && numCols > 1) {
+    // Merge the title row across all data columns
+    requests.push({
+      mergeCells: {
+        range: {
+          sheetId,
+          startRowIndex: 0,
+          endRowIndex: 1,
+          startColumnIndex: 0,
+          endColumnIndex: numCols,
+        },
+        mergeType: "MERGE_ALL",
+      },
+    });
+    // Bold + centered title row
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: 0,
+          endRowIndex: 1,
+          startColumnIndex: 0,
+          endColumnIndex: numCols,
+        },
+        cell: {
+          userEnteredFormat: {
+            textFormat: { bold: true },
+            horizontalAlignment: "CENTER",
+          },
+        },
+        fields: "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment",
+      },
+    });
+  }
+
+  if (data && effectiveFormatting) {
+    requests.push(...buildFormatRequests(sheetId, effectiveFormatting, numCols, headerRowIndex));
   }
 
   if (requests.length > 0) {
