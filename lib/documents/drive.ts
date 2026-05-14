@@ -18,6 +18,7 @@ export interface DriveFileEntry {
   id: string;
   name: string;
   mimeType: string;
+  isFolder: boolean;
   webViewLink: string;
   modifiedTime: string;
   size?: string;
@@ -89,11 +90,14 @@ async function ensureFolderByName(
 // ── Path resolution ──────────────────────────────────────────
 
 // Resolves a Bruce-relative path like "Personal", "Projects/CPS", "Shared"
-// to a Drive folder ID. Creates intermediate folders as needed.
+// to a Drive folder ID.
+// strict=true: throws if any segment is not found (used for listing — prevents phantom folder creation).
+// strict=false (default): creates missing intermediate folders (used for file creation/move).
 // Only traverses within the Bruce root — cannot escape.
 export async function resolveFolderPath(
   userId: string,
-  folderPath: string
+  folderPath: string,
+  strict = false
 ): Promise<string> {
   const token = await getValidToken(userId);
   const { rootId, personalId, projectsId } = await ensureBruceFolders(userId);
@@ -112,13 +116,26 @@ export async function resolveFolderPath(
   } else if (normalized === "shared") {
     currentId = await ensureFolderByName(token, "Shared", rootId);
   } else {
-    // Unknown root — treat as a subfolder of Personal for safety
+    if (strict) {
+      throw new Error(`Folder not found: "${root}" is not a valid root. Use Personal, Projects, or Shared.`);
+    }
     currentId = await ensureFolderByName(token, root, personalId);
   }
 
   // Traverse remaining path segments
   for (const segment of rest) {
-    currentId = await ensureFolderByName(token, segment, currentId);
+    if (strict) {
+      const found = await findFolderByName(token, segment, currentId);
+      if (!found) {
+        throw new Error(
+          `Folder not found: "${segment}" does not exist at this path. ` +
+          `Use list_drive_files with folder_id to navigate into subfolders by their Drive ID.`
+        );
+      }
+      currentId = found;
+    } else {
+      currentId = await ensureFolderByName(token, segment, currentId);
+    }
   }
 
   return currentId;
@@ -126,18 +143,21 @@ export async function resolveFolderPath(
 
 // ── Public API ───────────────────────────────────────────────
 
+// folderId: when provided, skips path resolution and lists the given Drive folder directly.
+// Use this for subfolder navigation — pass the id from a previous listing result.
 export async function listFiles(
   userId: string,
-  folderPath = "Personal"
+  folderPath = "Personal",
+  folderId?: string
 ): Promise<DriveListResult> {
   const token = await getValidToken(userId);
-  const folderId = await resolveFolderPath(userId, folderPath);
+  const resolvedFolderId = folderId ?? await resolveFolderPath(userId, folderPath, true);
 
   const data = await driveGet(token, "/files", {
-    q: `'${folderId}' in parents and trashed=false`,
+    q: `'${resolvedFolderId}' in parents and trashed=false`,
     fields: "files(id,name,mimeType,webViewLink,modifiedTime,size)",
-    orderBy: "modifiedTime desc",
-    pageSize: "50",
+    orderBy: "folder,name",
+    pageSize: "100",
   });
 
   const files = (data.files ?? []) as Array<{
@@ -150,11 +170,12 @@ export async function listFiles(
   }>;
 
   return {
-    folderPath,
+    folderPath: folderId ? `(folder_id:${folderId})` : folderPath,
     files: files.map((f) => ({
       id: f.id,
       name: f.name,
       mimeType: f.mimeType,
+      isFolder: f.mimeType === "application/vnd.google-apps.folder",
       webViewLink: f.webViewLink ?? "",
       modifiedTime: f.modifiedTime,
       size: f.size,

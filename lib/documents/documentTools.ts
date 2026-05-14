@@ -228,13 +228,19 @@ export const DOCUMENT_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "list_drive_files",
     description:
-      "List files in a Bruce Drive folder. Use to check what files exist before creating or referencing them.",
+      "List files and subfolders in a Bruce Drive folder. Results include folders with isFolder:true and their Drive IDs. " +
+      "Use folder_id to navigate into a subfolder by its Drive ID (faster and more reliable than folder_path for nested folders). " +
+      "Use to check what files exist before creating or referencing them.",
     input_schema: {
       type: "object" as const,
       properties: {
         folder_path: {
           type: "string",
-          description: "Bruce Drive folder path. Examples: 'Personal', 'Projects/CPS', 'Shared'. Default: 'Personal'.",
+          description: "Bruce Drive folder path. Examples: 'Personal', 'Projects/CPS', 'Shared'. Default: 'Personal'. Only works one level deep under Projects — use folder_id for deeper navigation.",
+        },
+        folder_id: {
+          type: "string",
+          description: "Google Drive folder ID to list directly. Use this to navigate into a subfolder returned from a previous list_drive_files call — copy the id field from any entry where isFolder is true.",
         },
       },
     },
@@ -339,7 +345,9 @@ You can create and manage Google Sheets, Google Docs, and CSV files in the Bruce
 **Spreadsheet formatting for payroll and financial data:**
 Use \`currency_columns\` (array of 0-indexed column indices) to format monetary columns as $#,##0.00. Always freeze the header row (\`freeze_rows: 1\`) and bold headers.
 
-**When a file ID is needed:** use \`list_drive_files\` first to find existing files in the relevant folder. Never guess a file ID.`;
+**When a file ID is needed:** use \`list_drive_files\` first to find existing files in the relevant folder. Never guess a file ID.
+
+**Navigating subfolders:** \`list_drive_files\` results include subfolders with \`isFolder: true\` and their Drive \`id\`. To list the contents of a subfolder, call \`list_drive_files\` with \`folder_id\` set to that entry's \`id\` — do not construct deep \`folder_path\` strings (path resolution only works one level under Projects/Personal/Shared). Example: list \`Projects/CPS PAYROLL\`, find the Imports entry (\`isFolder: true\`), then call \`list_drive_files\` with \`folder_id: "<that id>"\`.`;
 
 // ── Status sentinels ───────────────────────────────────────────
 
@@ -518,7 +526,8 @@ export async function executeDocumentTool(
     case "list_drive_files": {
       const result = await listFiles(
         userId,
-        (input.folder_path as string | undefined) ?? "Personal"
+        (input.folder_path as string | undefined) ?? "Personal",
+        input.folder_id as string | undefined
       );
       return JSON.stringify(result);
     }
