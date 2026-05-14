@@ -202,15 +202,17 @@ CREATE INDEX idx_chats_type ON chats(type);
 -- ============================================================
 
 CREATE TABLE chat_members (
-  id        UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  chat_id   UUID NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-  user_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  chat_id      UUID NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_read_at TIMESTAMPTZ,                                 -- per-member read marker (migration 024)
   UNIQUE(chat_id, user_id)
 );
 
 CREATE INDEX idx_chat_members_chat ON chat_members(chat_id);
 CREATE INDEX idx_chat_members_user ON chat_members(user_id);
+CREATE INDEX idx_chat_members_last_read ON chat_members(chat_id, user_id, last_read_at);
 
 
 -- ============================================================
@@ -638,6 +640,13 @@ CREATE POLICY "chat_members_delete_owner"
     )
     OR is_admin()
   );
+
+-- A member can update their own last_read_at (migration 024).
+CREATE POLICY "chat_members_update_self_last_read"
+  ON chat_members FOR UPDATE
+  TO authenticated
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
 
 -- Thread member enumeration: allows any thread member to see who else is in their threads
 -- (needed for sidebar member avatars and topbar). The self-referential EXISTS is intentional —

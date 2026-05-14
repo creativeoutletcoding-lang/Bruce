@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import ChatTopBar from "@/components/chat/ChatTopBar";
+import { getDisplayName, getProfileColor } from "@/lib/chat/senderProfile";
 import type { UserSummary } from "@/lib/types";
 
 interface FamilyThreadTopBarProps {
@@ -61,152 +63,142 @@ export default function FamilyThreadTopBar({
     }
   }
 
-  return (
-    <>
-      <div style={styles.bar}>
-        {/* Back to chat */}
+  const rightCluster = (
+    <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, position: "relative" }}>
+      {threadMembers.length > 0 && (
         <button
-          onClick={() => router.push("/chat")}
-          style={styles.backButton}
-          aria-label="Back"
+          onClick={() => setMemberSheetOpen(true)}
+          style={styles.avatarStackButton}
+          aria-label="View members"
         >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-            <path
-              d="M11 4L5 9l6 5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-
-        {/* Title */}
-        <div style={styles.titleGroup}>
-          <h1 style={styles.title}>{threadName}</h1>
-        </div>
-
-        {/* Member avatar stack — tap to open member list */}
-        {threadMembers.length > 0 && (
-          <button
-            onClick={() => setMemberSheetOpen(true)}
-            style={styles.avatarStackButton}
-            aria-label="View members"
-          >
-            {threadMembers.slice(0, 3).map((m, i) => {
-              console.log('avatar rendering, color_hex:', m.color_hex);
-              return (
-                <div
-                  key={m.id}
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: "var(--radius-full)",
-                    border: "1.5px solid var(--bg-primary)",
-                    overflow: "hidden",
-                    marginLeft: i === 0 ? 0 : -7,
-                    zIndex: 3 - i,
-                    position: "relative",
-                    backgroundColor: m.color_hex,
-                    flexShrink: 0,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "0.5rem",
-                      fontWeight: "700",
-                      color: "#fff",
-                    }}
-                  >
-                    {m.name.charAt(0).toUpperCase()}
-                  </div>
-                </div>
-              );
-            })}
-            {threadMembers.length > 3 && (
+          {threadMembers.slice(0, 3).map((m, i) => (
+            <div
+              key={m.id}
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: "var(--radius-full)",
+                border: "1.5px solid var(--bg-primary)",
+                overflow: "hidden",
+                marginLeft: i === 0 ? 0 : -7,
+                zIndex: 3 - i,
+                position: "relative",
+                backgroundColor: getProfileColor(m.id, m.color_hex),
+                flexShrink: 0,
+              }}
+            >
               <div
                 style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: "var(--radius-full)",
-                  border: "1.5px solid var(--bg-primary)",
-                  backgroundColor: "var(--bg-secondary)",
+                  width: "100%",
+                  height: "100%",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  marginLeft: -7,
-                  flexShrink: 0,
                   fontSize: "0.5rem",
                   fontWeight: "700",
-                  color: "var(--text-secondary)",
+                  color: "#fff",
                 }}
               >
-                +{threadMembers.length - 3}
+                {m.name.charAt(0).toUpperCase()}
               </div>
-            )}
-          </button>
-        )}
-
-        {/* Menu button */}
-        <button
-          onClick={() => setMenuOpen((v) => !v)}
-          style={styles.menuButton}
-          aria-label="Group chat options"
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-            <circle cx="9" cy="4" r="1.3" fill="currentColor" />
-            <circle cx="9" cy="9" r="1.3" fill="currentColor" />
-            <circle cx="9" cy="14" r="1.3" fill="currentColor" />
-          </svg>
-        </button>
-
-        {/* Dropdown */}
-        {menuOpen && (
-          <>
-            <div style={styles.menuBackdrop} onClick={() => setMenuOpen(false)} />
-            <div style={styles.dropdown}>
-              <button
-                style={styles.dropdownItem}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setSelectedUserId(null);
-                  setAddMemberOpen(true);
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <circle cx="6" cy="4.5" r="2.5" stroke="currentColor" strokeWidth="1.3" />
-                  <path d="M1 12.5c0-2.485 2.239-4.5 5-4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                  <path d="M11 9v4M9 11h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                </svg>
-                Add member
-              </button>
-              <button
-                style={styles.dropdownItemDanger}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setDeleteModalOpen(true);
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <path
-                    d="M2 3.5h10M5.5 3.5V2.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1M3.5 3.5l.5 8h6l.5-8"
-                    stroke="currentColor"
-                    strokeWidth="1.3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                Delete group chat
-              </button>
             </div>
-          </>
-        )}
-      </div>
+          ))}
+          {threadMembers.length > 3 && (
+            <div
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: "var(--radius-full)",
+                border: "1.5px solid var(--bg-primary)",
+                backgroundColor: "var(--bg-secondary)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginLeft: -7,
+                flexShrink: 0,
+                fontSize: "0.5rem",
+                fontWeight: "700",
+                color: "var(--text-secondary)",
+              }}
+            >
+              +{threadMembers.length - 3}
+            </div>
+          )}
+        </button>
+      )}
+
+      <button
+        onClick={() => setMenuOpen((v) => !v)}
+        style={styles.menuButton}
+        aria-label="Group chat options"
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <circle cx="9" cy="4" r="1.3" fill="currentColor" />
+          <circle cx="9" cy="9" r="1.3" fill="currentColor" />
+          <circle cx="9" cy="14" r="1.3" fill="currentColor" />
+        </svg>
+      </button>
+
+      {menuOpen && (
+        <>
+          <div style={styles.menuBackdrop} onClick={() => setMenuOpen(false)} />
+          <div style={styles.dropdown}>
+            <button
+              style={styles.dropdownItem}
+              onClick={() => {
+                setMenuOpen(false);
+                setSelectedUserId(null);
+                setAddMemberOpen(true);
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <circle cx="6" cy="4.5" r="2.5" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M1 12.5c0-2.485 2.239-4.5 5-4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                <path d="M11 9v4M9 11h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+              Add member
+            </button>
+            <button
+              style={styles.dropdownItemDanger}
+              onClick={() => {
+                setMenuOpen(false);
+                setDeleteModalOpen(true);
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path
+                  d="M2 3.5h10M5.5 3.5V2.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1M3.5 3.5l.5 8h6l.5-8"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              Delete group chat
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      <ChatTopBar
+        left={
+          <button
+            onClick={() => router.push("/chat")}
+            style={styles.backButton}
+            aria-label="Back"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M11 4L5 9l6 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        }
+        title={threadName}
+        right={rightCluster}
+      />
 
       {/* Add Member modal */}
       {addMemberOpen && (
@@ -219,9 +211,7 @@ export default function FamilyThreadTopBar({
               <>
                 <p style={styles.modalBody}>Choose a household member to add.</p>
                 <div style={styles.memberList}>
-                  {addableMembers.map((member) => {
-                    console.log('avatar rendering, color_hex:', member.color_hex);
-                    return (
+                  {addableMembers.map((member) => (
                     <button
                       key={member.id}
                       style={{
@@ -230,17 +220,17 @@ export default function FamilyThreadTopBar({
                       }}
                       onClick={() => setSelectedUserId(member.id)}
                     >
-                      <div style={{ ...styles.memberAvatar, backgroundColor: member.color_hex }}>
+                      <div style={{ ...styles.memberAvatar, backgroundColor: getProfileColor(member.id, member.color_hex) }}>
                         <span style={styles.avatarInitial}>{member.name.charAt(0)}</span>
                       </div>
-                      <span style={styles.memberName}>{member.name.split(" ")[0]}</span>
+                      <span style={styles.memberName}>{getDisplayName(member.name)}</span>
                       {selectedUserId === member.id && (
                         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.checkIcon} aria-hidden="true">
                           <path d="M3 8l4 4 6-7" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       )}
                     </button>
-                  ); })}
+                  ))}
                 </div>
               </>
             )}
@@ -275,17 +265,14 @@ export default function FamilyThreadTopBar({
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <p style={styles.modalTitle}>Members</p>
             <div style={styles.memberList}>
-              {threadMembers.map((m) => {
-                console.log('avatar rendering, color_hex:', m.color_hex);
-                return (
-                  <div key={m.id} style={styles.memberRow}>
-                    <div style={{ ...styles.memberAvatar, backgroundColor: m.color_hex }}>
-                      <span style={styles.avatarInitial}>{m.name.charAt(0)}</span>
-                    </div>
-                    <span style={styles.memberName}>{m.name}</span>
+              {threadMembers.map((m) => (
+                <div key={m.id} style={styles.memberRow}>
+                  <div style={{ ...styles.memberAvatar, backgroundColor: getProfileColor(m.id, m.color_hex) }}>
+                    <span style={styles.avatarInitial}>{m.name.charAt(0)}</span>
                   </div>
-                );
-              })}
+                  <span style={styles.memberName}>{m.name}</span>
+                </div>
+              ))}
             </div>
             <div style={styles.modalActions}>
               <button style={styles.cancelButton} onClick={() => setMemberSheetOpen(false)}>
@@ -328,17 +315,6 @@ export default function FamilyThreadTopBar({
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  bar: {
-    height: "var(--topbar-height)",
-    display: "flex",
-    alignItems: "center",
-    padding: "0 12px",
-    borderBottom: "1px solid var(--border)",
-    backgroundColor: "var(--bg-primary)",
-    flexShrink: 0,
-    gap: "4px",
-    position: "relative",
-  },
   backButton: {
     display: "flex",
     alignItems: "center",
@@ -350,18 +326,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-sm)",
     flexShrink: 0,
     transition: "color var(--transition)",
-  },
-  titleGroup: {
-    flex: 1,
-    minWidth: 0,
-  },
-  title: {
-    fontSize: "0.9375rem",
-    fontWeight: "600",
-    color: "var(--text-primary)",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
   },
   avatarStackButton: {
     display: "flex",

@@ -13,10 +13,12 @@ import type {
   ProjectMemberDetail,
 } from "@/lib/types";
 import {
-  extractLatestTaskProgress,
-  stripTaskProgressTags,
-} from "@/lib/chat/taskProgress";
-import type { TaskProgressData } from "@/lib/chat/taskProgress";
+  consumeStream,
+  extractImageRequest,
+  resolveAbandonedTaskSteps,
+} from "@/lib/chat/clientStream";
+import { useChatMemory } from "@/lib/chat/useChatMemory";
+import { getDisplayName } from "@/lib/chat/senderProfile";
 
 interface ProjectChatViewProps {
   chatId: string;
@@ -59,7 +61,7 @@ export default function ProjectChatView({
         attachmentType: (m.attachment_type as string | undefined) ?? undefined,
         attachmentFilename: (m.attachment_filename as string | undefined) ?? undefined,
         sender_id: m.sender_id,
-        senderName: senderInfo?.name.split(" ")[0],
+        senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
         senderColorHex: senderInfo?.color_hex,
       };
     })
@@ -84,26 +86,23 @@ export default function ProjectChatView({
     return [];
   });
 
-  const messagesRef = useRef(messages);
   const instructionsFiredRef = useRef(false);
   const initialSentRef = useRef(false);
-  const memoryFiredRef = useRef(false);
-  const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pendingFlushRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useChatMemory({ chatId, messageCount: messages.length });
 
   useEffect(() => { setIsClient(true); }, []);
-  useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
-  useEffect(() => {
-    return () => { if (flushTimerRef.current) clearInterval(flushTimerRef.current); };
-  }, []);
 
-  // Fire memory generation on unmount
+  // Instruction-update fire-and-forget on unmount, parallel to memory generation.
+  const messagesLenRef = useRef(messages.length);
+  useEffect(() => { messagesLenRef.current = messages.length; }, [messages.length]);
   useEffect(() => {
     return () => {
-      if (!memoryFiredRef.current && messagesRef.current.length >= 2) {
-        memoryFiredRef.current = true;
-        fetch("/api/memory/generate", {
+      if (!instructionsFiredRef.current && messagesLenRef.current >= 2) {
+        instructionsFiredRef.current = true;
+        fetch(`/api/projects/${projectId}/instructions/update`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chatId }),
@@ -135,20 +134,15 @@ export default function ProjectChatView({
     );
   }, []);
 
+  // Mark chat as read on open.
   useEffect(() => {
-    return () => {
-      if (!instructionsFiredRef.current && messagesRef.current.length >= 2) {
-        instructionsFiredRef.current = true;
-        fetch(`/api/projects/${projectId}/instructions/update`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chatId }),
-          keepalive: true,
-        }).catch(() => {});
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    fetch("/api/chats/mark-read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId }),
+      keepalive: true,
+    }).catch(() => {});
+  }, [chatId]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -178,7 +172,6 @@ export default function ProjectChatView({
           const senderInfo = msg.sender_id ? memberMapRef.current[msg.sender_id] : null;
           setMessages((prev) => {
             if (prev.some((m) => m.id === msg.id)) return prev;
-            // When Bruce's real DB message arrives, replace the optimistic streaming placeholder
             const base = msg.sender_id === null
               ? prev.filter((m) => !m.id.startsWith("tmp-stream-"))
               : prev;
@@ -194,7 +187,7 @@ export default function ProjectChatView({
                 attachmentType: msg.attachment_type ?? undefined,
                 attachmentFilename: msg.attachment_filename ?? undefined,
                 sender_id: msg.sender_id,
-                senderName: senderInfo?.name.split(" ")[0],
+                senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
                 senderColorHex: senderInfo?.color_hex,
               },
             ];
@@ -247,12 +240,16 @@ export default function ProjectChatView({
           attachmentType: m.attachment_type ?? undefined,
           attachmentFilename: m.attachment_filename ?? undefined,
           sender_id: m.sender_id,
-          senderName: senderInfo?.name.split(" ")[0],
+          senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
           senderColorHex: senderInfo?.color_hex,
         };
       })
     );
   }, [chatId]);
+
+  function handleStop() {
+    abortRef.current?.abort();
+  }
 
   async function sendMessage(text: string, filesOverride?: FileAttachment[] | null) {
     const filesToSend = filesOverride !== undefined ? (filesOverride ?? []) : attachedFiles;
@@ -281,8 +278,10 @@ export default function ProjectChatView({
     ]);
     setIsStreaming(true);
 
+    const abort = new AbortController();
+    abortRef.current = abort;
+
     try {
-      // Upload each file individually via proxy before the main request — avoids 413
       const uploadedAttachments = filesToSend.length > 0
         ? await Promise.all(
             filesToSend.map(async (f) => {
@@ -312,88 +311,58 @@ export default function ProjectChatView({
           userTimestamp: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }),
           attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
         }),
+        signal: abort.signal,
       });
 
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
 
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let accumulated = "";
-      const STATUS_RE = /\x1eSTATUS:[^\x1e]*\x1e/g;
-
-      pendingFlushRef.current = false;
       let hasFirstContent = false;
 
-      flushTimerRef.current = setInterval(() => {
-        if (!pendingFlushRef.current) return;
-        pendingFlushRef.current = false;
-        const sentinelIdx = accumulated.indexOf("\x1f");
-        const raw = sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated;
-        const latestTask = extractLatestTaskProgress(raw);
-        const display = stripTaskProgressTags(raw)
-          .replace(STATUS_RE, "")
-          .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-          .trimStart();
-        if (!hasFirstContent && (display.trim() || latestTask)) {
-          hasFirstContent = true;
-          setWorkingStatus(null);
-        }
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === streamMsgId
-              ? { ...m, content: display, ...(latestTask !== null ? { taskData: latestTask } : {}) }
-              : m
-          )
-        );
-      }, 40);
+      const { accumulated, aborted } = await consumeStream({
+        response: res,
+        signal: abort.signal,
+        onTick: ({ display, task, workingStatus: ws }) => {
+          if (!hasFirstContent && (display.trim() || task)) {
+            hasFirstContent = true;
+            setWorkingStatus(null);
+          }
+          if (ws !== null) setWorkingStatus(ws);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === streamMsgId
+                ? { ...m, content: display, ...(task !== null ? { taskData: task } : {}) }
+                : m
+            )
+          );
+        },
+      });
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
-        const statusMatch = /\x1eSTATUS:([^\x1e]*)\x1e/.exec(accumulated);
-        if (statusMatch) setWorkingStatus(statusMatch[1]);
-        pendingFlushRef.current = true;
-      }
-
-      clearInterval(flushTimerRef.current);
-      flushTimerRef.current = null;
-
-      // Final flush — drain any content not yet written by the interval
-      {
-        const sentinelIdx = accumulated.indexOf("\x1f");
-        const raw = sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated;
-        const latestTask = extractLatestTaskProgress(raw);
-        const display = stripTaskProgressTags(raw)
-          .replace(STATUS_RE, "")
-          .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-          .trimStart();
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === streamMsgId
-              ? { ...m, content: display, ...(latestTask !== null ? { taskData: latestTask } : {}) }
-              : m
-          )
-        );
-      }
       setWorkingStatus(null);
 
-      const sentinelParts = accumulated.split("\x1f");
-      const imageReqSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_REQ:"));
-      const sentinelRaw = sentinelParts[0];
-      const finalTask = extractLatestTaskProgress(sentinelRaw);
-      const finalText = stripTaskProgressTags(sentinelRaw)
-        .replace(STATUS_RE, "")
+      const idx = accumulated.indexOf("\x1f");
+      const raw = idx !== -1 ? accumulated.slice(0, idx) : accumulated;
+      const finalText = raw
+        .replace(/\x1eSTATUS:[^\x1e]*\x1e/g, "")
         .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+        .replace(/<task_progress>[\s\S]*?<\/task_progress>/g, "")
+        .replace(/<task_progress>[\s\S]*/g, "")
         .trim();
 
-      if (imageReqSentinel && isClient) {
+      let finalTask = null as ReturnType<typeof resolveAbandonedTaskSteps> | null;
+      {
+        const re = /<task_progress>([\s\S]*?)<\/task_progress>/g;
+        let m: RegExpExecArray | null;
+        let latest = null;
+        while ((m = re.exec(raw)) !== null) {
+          try { latest = JSON.parse(m[1]); } catch { /* skip */ }
+        }
+        finalTask = latest;
+      }
+
+      const imageReq = !aborted ? extractImageRequest(accumulated) : null;
+
+      if (imageReq && isClient) {
         try {
-          const reqData = JSON.parse(imageReqSentinel.slice("IMAGE_REQ:".length)) as {
-            prompt: string;
-            quality: string;
-            chatId: string;
-          };
           const skeletonId = `skeleton-${Date.now()}`;
           setMessages((prev) => {
             const withoutStream = prev.filter((m) => m.id !== streamMsgId);
@@ -402,7 +371,7 @@ export default function ProjectChatView({
               role: "assistant",
               content: "",
               created_at: new Date().toISOString(),
-              metadata: { content_type: "image", image_url: "", prompt: reqData.prompt, quality: reqData.quality },
+              metadata: { content_type: "image", image_url: "", prompt: imageReq.prompt, quality: imageReq.quality },
             };
             if (finalText) {
               return [...withoutStream, skeleton, {
@@ -418,12 +387,10 @@ export default function ProjectChatView({
           const imgRes = await fetch("/api/images/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: reqData.prompt, chatId: reqData.chatId, quality: reqData.quality }),
+            body: JSON.stringify({ prompt: imageReq.prompt, chatId: imageReq.chatId, quality: imageReq.quality }),
           });
           if (imgRes.ok) {
-            const imgData = await imgRes.json() as {
-              messageId: string; url: string; prompt: string; model: string; quality: string;
-            };
+            const imgData = await imgRes.json() as { messageId: string; url: string; prompt: string; model: string; quality: string };
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === skeletonId
@@ -450,46 +417,40 @@ export default function ProjectChatView({
           console.error("[client] image generation catch:", err);
         }
       } else if (finalTask) {
-        // Resolve any steps still in "working" — stream ended before Claude could finalize them
-        const resolvedTask: TaskProgressData = {
-          ...finalTask,
-          steps: finalTask.steps.map((s) =>
-            s.status === "working"
-              ? { ...s, status: "error" as const, error: "Did not complete — try again" }
-              : s
-          ),
-        };
+        const resolvedTask = resolveAbandonedTaskSteps(finalTask, aborted ? "interrupted" : "incomplete");
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? { ...m, content: finalText, isStreaming: false, taskData: resolvedTask, created_at: new Date().toISOString() }
+              ? { ...m, content: finalText, isStreaming: false, taskData: resolvedTask, ...(aborted ? { interrupted: true } : {}), created_at: new Date().toISOString() }
+              : m
+          )
+        );
+      } else if (finalText) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamMsgId
+              ? { ...m, content: finalText, isStreaming: false, ...(aborted ? { interrupted: true } : {}), created_at: new Date().toISOString() }
               : m
           )
         );
       } else {
-        if (finalText) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === streamMsgId
-                ? { ...m, content: finalText, isStreaming: false, created_at: new Date().toISOString() }
-                : m
-            )
-          );
-        } else {
-          setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
-        }
+        setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
       }
     } catch (err) {
-      console.error("[ProjectChatView] sendMessage failed:", err);
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setError(`${errMsg} — tap to retry`);
-      setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
+      if (abort.signal.aborted) {
+        setMessages((prev) =>
+          prev.map((m) => m.id === streamMsgId ? { ...m, isStreaming: false, interrupted: true } : m)
+        );
+      } else {
+        console.error("[ProjectChatView] sendMessage failed:", err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setError(`${errMsg} — tap to retry`);
+        setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
+      }
     } finally {
       setIsStreaming(false);
       setWorkingStatus(null);
-      // Reload from DB to replace tmp-* IDs with real rows and surface any
-      // per-turn messages saved during multi-step tool calls. Safe: the server
-      // inserts before controller.close(), so the rows exist before done===true.
+      abortRef.current = null;
       await loadMessages();
     }
   }
@@ -543,7 +504,8 @@ export default function ProjectChatView({
         value={input}
         onChange={setInput}
         onSend={handleSend}
-        disabled={isStreaming}
+        onStop={handleStop}
+        isStreaming={isStreaming}
         attachedFiles={attachedFiles}
         onFilesAttach={(files) => setAttachedFiles((prev) => [...prev, ...files])}
         onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}

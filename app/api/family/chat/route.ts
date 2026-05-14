@@ -5,52 +5,21 @@ import {
   assembleMemoryBlock,
   buildFamilyChatSystemPrompt,
   buildMemberCombination,
-  IMAGE_VISION_BLOCK,
-  TASK_PROGRESS_SYSTEM_BLOCK,
 } from "@/lib/anthropic";
 import {
-  extractLatestTaskProgress,
-  stripTaskProgressTags,
-} from "@/lib/chat/taskProgress";
+  runChatStream,
+  sanitizeAlternatingMessages,
+  TOOLS_FULL,
+  buildToolSystemBlocks,
+} from "@/lib/chat/streamHandler";
 import { notifyUser } from "@/lib/notifications";
-import {
-  CALENDAR_TOOLS,
-  CALENDAR_SYSTEM_BLOCK,
-  executeCalendarTool,
-} from "@/lib/google/calendarTools";
-import {
-  GMAIL_TOOLS,
-  GMAIL_TOOL_NAMES,
-  GMAIL_SYSTEM_BLOCK,
-  executeGmailTool,
-} from "@/lib/google/gmailTools";
-import {
-  SEARCH_TOOL,
-  SEARCH_SYSTEM_BLOCK,
-  BROWSE_TOOL,
-  BROWSE_SYSTEM_BLOCK,
-  executeSearchTool,
-} from "@/lib/searchTools";
-import {
-  DOCUMENT_TOOLS,
-  DOCUMENT_TOOL_NAMES,
-  DOCUMENT_SYSTEM_BLOCK,
-  DOCUMENT_STATUS_SENTINEL,
-  executeDocumentTool,
-} from "@/lib/documents/documentTools";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
 
 // ── Bruce engagement logic (server-side, hard gate) ──────────────────────────
-//
-// Bruce responds when:
-//   1. His name appears anywhere in the message (beginning, middle, or end), or
-//   2. His last message in the chat was a question (the reply is directed at him).
 
 function isDirectlyAddressed(message: string): boolean {
-  // \b matches the word boundary before "bruce" regardless of position or surrounding
-  // punctuation, so "Bruce", "Bruce,", "@Bruce", "asking Bruce", "Bruce?" all match.
   return /\bbruce\b/i.test(message);
 }
 
@@ -74,10 +43,15 @@ export async function POST(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  let body: { message: string; chatId: string; currentLocation?: string; userTimestamp?: string; attachments?: Array<{ base64: string; mediaType: string; filename: string; type: "image" | "document" }> };
+  let body: {
+    message: string;
+    chatId: string;
+    currentLocation?: string;
+    userTimestamp?: string;
+    attachments?: Array<{ base64: string; mediaType: string; filename: string; type: "image" | "document" }>;
+  };
   try {
     body = await request.json();
   } catch {
@@ -93,7 +67,6 @@ export async function POST(request: NextRequest) {
 
   const adminSupabase = createServiceRoleClient();
 
-  // Load sender name and home location
   const { data: senderProfile } = await adminSupabase
     .from("users")
     .select("name, home_location")
@@ -103,7 +76,6 @@ export async function POST(request: NextRequest) {
   const senderName = (senderProfile as { name: string; home_location: string | null } | null)?.name ?? "Someone";
   const homeLocation = (senderProfile as { name: string; home_location: string | null } | null)?.home_location ?? "Arlington, Virginia";
 
-  // Load conversation history (before saving current message)
   const { data: msgs } = await adminSupabase
     .from("messages")
     .select("role, content, sender_id, metadata")
@@ -130,7 +102,6 @@ export async function POST(request: NextRequest) {
 
   const willRespond = shouldBruceRespond(message, history);
 
-  // Upload attachments to storage
   const attachmentMeta: Array<{ url: string; type: string; filename?: string }> = [];
   for (let i = 0; i < attachments.length; i++) {
     const att = attachments[i];
@@ -156,7 +127,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Save user message
   const firstAtt = attachments[0];
   const firstDocFilename = attachments.find((a) => a.type === "document")?.filename ?? null;
   const { error: msgErr } = await adminSupabase.from("messages").insert({
@@ -169,12 +139,8 @@ export async function POST(request: NextRequest) {
     attachment_filename: firstDocFilename,
     ...(attachmentMeta.length > 0 ? { metadata: { attachments: attachmentMeta } } : {}),
   });
+  if (msgErr) console.error("[api/family/chat] Failed to insert user message:", msgErr);
 
-  if (msgErr) {
-    console.error("[api/family/chat] Failed to insert user message:", msgErr);
-  }
-
-  // Update chat last_message_at
   adminSupabase
     .from("chats")
     .update({ last_message_at: new Date().toISOString() })
@@ -187,9 +153,7 @@ export async function POST(request: NextRequest) {
   ]);
 
   const familyMemberIds = ((memberRows ?? []) as { user_id: string }[]).map((r) => r.user_id);
-  const familyCombination = familyMemberIds.length > 1
-    ? buildMemberCombination(familyMemberIds)
-    : undefined;
+  const familyCombination = familyMemberIds.length > 1 ? buildMemberCombination(familyMemberIds) : undefined;
 
   const notifUrl =
     (chatRow as { type: string } | null)?.type === "family_thread"
@@ -224,12 +188,9 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Load sender's memory for the system prompt
-  const { block: memoryBlock } = await assembleMemoryBlock(
-    supabase,
-    user.id,
-    { memberCombination: familyCombination }
-  );
+  const { block: memoryBlock } = await assembleMemoryBlock(supabase, user.id, {
+    memberCombination: familyCombination,
+  });
 
   const locationContext = currentLocation
     ? `${senderName}'s current location right now is ${currentLocation}.`
@@ -238,15 +199,7 @@ export async function POST(request: NextRequest) {
   const systemPrompt =
     buildFamilyChatSystemPrompt(senderName, memoryBlock, userTimestamp) +
     `\n\n${locationContext}` +
-    CALENDAR_SYSTEM_BLOCK +
-    GMAIL_SYSTEM_BLOCK +
-    IMAGE_VISION_BLOCK +
-    SEARCH_SYSTEM_BLOCK +
-    BROWSE_SYSTEM_BLOCK +
-    DOCUMENT_SYSTEM_BLOCK +
-    TASK_PROGRESS_SYSTEM_BLOCK;
-
-  const tools = [...CALENDAR_TOOLS, ...GMAIL_TOOLS, SEARCH_TOOL, BROWSE_TOOL, ...DOCUMENT_TOOLS];
+    buildToolSystemBlocks({ includeImageGen: false });
 
   let userContent: Anthropic.Messages.MessageParam["content"];
   try {
@@ -286,172 +239,32 @@ export async function POST(request: NextRequest) {
     return new Response("Content processing failed", { status: 500 });
   }
 
-  const anthropicMessages: Anthropic.Messages.MessageParam[] = [
+  const anthropicMessages = sanitizeAlternatingMessages([
     ...history
       .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
     { role: "user" as const, content: userContent },
-  ];
+  ]);
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const readableStream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      let fullResponse = "";
-      let currentTurnText = "";
-
-      try {
-        let currentMessages = [...anthropicMessages];
-
-        while (true) {
-          currentTurnText = "";
-
-          const stream = anthropic.messages.stream({
-            model: "claude-sonnet-4-6",
-            max_tokens: 2048,
-            system: systemPrompt,
-            messages: currentMessages,
-            tools,
-          });
-
-          stream.on("text", (text) => {
-            fullResponse += text;
-            currentTurnText += text;
-            controller.enqueue(encoder.encode(text));
-          });
-
-          const finalMsg = await stream.finalMessage();
-
-          if (finalMsg.stop_reason !== "tool_use") break;
-
-          // Save this turn's text immediately before executing tools
-          if (currentTurnText.trim()) {
-            const cleanTurnText = stripTaskProgressTags(currentTurnText).trim();
-            if (cleanTurnText) {
-              await adminSupabase.from("messages").insert({
-                chat_id: chatId,
-                sender_id: null,
-                role: "assistant",
-                content: cleanTurnText,
-              });
-            }
-          }
-
-          const toolCalls = finalMsg.content.filter(
-            (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
-          );
-          if (toolCalls.length === 0) break;
-
-          if (toolCalls.some((tc) => DOCUMENT_TOOL_NAMES.has(tc.name))) {
-            controller.enqueue(encoder.encode(DOCUMENT_STATUS_SENTINEL));
-          }
-
-          const toolResults = await Promise.all(
-            toolCalls.map(async (tc) => {
-              let result: string;
-              try {
-                if (tc.name === "web_search" || tc.name === "browse_url") {
-                  result = await executeSearchTool(
-                    tc.name,
-                    tc.input as Record<string, unknown>
-                  );
-                } else if (GMAIL_TOOL_NAMES.has(tc.name)) {
-                  result = await executeGmailTool(
-                    tc.name,
-                    tc.input as Record<string, unknown>,
-                    user.id
-                  );
-                } else if (DOCUMENT_TOOL_NAMES.has(tc.name)) {
-                  result = await executeDocumentTool(
-                    tc.name,
-                    tc.input as Record<string, unknown>,
-                    user.id
-                  );
-                } else {
-                  result = await executeCalendarTool(
-                    tc.name,
-                    tc.input as Record<string, unknown>
-                  );
-                }
-              } catch (err) {
-                result = `Error: ${err instanceof Error ? err.message : String(err)}`;
-              }
-              const isToolError = result.startsWith("Error:");
-              return {
-                type: "tool_result" as const,
-                tool_use_id: tc.id,
-                content: result,
-                ...(isToolError ? { is_error: true } : {}),
-              };
-            })
-          );
-
-          currentMessages = [
-            ...currentMessages,
-            { role: "assistant" as const, content: finalMsg.content },
-            { role: "user" as const, content: toolResults },
-          ];
-        }
-
-        // Persist the final turn's text. Per-turn saves already wrote intermediate turns.
-        {
-          const taskData = extractLatestTaskProgress(fullResponse);
-          const cleanResponse = stripTaskProgressTags(currentTurnText).trim();
-          if (cleanResponse || taskData) {
-            const metadata: Record<string, unknown> = {};
-            if (taskData) {
-              metadata.content_type = "task";
-              metadata.task_data = taskData;
-            }
-            const { error: insertErr } = await adminSupabase.from("messages").insert({
-              chat_id: chatId,
-              sender_id: null,
-              role: "assistant",
-              content: cleanResponse,
-              ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
-            });
-            if (insertErr) {
-              console.error("[api/family/chat] Failed to persist Bruce message:", insertErr);
-            } else {
-              const { error: updateErr } = await adminSupabase
-                .from("chats")
-                .update({ last_message_at: new Date().toISOString() })
-                .eq("id", chatId);
-              if (updateErr) {
-                console.error("[api/family/chat] Failed to update chat timestamp:", updateErr);
-              }
-            }
-          }
-        }
-
-        controller.close();
-      } catch (err) {
-        console.error("[api/family/chat] Stream error:", err);
-        // Best-effort: save current turn's partial text before the error
-        if (currentTurnText.trim()) {
-          const cleanResponse = stripTaskProgressTags(currentTurnText).trim();
-          if (cleanResponse) {
-            const { error: insertErr } = await adminSupabase.from("messages").insert({
-              chat_id: chatId,
-              sender_id: null,
-              role: "assistant",
-              content: cleanResponse,
-            });
-            if (insertErr) {
-              console.error("[api/family/chat] Failed to persist partial Bruce message:", insertErr);
-            }
-          }
-        }
-        controller.error(err);
-      }
+  const stream = runChatStream({
+    anthropic,
+    model: "claude-sonnet-4-6",
+    maxTokens: 2048,
+    systemPrompt,
+    initialMessages: anthropicMessages,
+    tools: TOOLS_FULL,
+    userId: user.id,
+    handleImageRequest: false,
+    persist: {
+      enabled: true,
+      adminSupabase,
+      chatId,
     },
   });
 
-  return new Response(readableStream, {
+  return new Response(stream, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-cache",

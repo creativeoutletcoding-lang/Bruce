@@ -108,6 +108,10 @@ interface MessageInputProps {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
+  /** When true, the send button is replaced with a stop button. */
+  isStreaming?: boolean;
+  /** Called when the user presses the stop button while streaming. */
+  onStop?: () => void;
   disabled?: boolean;
   placeholder?: string;
   attachedFiles?: FileAttachment[];
@@ -121,6 +125,8 @@ export default function MessageInput({
   value,
   onChange,
   onSend,
+  isStreaming = false,
+  onStop,
   disabled = false,
   placeholder = "Message Bruce",
   attachedFiles = [],
@@ -156,7 +162,10 @@ export default function MessageInput({
     const isMobile = window.matchMedia("(pointer: coarse)").matches;
     if (e.key === "Enter" && !e.shiftKey && !isMobile) {
       e.preventDefault();
-      if (!disabled && (value.trim() || attachedFiles.length > 0)) { lightHaptic(); onSend(); }
+      if (!isStreaming && !disabled && (value.trim() || attachedFiles.length > 0)) {
+        lightHaptic();
+        onSend();
+      }
     }
   }
 
@@ -190,7 +199,8 @@ export default function MessageInput({
     if (attachments.length > 0) onFilesAttach(attachments);
   }
 
-  const canSend = !disabled && (value.trim().length > 0 || attachedFiles.length > 0);
+  const canSend = !disabled && !isStreaming && (value.trim().length > 0 || attachedFiles.length > 0);
+  const canStop = isStreaming && Boolean(onStop);
 
   return (
     <div className="msg-input-container" style={{ ...styles.container, ...containerStyle }}>
@@ -265,16 +275,29 @@ export default function MessageInput({
           aria-label="Message input"
         />
         {modelPicker}
-        <button
-          onClick={() => { if (canSend) { lightHaptic(); onSend(); } }}
-          disabled={!canSend}
-          style={{ ...styles.sendButton, ...(!canSend ? styles.sendButtonDisabled : {}) }}
-          aria-label="Send message"
-        >
-          <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M8 12V4M4 8l4-4 4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+        {canStop ? (
+          <button
+            onClick={() => { lightHaptic(); onStop!(); }}
+            style={styles.stopButton}
+            aria-label="Stop generating"
+            type="button"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <rect x="3" y="3" width="8" height="8" rx="1.25" fill="currentColor" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            onClick={() => { if (canSend) { lightHaptic(); onSend(); } }}
+            disabled={!canSend}
+            style={{ ...styles.sendButton, ...(!canSend ? styles.sendButtonDisabled : {}) }}
+            aria-label="Send message"
+          >
+            <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M8 12V4M4 8l4-4 4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -427,5 +450,20 @@ const styles: Record<string, React.CSSProperties> = {
   sendButtonDisabled: {
     backgroundColor: "var(--border-strong)",
     cursor: "not-allowed",
+  },
+  stopButton: {
+    flexShrink: 0,
+    width: "36px",
+    height: "36px",
+    borderRadius: "var(--radius-md)",
+    backgroundColor: "var(--bg-secondary)",
+    border: "1px solid var(--border-strong)",
+    color: "var(--text-secondary)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    transition: "background-color var(--transition), color var(--transition)",
+    padding: 0,
   },
 };

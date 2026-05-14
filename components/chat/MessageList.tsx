@@ -22,6 +22,8 @@ export interface ChatMessage {
   content: string;
   created_at?: string;
   isStreaming?: boolean;
+  /** Set when the user pressed Stop while this message was streaming. */
+  interrupted?: boolean;
   metadata?: Record<string, unknown>;
   attachments?: MessageAttachment[];
   // Legacy single-attachment fields (kept for backward compat with old DB rows)
@@ -44,7 +46,7 @@ interface MessageListProps {
   groupContext?: boolean;
 }
 
-export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus, currentUserId, onDeleteMessage, groupContext = false }: MessageListProps) {
+export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus, currentUserId, onDeleteMessage }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -163,6 +165,7 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 content={msg.content}
                 timestamp={msg.created_at}
                 isStreaming={msg.isStreaming}
+                interrupted={msg.interrupted}
                 workingStatus={msg.isStreaming ? streamingStatus : undefined}
                 bubbleColorHex={userColorHex}
                 isOwn={
@@ -172,6 +175,7 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 }
                 senderName={msg.senderName}
                 senderColorHex={msg.senderColorHex}
+                senderId={msg.sender_id ?? null}
                 attachments={resolvedAttachments}
                 canDelete={
                   !msg.isStreaming &&

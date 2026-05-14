@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { marked } from "marked";
 import { lightHaptic } from "@/lib/utils/haptics";
+import { getDisplayName, getProfileColor } from "@/lib/chat/senderProfile";
 import type { MessageRole } from "@/lib/types";
 
 export interface MessageAttachment {
@@ -17,11 +18,15 @@ interface MessageBubbleProps {
   content: string;
   timestamp?: string;
   isStreaming?: boolean;
+  /** Set when the message was interrupted by the user; renders a muted note. */
+  interrupted?: boolean;
   workingStatus?: string | null;
   bubbleColorHex?: string;
   isOwn?: boolean;
   senderName?: string;
   senderColorHex?: string;
+  /** Sender's user id — used to derive a deterministic fallback color when senderColorHex is null. */
+  senderId?: string | null;
   attachments?: MessageAttachment[];
   // Legacy single-attachment fallback
   imageUrl?: string;
@@ -51,11 +56,13 @@ export default function MessageBubble({
   content,
   timestamp,
   isStreaming = false,
+  interrupted = false,
   workingStatus,
   bubbleColorHex,
   isOwn,
   senderName,
   senderColorHex,
+  senderId,
   attachments,
   imageUrl,
   attachmentType,
@@ -172,6 +179,8 @@ export default function MessageBubble({
   const isHumanMessage = role === "user";
   const showSenderLabel = isOwn === false && isHumanMessage && Boolean(senderName);
   const showDots = isStreaming && !content;
+  const resolvedSenderColor = getProfileColor(senderId ?? null, senderColorHex ?? null);
+  const resolvedOwnColor = getProfileColor(null, bubbleColorHex ?? null);
 
   // Resolve attachment list: prefer explicit array, fall back to single legacy fields
   const resolvedAttachments: MessageAttachment[] =
@@ -220,8 +229,8 @@ export default function MessageBubble({
           </div>
         )}
         {showSenderLabel && (
-          <div style={{ fontSize: "0.75rem", fontWeight: 500, color: senderColorHex ?? "var(--text-secondary)", padding: "0 2px", marginBottom: "2px" }}>
-            {senderName?.split(" ")[0] ?? senderName}
+          <div style={{ fontSize: "0.75rem", fontWeight: 500, color: resolvedSenderColor, padding: "0 2px", marginBottom: "2px" }}>
+            {getDisplayName(senderName)}
           </div>
         )}
         {/* Images rendered directly in thread — no bubble wrapper */}
@@ -280,10 +289,10 @@ export default function MessageBubble({
                 ? {
                     ...styles.bubble,
                     whiteSpace: "pre-wrap",
-                    ["--bubble-color" as string]: (isUser ? bubbleColorHex : senderColorHex) ?? "#6B7280",
+                    ["--bubble-color" as string]: isUser ? resolvedOwnColor : resolvedSenderColor,
                     ...(isUser
-                      ? { borderRight: `2.5px solid ${bubbleColorHex ?? "#6B7280"}`, borderRadius: "10px 0 0 10px" }
-                      : { borderLeft: `2.5px solid ${senderColorHex ?? "#6B7280"}`, borderRadius: "0 10px 10px 0" }),
+                      ? { borderRight: `2.5px solid ${resolvedOwnColor}`, borderRadius: "10px 0 0 10px" }
+                      : { borderLeft: `2.5px solid ${resolvedSenderColor}`, borderRadius: "0 10px 10px 0" }),
                     color: "var(--text-primary)",
                   }
                 : styles.assistantContent
@@ -302,17 +311,19 @@ export default function MessageBubble({
               </span>
             ) : (
               role === "assistant" ? (
-                isStreaming ? (
-                  <span style={{ whiteSpace: "pre-wrap" }}>{content}</span>
-                ) : (
-                  <div
-                    className="bruce-md"
-                    dangerouslySetInnerHTML={{ __html: marked(content) as string }}
-                  />
-                )
+                // Render markdown both during and after streaming so partial
+                // formatting (lists, bold, headers) appears progressively
+                // instead of snapping in at the end.
+                <div
+                  className="bruce-md"
+                  dangerouslySetInnerHTML={{ __html: marked(content) as string }}
+                />
               ) : (
                 <span style={styles.content}>{content}</span>
               )
+            )}
+            {interrupted && (
+              <div style={styles.interruptedNote}>Stopped</div>
             )}
           </div>
         )}
@@ -429,6 +440,13 @@ const styles: Record<string, React.CSSProperties> = {
   indicatorStatus: {
     fontSize: "0.6875rem",
     color: "var(--text-tertiary)",
+    lineHeight: 1.3,
+  },
+  interruptedNote: {
+    marginTop: "6px",
+    fontSize: "0.6875rem",
+    color: "var(--text-tertiary)",
+    fontStyle: "italic" as const,
     lineHeight: 1.3,
   },
   content: { display: "inline" },

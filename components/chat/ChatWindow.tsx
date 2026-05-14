@@ -11,10 +11,11 @@ import type { ChatMessage } from "./MessageList";
 import type { Message, MessageRole } from "@/lib/types";
 import { modelLabel } from "@/lib/models";
 import {
-  extractLatestTaskProgress,
-  stripTaskProgressTags,
-} from "@/lib/chat/taskProgress";
-import type { TaskProgressData } from "@/lib/chat/taskProgress";
+  consumeStream,
+  extractImageRequest,
+  resolveAbandonedTaskSteps,
+} from "@/lib/chat/clientStream";
+import { useChatMemory } from "@/lib/chat/useChatMemory";
 
 interface ChatWindowProps {
   chatId: string;
@@ -56,11 +57,9 @@ export default function ChatWindow({
   const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
   const [model, setModel] = useState(initialModel ?? "claude-sonnet-4-6");
-  const memoryFiredRef = useRef(false);
-  const messagesRef = useRef(messages);
-  const incognitoRef = useRef(incognito);
-  const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pendingFlushRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useChatMemory({ chatId, messageCount: messages.length, disabled: incognito });
 
   const loadMessages = useCallback(async () => {
     const supabase = createClient();
@@ -89,11 +88,6 @@ export default function ChatWindow({
   }, [chatId]);
 
   useEffect(() => { setIsClient(true); }, []);
-  useEffect(() => { messagesRef.current = messages; }, [messages]);
-  useEffect(() => { incognitoRef.current = incognito; }, [incognito]);
-  useEffect(() => {
-    return () => { if (flushTimerRef.current) clearInterval(flushTimerRef.current); };
-  }, []);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
@@ -111,30 +105,20 @@ export default function ChatWindow({
           else if (state) setCurrentLocation(state);
         } catch (err) { console.error('[geolocation]', err); }
       },
-      () => { /* permission denied — silent */ },
+      () => {},
       { timeout: 5000 }
     );
   }, []);
 
-  // Fire memory generation on unmount only (empty deps)
+  // Mark chat as read on open (clears sidebar unread dot).
   useEffect(() => {
-    return () => {
-      if (
-        !incognitoRef.current &&
-        !memoryFiredRef.current &&
-        messagesRef.current.length >= 2
-      ) {
-        memoryFiredRef.current = true;
-        fetch("/api/memory/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chatId }),
-          keepalive: true,
-        }).catch(() => {});
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    fetch("/api/chats/mark-read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId }),
+      keepalive: true,
+    }).catch(() => {});
+  }, [chatId]);
 
   async function handleModelChange(newModel: string) {
     setModel(newModel);
@@ -152,6 +136,10 @@ export default function ChatWindow({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ preferred_model: newModel }),
     });
+  }
+
+  function handleStop() {
+    abortRef.current?.abort();
   }
 
   async function handleSend() {
@@ -186,8 +174,10 @@ export default function ChatWindow({
     setMessages((prev) => [...prev, userMsg, streamMsg]);
     setIsStreaming(true);
 
+    const abort = new AbortController();
+    abortRef.current = abort;
+
     try {
-      // Upload each file individually via proxy before the main request — avoids 413
       const uploadedAttachments = filesToSend.length > 0
         ? await Promise.all(
             filesToSend.map(async (f) => {
@@ -218,6 +208,7 @@ export default function ChatWindow({
           userTimestamp: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }),
           attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
         }),
+        signal: abort.signal,
       });
 
       if (!res.ok) {
@@ -226,100 +217,59 @@ export default function ChatWindow({
         throw new Error(`Request failed: ${res.status}`);
       }
 
-      const newChatId = res.headers.get("X-Chat-Id");
       const newTitle = res.headers.get("X-Chat-Title");
+      if (newTitle) setTitle(decodeURIComponent(newTitle));
 
-      if (newChatId && newChatId !== chatId) {
-        // This shouldn't happen since chatId is fixed for this window, but guard anyway
-      }
-
-      if (newTitle) {
-        setTitle(decodeURIComponent(newTitle));
-      }
-
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let accumulated = "";
-      const STATUS_RE = /\x1eSTATUS:[^\x1e]*\x1e/g;
-
-      pendingFlushRef.current = false;
       let hasFirstContent = false;
 
-      flushTimerRef.current = setInterval(() => {
-        if (!pendingFlushRef.current) return;
-        pendingFlushRef.current = false;
-        const sentinelIdx = accumulated.indexOf("\x1f");
-        const raw = sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated;
-        const latestTask = extractLatestTaskProgress(raw);
-        const display = stripTaskProgressTags(raw)
-          .replace(STATUS_RE, "")
-          .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-          .trimStart();
-        if (!hasFirstContent && (display.trim() || latestTask)) {
-          hasFirstContent = true;
-          setWorkingStatus(null);
-        }
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === streamMsgId
-              ? { ...m, content: display, ...(latestTask !== null ? { taskData: latestTask } : {}) }
-              : m
-          )
-        );
-      }, 40);
+      const { accumulated, aborted } = await consumeStream({
+        response: res,
+        signal: abort.signal,
+        onTick: ({ display, task, workingStatus: ws }) => {
+          if (!hasFirstContent && (display.trim() || task)) {
+            hasFirstContent = true;
+            setWorkingStatus(null);
+          }
+          if (ws !== null) setWorkingStatus(ws);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === streamMsgId
+                ? { ...m, content: display, ...(task !== null ? { taskData: task } : {}) }
+                : m
+            )
+          );
+        },
+      });
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
-        const statusMatch = /\x1eSTATUS:([^\x1e]*)\x1e/.exec(accumulated);
-        if (statusMatch) setWorkingStatus(statusMatch[1]);
-        pendingFlushRef.current = true;
-      }
-
-      clearInterval(flushTimerRef.current);
-      flushTimerRef.current = null;
-
-      // Final flush — drain any content not yet written by the interval
-      {
-        const sentinelIdx = accumulated.indexOf("\x1f");
-        const raw = sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated;
-        const latestTask = extractLatestTaskProgress(raw);
-        const display = stripTaskProgressTags(raw)
-          .replace(STATUS_RE, "")
-          .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-          .trimStart();
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === streamMsgId
-              ? { ...m, content: display, ...(latestTask !== null ? { taskData: latestTask } : {}) }
-              : m
-          )
-        );
-      }
       setWorkingStatus(null);
 
-      // Parse sentinel
-      const sentinelParts = accumulated.split("\x1f");
-      const imageReqSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_REQ:"));
+      const { display: finalText, task: finalTask } = (() => {
+        const idx = accumulated.indexOf("\x1f");
+        const raw = idx !== -1 ? accumulated.slice(0, idx) : accumulated;
+        return {
+          display: raw
+            .replace(/\x1eSTATUS:[^\x1e]*\x1e/g, "")
+            .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
+            .replace(/<task_progress>[\s\S]*?<\/task_progress>/g, "")
+            .replace(/<task_progress>[\s\S]*/g, "")
+            .trim(),
+          task: (() => {
+            const re = /<task_progress>([\s\S]*?)<\/task_progress>/g;
+            let latest = null;
+            let m;
+            while ((m = re.exec(raw)) !== null) {
+              try { latest = JSON.parse(m[1]); } catch { /* skip */ }
+            }
+            return latest;
+          })(),
+        };
+      })();
 
-      const sentinelRaw = sentinelParts[0];
-      const finalTask = extractLatestTaskProgress(sentinelRaw);
-      const finalText = stripTaskProgressTags(sentinelRaw)
-        .replace(STATUS_RE, "")
-        .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-        .trim();
+      const imageReq = !aborted ? extractImageRequest(accumulated) : null;
 
-      // Fire image generation — image appears first, text after
-      if (imageReqSentinel && !incognito && isClient) {
+      if (imageReq && !incognito && isClient) {
         try {
-          const reqData = JSON.parse(imageReqSentinel.slice("IMAGE_REQ:".length)) as {
-            prompt: string;
-            quality: string;
-            chatId: string;
-          };
           const skeletonId = `skeleton-${Date.now()}`;
-          // Atomic: remove stream placeholder, insert skeleton first, text below
           setMessages((prev) => {
             const withoutStream = prev.filter((m) => m.id !== streamMsgId);
             const skeleton: ChatMessage = {
@@ -327,7 +277,7 @@ export default function ChatWindow({
               role: "assistant",
               content: "",
               created_at: new Date().toISOString(),
-              metadata: { content_type: "image", image_url: "", prompt: reqData.prompt, quality: reqData.quality },
+              metadata: { content_type: "image", image_url: "", prompt: imageReq.prompt, quality: imageReq.quality },
             };
             if (finalText) {
               return [...withoutStream, skeleton, {
@@ -343,17 +293,10 @@ export default function ChatWindow({
           const imgRes = await fetch("/api/images/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: reqData.prompt, chatId: reqData.chatId, quality: reqData.quality }),
+            body: JSON.stringify({ prompt: imageReq.prompt, chatId: imageReq.chatId, quality: imageReq.quality }),
           });
-          const imgBody = await imgRes.text();
           if (imgRes.ok) {
-            const imgData = JSON.parse(imgBody) as {
-              messageId: string;
-              url: string;
-              prompt: string;
-              model: string;
-              quality: string;
-            };
+            const imgData = await imgRes.json() as { messageId: string; url: string; prompt: string; model: string; quality: string };
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === skeletonId
@@ -380,48 +323,41 @@ export default function ChatWindow({
           console.error("[client] image generation catch:", err);
         }
       } else if (finalTask) {
-        // Resolve any steps still in "working" — stream ended before Claude could finalize them
-        const resolvedTask: TaskProgressData = {
-          ...finalTask,
-          steps: finalTask.steps.map((s) =>
-            s.status === "working"
-              ? { ...s, status: "error" as const, error: "Did not complete — try again" }
-              : s
-          ),
-        };
+        const resolvedTask = resolveAbandonedTaskSteps(finalTask, aborted ? "interrupted" : "incomplete");
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? { ...m, content: finalText, isStreaming: false, taskData: resolvedTask, created_at: new Date().toISOString() }
+              ? { ...m, content: finalText, isStreaming: false, taskData: resolvedTask, ...(aborted ? { interrupted: true } : {}), created_at: new Date().toISOString() }
+              : m
+          )
+        );
+      } else if (finalText) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamMsgId
+              ? { ...m, content: finalText, isStreaming: false, ...(aborted ? { interrupted: true } : {}), created_at: new Date().toISOString() }
               : m
           )
         );
       } else {
-        // Normal text response
-        if (finalText) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === streamMsgId
-                ? { ...m, content: finalText, isStreaming: false, created_at: new Date().toISOString() }
-                : m
-            )
-          );
-        } else {
-          setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
-        }
+        setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
       }
     } catch (err) {
-      console.error("[ChatWindow] handleSend failed:", err);
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setError(`${errMsg} — tap to retry`);
-      setMessages((prev) =>
-        prev.filter((m) => m.id !== streamMsgId)
-      );
+      if (abort.signal.aborted) {
+        // Stop pressed — keep whatever text is in the optimistic message.
+        setMessages((prev) =>
+          prev.map((m) => m.id === streamMsgId ? { ...m, isStreaming: false, interrupted: true } : m)
+        );
+      } else {
+        console.error("[ChatWindow] handleSend failed:", err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setError(`${errMsg} — tap to retry`);
+        setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
+      }
     } finally {
       setIsStreaming(false);
       setWorkingStatus(null);
-      // Reload from DB to replace tmp-* IDs with real rows and surface any
-      // per-turn messages saved during multi-step tool calls.
+      abortRef.current = null;
       if (!incognito) {
         await loadMessages();
       }
@@ -475,7 +411,8 @@ export default function ChatWindow({
         value={input}
         onChange={setInput}
         onSend={handleSend}
-        disabled={isStreaming}
+        onStop={handleStop}
+        isStreaming={isStreaming}
         attachedFiles={attachedFiles}
         onFilesAttach={(files) => setAttachedFiles((prev) => [...prev, ...files])}
         onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}

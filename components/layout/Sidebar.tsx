@@ -155,6 +155,23 @@ function UnreadDot({ count }: { count: number }) {
   );
 }
 
+// Sidebar unread indicator — 8px solid circle, no border, brand accent.
+// Spec'd in the chat UI rules; do not restyle in calling components.
+function GreenUnreadDot() {
+  return (
+    <div
+      style={{
+        width: 8,
+        height: 8,
+        borderRadius: "50%",
+        backgroundColor: "#0F6E56",
+        flexShrink: 0,
+      }}
+      aria-label="Unread"
+    />
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function Sidebar({ user, onNavigate }: SidebarProps) {
@@ -167,6 +184,13 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [familyThreads, setFamilyThreads] = useState<FamilyThread[]>([]);
   const [familyGroup, setFamilyGroup] = useState<FamilyGroupInfo | null>(null);
+  // chat_members.last_read_at per chat, scoped to the current user.
+  // A chat is unread when its last_message_at is newer than this value
+  // (or this user has no chat_members row at all). Project ids and chat ids
+  // are both keys; project ids resolve to the latest last_message_at across
+  // their chats. See computeUnread() below.
+  const [lastReadByChat, setLastReadByChat] = useState<Record<string, string | null>>({});
+  const [projectUnread, setProjectUnread] = useState<Record<string, boolean>>({});
 
   // ── new project modal ────────────────────────────────────────────────────
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
@@ -319,6 +343,52 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }, []);
 
+  // Loads chat_members.last_read_at for the current user and computes per-chat
+  // and per-project unread booleans. Cheap: one query, no joins. Called on
+  // initial mount and whenever chats/notifications change.
+  const loadUnreadState = useCallback(async () => {
+    const supabase = createClient();
+    const { data: memberRows } = await supabase
+      .from("chat_members")
+      .select("chat_id, last_read_at")
+      .eq("user_id", user.id);
+    if (!memberRows) return;
+    const map: Record<string, string | null> = {};
+    for (const row of memberRows as Array<{ chat_id: string; last_read_at: string | null }>) {
+      map[row.chat_id] = row.last_read_at;
+    }
+    setLastReadByChat(map);
+
+    // Compute project-level rollup: project shows a dot if any chat in it has
+    // a last_message_at newer than the user's last_read_at AND a sender_id
+    // that's a human ≠ this user. We approximate "human ≠ self" by excluding
+    // chats whose latest message is from Bruce (sender_id NULL) or self.
+    const { data: latestPerChat } = await supabase
+      .from("chats")
+      .select("id, project_id, last_message_at, messages(sender_id, role, created_at)")
+      .not("project_id", "is", null)
+      .order("last_message_at", { ascending: false });
+
+    const projUnread: Record<string, boolean> = {};
+    for (const row of (latestPerChat ?? []) as Array<{
+      id: string;
+      project_id: string;
+      last_message_at: string;
+      messages: Array<{ sender_id: string | null; role: string; created_at: string }>;
+    }>) {
+      const lastRead = map[row.id];
+      const sorted = [...(row.messages ?? [])].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      const latest = sorted[0];
+      if (!latest) continue;
+      const senderIsHumanOther = latest.sender_id !== null && latest.sender_id !== user.id;
+      const isNewer = !lastRead || new Date(row.last_message_at).getTime() > new Date(lastRead).getTime();
+      if (senderIsHumanOther && isNewer) projUnread[row.project_id] = true;
+    }
+    setProjectUnread(projUnread);
+  }, [user.id]);
+
   const loadFamilyThreads = useCallback(async () => {
     const res = await fetch("/api/family/threads", { cache: "no-store" });
     if (res.ok) {
@@ -367,6 +437,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     loadChats();
     loadProjects();
     loadFamilyThreads();
+    loadUnreadState();
 
     const existing = supabase.getChannels().find(c => c.topic === "realtime:chat-list");
     if (existing) supabase.removeChannel(existing);
@@ -374,9 +445,11 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     const channel = supabase
       .channel("chat-list")
       .on("postgres_changes", { event: "*", schema: "public", table: "chats" },
-        () => { loadChats(); loadFamilyThreads(); })
+        () => { loadChats(); loadFamilyThreads(); loadUnreadState(); })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" },
-        () => loadChats())
+        () => { loadChats(); loadUnreadState(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_members" },
+        () => loadUnreadState())
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" },
         () => loadFamilyThreads())
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "notifications" },
@@ -1099,6 +1172,10 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               ) : (
                 projects.map((project) => {
                   const isActive = project.id === activeProjectId;
+                  const showUnreadDot = !isActive && (
+                    projectUnread[project.id] ||
+                    (project.last_chat_date != null && (!projectLastViewed[project.id] || project.last_chat_date > projectLastViewed[project.id]))
+                  );
                   return (
                     <button
                       key={project.id}
@@ -1106,10 +1183,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                       style={{ ...styles.projectItem, ...(isActive ? styles.projectItemActive : {}) }}
                     >
                       <span style={styles.projectItemName}>{project.name}</span>
-                      {!isActive && project.last_chat_date != null &&
-                        (!projectLastViewed[project.id] || project.last_chat_date > projectLastViewed[project.id]) && (
-                        <div style={styles.projectActivityDot} />
-                      )}
+                      {showUnreadDot && <GreenUnreadDot />}
                     </button>
                   );
                 })
@@ -1222,6 +1296,11 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     );
                   }
 
+                  const memberLastRead = lastReadByChat[chat.id];
+                  const hasUnread = !isActive && chat.id in lastReadByChat && (
+                    !memberLastRead ||
+                    new Date(chat.last_message_at).getTime() > new Date(memberLastRead).getTime()
+                  ) && chat.last_message_role === "user";
                   return (
                     <button
                       key={chat.id}
@@ -1232,7 +1311,10 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                       onTouchMove={handleItemLongPressMove}
                       style={{ ...styles.chatItem, ...(isActive ? styles.chatItemActive : {}) }}
                     >
-                      <div style={styles.chatItemTitle}>{chat.title ?? "Untitled"}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ ...styles.chatItemTitle, flex: 1, minWidth: 0 }}>{chat.title ?? "Untitled"}</div>
+                        {hasUnread && <GreenUnreadDot />}
+                      </div>
                       <div style={styles.chatItemMeta}>
                         {preview && <span style={styles.chatItemPreview}>{preview}</span>}
                         <span style={styles.chatItemTime}>{formatRelativeTime(chat.last_message_at)}</span>

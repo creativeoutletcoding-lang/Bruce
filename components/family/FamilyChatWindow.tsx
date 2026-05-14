@@ -1,21 +1,19 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
+import type { ChatMessage } from "@/components/chat/MessageList";
 import type { FileAttachment } from "@/components/chat/MessageInput";
-import PullProgressBar from "@/components/ui/PullProgressBar";
-import { lightHaptic } from "@/lib/utils/haptics";
-import type { MessageRole } from "@/lib/types";
-import type { UserSummary } from "@/lib/types";
+import type { MessageRole, UserSummary } from "@/lib/types";
 import {
-  extractLatestTaskProgress,
-  stripTaskProgressTags,
-} from "@/lib/chat/taskProgress";
-import type { TaskProgressData } from "@/lib/chat/taskProgress";
-import dynamic from "next/dynamic";
-
-const TaskCard = dynamic(() => import("@/components/chat/TaskCard"), { ssr: false });
+  consumeStream,
+  resolveAbandonedTaskSteps,
+} from "@/lib/chat/clientStream";
+import { useChatMemory } from "@/lib/chat/useChatMemory";
+import { getDisplayName } from "@/lib/chat/senderProfile";
+import { extractLatestTaskProgress, stripTaskProgressTags } from "@/lib/chat/taskProgress";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,22 +33,9 @@ export interface FamilyMessage {
   created_at: string;
   isStreaming?: boolean;
   attachments?: FamilyMessageAttachment[];
-  // Legacy single-attachment field for old DB rows
   imageUrl?: string;
   metadata?: Record<string, unknown> | null;
-  taskData?: TaskProgressData | null;
 }
-
-interface ContextMenuState {
-  messageId: string;
-  content: string;
-  x: number;
-  y: number;
-}
-
-type BruceState = "idle" | "dots" | "working" | "streaming";
-
-// ── Props ─────────────────────────────────────────────────────────────────────
 
 interface FamilyChatWindowProps {
   chatId: string;
@@ -59,6 +44,30 @@ interface FamilyChatWindowProps {
   initialMessages: FamilyMessage[];
   topbar: React.ReactNode;
   placeholder?: string;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function toChatMessage(
+  m: FamilyMessage,
+  memberMap: Record<string, { name: string; color_hex: string }>
+): ChatMessage {
+  const senderInfo = m.sender_id ? memberMap[m.sender_id] : null;
+  const attachments = m.attachments?.length
+    ? m.attachments
+    : (m.imageUrl ? [{ url: m.imageUrl, type: "image", filename: undefined }] : undefined);
+  return {
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    created_at: m.created_at,
+    isStreaming: m.isStreaming,
+    metadata: m.metadata ?? undefined,
+    attachments,
+    sender_id: m.sender_id ?? undefined,
+    senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
+    senderColorHex: senderInfo?.color_hex,
+  };
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -71,59 +80,32 @@ export default function FamilyChatWindow({
   topbar,
   placeholder = "Message the family…",
 }: FamilyChatWindowProps) {
-  const [messages, setMessages] = useState<FamilyMessage[]>(initialMessages);
+  const memberMapRef = useRef<Record<string, { name: string; color_hex: string }>>(
+    Object.fromEntries(members.map((m) => [m.id, { name: m.name, color_hex: m.color_hex }]))
+  );
+
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    initialMessages.map((m) => toChatMessage(m, memberMapRef.current))
+  );
   const [input, setInput] = useState("");
-  const [bruceState, setBruceState] = useState<BruceState>("idle");
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
 
-  const colorMap = useMemo(() => {
-    const m: Record<string, string> = {};
-    members.forEach((mbr) => { m[mbr.id] = mbr.color_hex; });
-    return m;
+  const isStreamingRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const userColorHex = memberMapRef.current[currentUserId]?.color_hex;
+
+  useChatMemory({ chatId, messageCount: messages.length });
+
+  useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
+  useEffect(() => {
+    memberMapRef.current = Object.fromEntries(members.map((m) => [m.id, { name: m.name, color_hex: m.color_hex }]));
   }, [members]);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
-  const userScrolledUp = useRef(false);
-  const [showScrollButton, setShowScrollButton] = useState(false);
-  const workingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isStreamingRef = useRef(false);
-  const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pendingFlushRef = useRef(false);
-  const memoryFiredRef = useRef(false);
-  const messagesRef = useRef(messages);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrollTouchStartY = useRef<number>(-1);
-  const [pullDistance, setPullDistance] = useState(0);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  useEffect(() => { messagesRef.current = messages; }, [messages]);
-
-  useEffect(() => {
-    return () => { if (flushTimerRef.current) clearInterval(flushTimerRef.current); };
-  }, []);
-
-  // Fire memory generation on unmount
-  useEffect(() => {
-    return () => {
-      if (!memoryFiredRef.current && messagesRef.current.length >= 2) {
-        memoryFiredRef.current = true;
-        fetch("/api/memory/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chatId }),
-          keepalive: true,
-        }).catch(() => {});
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Presence heartbeat — tells the server this chat is open so it can suppress
-  // push notifications while the user is actively viewing the conversation.
+  // Presence heartbeat
   useEffect(() => {
     const beat = () => {
       fetch("/api/notifications/presence", {
@@ -138,10 +120,15 @@ export default function FamilyChatWindow({
     return () => clearInterval(interval);
   }, [chatId]);
 
-  // Mark this chat's notifications as read when the chat is opened, clearing
-  // any sidebar unread dot for this specific conversation.
+  // Mark this chat as read on open (clears sidebar unread dot and notifications).
   useEffect(() => {
     fetch("/api/notifications/mark-read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId }),
+      keepalive: true,
+    }).catch(() => {});
+    fetch("/api/chats/mark-read", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chatId }),
@@ -165,38 +152,10 @@ export default function FamilyChatWindow({
           else if (state) setCurrentLocation(state);
         } catch { /* silent */ }
       },
-      () => { /* permission denied — silent */ },
+      () => {},
       { timeout: 5000 }
     );
   }, []);
-
-  // Member map for enriching realtime messages
-  const memberMap = useRef<Record<string, { name: string; avatar_url: string | null }>>({});
-  useEffect(() => {
-    memberMap.current = {};
-    members.forEach((m) => {
-      memberMap.current[m.id] = { name: m.name, avatar_url: m.avatar_url };
-    });
-  }, [members]);
-
-  // ── Scroll ────────────────────────────────────────────────────────────────
-
-  function scrollToBottom(behavior: ScrollBehavior = "smooth") {
-    endRef.current?.scrollIntoView({ behavior });
-  }
-
-  function handleScroll() {
-    const el = containerRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    userScrolledUp.current = !atBottom;
-    setShowScrollButton(!atBottom);
-  }
-
-  useEffect(() => { scrollToBottom("instant"); }, []);
-  useEffect(() => { if (!userScrolledUp.current) scrollToBottom("smooth"); }, [messages]);
-
-  // ── DB reload (replaces temp IDs after sends) ─────────────────────────────
 
   const loadMessages = useCallback(async () => {
     const supabase = createClient();
@@ -221,26 +180,26 @@ export default function FamilyChatWindow({
         metadata?: Record<string, unknown> | null;
       }>).map((m) => {
         const metaAttachments = m.metadata?.attachments as FamilyMessageAttachment[] | undefined;
-        const attachments: FamilyMessageAttachment[] | undefined =
-          metaAttachments ??
-          (m.image_url ? [{ url: m.image_url, type: m.attachment_type ?? "image", filename: m.attachment_filename ?? undefined }] : undefined);
+        const attachments = metaAttachments?.length
+          ? metaAttachments
+          : (m.image_url ? [{ url: m.image_url, type: m.attachment_type ?? "image", filename: m.attachment_filename ?? undefined }] : undefined);
+        const senderInfo = m.sender_id ? memberMapRef.current[m.sender_id] : null;
         return {
           id: m.id,
           role: m.role as MessageRole,
           content: m.content,
           created_at: m.created_at,
-          sender_id: m.sender_id,
-          sender_name: m.sender_id ? (memberMap.current[m.sender_id]?.name ?? null) : null,
-          sender_avatar: m.sender_id ? (memberMap.current[m.sender_id]?.avatar_url ?? null) : null,
-          attachments,
           metadata: m.metadata ?? undefined,
+          attachments,
+          sender_id: m.sender_id ?? undefined,
+          senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
+          senderColorHex: senderInfo?.color_hex,
         };
       })
     );
   }, [chatId]);
 
-  // ── Realtime for other members' messages ──────────────────────────────────
-
+  // Realtime — pick up other members' messages
   useEffect(() => {
     const supabase = createClient();
     const topic = `family-${chatId}`;
@@ -260,14 +219,12 @@ export default function FamilyChatWindow({
             created_at: string;
             sender_id: string | null;
           };
-
-          // Sender's own messages are shown optimistically; Bruce's via stream
           if (msg.sender_id === currentUserId) return;
           if (msg.sender_id === null && isStreamingRef.current) return;
+          const senderInfo = msg.sender_id ? memberMapRef.current[msg.sender_id] : null;
 
           setMessages((prev) => {
             if (prev.some((m) => m.id === msg.id)) return prev;
-            const info = msg.sender_id ? memberMap.current[msg.sender_id] : null;
             return [
               ...prev,
               {
@@ -275,9 +232,9 @@ export default function FamilyChatWindow({
                 role: msg.role as MessageRole,
                 content: msg.content,
                 created_at: msg.created_at,
-                sender_id: msg.sender_id,
-                sender_name: info?.name ?? null,
-                sender_avatar: info?.avatar_url ?? null,
+                sender_id: msg.sender_id ?? undefined,
+                senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
+                senderColorHex: senderInfo?.color_hex,
               },
             ];
           });
@@ -288,18 +245,21 @@ export default function FamilyChatWindow({
     return () => { supabase.removeChannel(channel); };
   }, [chatId, currentUserId]);
 
-  // ── Send ──────────────────────────────────────────────────────────────────
+  function handleStop() {
+    abortRef.current?.abort();
+  }
 
   async function sendMessage(text: string) {
-    if ((!text.trim() && !attachedFiles.length) || bruceState !== "idle") return;
+    if ((!text.trim() && !attachedFiles.length) || isStreaming) return;
 
     const filesToSend = attachedFiles;
     setInput("");
     setAttachedFiles([]);
     setError(null);
-    setContextMenu(null);
 
     const userMsgId = `tmp-user-${Date.now()}`;
+    const senderInfo = memberMapRef.current[currentUserId];
+
     setMessages((prev) => [
       ...prev,
       {
@@ -307,8 +267,8 @@ export default function FamilyChatWindow({
         role: "user",
         content: text,
         sender_id: currentUserId,
-        sender_name: memberMap.current[currentUserId]?.name ?? null,
-        sender_avatar: memberMap.current[currentUserId]?.avatar_url ?? null,
+        senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
+        senderColorHex: senderInfo?.color_hex,
         created_at: new Date().toISOString(),
         attachments: filesToSend.length > 0
           ? filesToSend.map((f) => ({ url: f.previewUrl ?? "", type: f.type, filename: f.filename }))
@@ -316,7 +276,8 @@ export default function FamilyChatWindow({
       },
     ]);
 
-    let bruceWillRespond = false;
+    const abort = new AbortController();
+    abortRef.current = abort;
 
     try {
       const res = await fetch("/api/family/chat", {
@@ -331,24 +292,19 @@ export default function FamilyChatWindow({
             ? filesToSend.map((f) => ({ base64: f.base64, mediaType: f.mediaType, filename: f.filename, type: f.type }))
             : undefined,
         }),
+        signal: abort.signal,
       });
 
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
 
-      bruceWillRespond = res.headers.get("X-Bruce-Responded") === "true";
-
+      const bruceWillRespond = res.headers.get("X-Bruce-Responded") === "true";
       if (!bruceWillRespond) {
         await loadMessages();
         return;
       }
 
       const streamMsgId = `tmp-stream-${Date.now()}`;
-      isStreamingRef.current = true;
-
-      setBruceState("dots");
-      workingTimerRef.current = setTimeout(() => {
-        setBruceState((s) => (s === "dots" ? "working" : s));
-      }, 2500);
+      setIsStreaming(true);
 
       setMessages((prev) => [
         ...prev,
@@ -356,77 +312,68 @@ export default function FamilyChatWindow({
           id: streamMsgId,
           role: "assistant",
           content: "",
-          sender_id: null,
-          sender_name: null,
-          sender_avatar: null,
           created_at: new Date().toISOString(),
           isStreaming: true,
         },
       ]);
 
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let accumulated = "";
+      const { accumulated, aborted } = await consumeStream({
+        response: res,
+        signal: abort.signal,
+        onTick: ({ display, task, workingStatus: ws }) => {
+          if (ws !== null) setWorkingStatus(ws);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === streamMsgId
+                ? { ...m, content: display, ...(task !== null ? { taskData: task } : {}) }
+                : m
+            )
+          );
+        },
+      });
 
-      pendingFlushRef.current = false;
-      let hasFirstContent = false;
+      setWorkingStatus(null);
 
-      flushTimerRef.current = setInterval(() => {
-        if (!pendingFlushRef.current) return;
-        pendingFlushRef.current = false;
-        const latestTask = extractLatestTaskProgress(accumulated);
-        const display = stripTaskProgressTags(accumulated);
-        if (!hasFirstContent && (display.trim() || latestTask)) {
-          hasFirstContent = true;
-          setBruceState("streaming");
-        }
+      const finalTask = extractLatestTaskProgress(accumulated);
+      const finalDisplay = stripTaskProgressTags(accumulated).trim();
+
+      if (finalTask) {
+        const resolved = resolveAbandonedTaskSteps(finalTask, aborted ? "interrupted" : "incomplete");
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? { ...m, content: display, ...(latestTask !== null ? { taskData: latestTask } : {}) }
+              ? { ...m, content: finalDisplay, isStreaming: false, taskData: resolved, ...(aborted ? { interrupted: true } : {}) }
               : m
           )
         );
-      }, 40);
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
-        pendingFlushRef.current = true;
-      }
-
-      clearInterval(flushTimerRef.current);
-      flushTimerRef.current = null;
-
-      // Final flush
-      {
-        const finalTask = extractLatestTaskProgress(accumulated);
-        const finalDisplay = stripTaskProgressTags(accumulated);
+      } else if (finalDisplay) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? {
-                  ...m,
-                  content: finalDisplay,
-                  isStreaming: false,
-                  ...(finalTask !== null ? { taskData: finalTask } : {}),
-                }
+              ? { ...m, content: finalDisplay, isStreaming: false, ...(aborted ? { interrupted: true } : {}) }
               : m
           )
         );
+      } else {
+        setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
       }
     } catch (err) {
-      console.error("[FamilyChatWindow] Send error:", err);
-      setError("Something went wrong. Tap to retry.");
-      setMessages((prev) => prev.filter((m) => !m.id.startsWith("tmp-")));
-    } finally {
-      if (workingTimerRef.current) {
-        clearTimeout(workingTimerRef.current);
-        workingTimerRef.current = null;
+      if (abort.signal.aborted) {
+        // Update streaming message (if any) to interrupted
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.isStreaming ? { ...m, isStreaming: false, interrupted: true } : m
+          )
+        );
+      } else {
+        console.error("[FamilyChatWindow] Send error:", err);
+        setError("Something went wrong. Tap to retry.");
+        setMessages((prev) => prev.filter((m) => !m.id.startsWith("tmp-")));
       }
-      setBruceState("idle");
-      isStreamingRef.current = false;
+    } finally {
+      setIsStreaming(false);
+      setWorkingStatus(null);
+      abortRef.current = null;
       await loadMessages();
     }
   }
@@ -442,229 +389,27 @@ export default function FamilyChatWindow({
     }
   }
 
-  // ── Long press / context menu ─────────────────────────────────────────────
-
-  function handleScrollTouchStart(e: React.TouchEvent<HTMLDivElement>) {
-    if ((containerRef.current?.scrollTop ?? 1) === 0) {
-      scrollTouchStartY.current = e.touches[0].clientY;
-    }
+  async function deleteMessage(msgId: string) {
+    if (msgId.startsWith("tmp-")) return;
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    const supabase = createClient();
+    const { error } = await supabase.from("messages").delete().eq("id", msgId);
+    if (error) console.error("[FamilyChatWindow] deleteMessage failed:", error);
   }
-
-  function handleScrollTouchMove(e: React.TouchEvent<HTMLDivElement>) {
-    if (scrollTouchStartY.current < 0) return;
-    const dy = Math.max(0, e.touches[0].clientY - scrollTouchStartY.current);
-    setPullDistance(dy);
-  }
-
-  async function handleScrollTouchEnd() {
-    if (pullDistance >= 56) {
-      scrollTouchStartY.current = -1;
-      setPullDistance(0);
-      setIsRefreshing(true);
-      lightHaptic();
-      await loadMessages();
-      setIsRefreshing(false);
-    } else {
-      setPullDistance(0);
-      scrollTouchStartY.current = -1;
-    }
-  }
-
-  function handleTouchStart(e: React.TouchEvent, msg: FamilyMessage) {
-    const touch = e.touches[0];
-    longPressTimer.current = setTimeout(() => {
-      setContextMenu({
-        messageId: msg.id,
-        content: msg.content,
-        x: Math.min(touch.clientX, window.innerWidth - 180),
-        y: Math.min(touch.clientY, window.innerHeight - 100),
-      });
-    }, 500);
-  }
-
-  function handleTouchEnd() {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  }
-
-  function handleContextMenu(e: React.MouseEvent, msg: FamilyMessage) {
-    e.preventDefault();
-    setContextMenu({
-      messageId: msg.id,
-      content: msg.content,
-      x: Math.min(e.clientX, window.innerWidth - 180),
-      y: Math.min(e.clientY, window.innerHeight - 100),
-    });
-  }
-
-  function handleAskBruce(content: string) {
-    const excerpt = content.replace(/\n/g, " ").substring(0, 60);
-    setInput(`@Bruce re: "${excerpt}" — `);
-    setContextMenu(null);
-  }
-
-  function handleCopy(content: string) {
-    navigator.clipboard.writeText(content).catch(() => {});
-    setContextMenu(null);
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={styles.container} onClick={() => setContextMenu(null)}>
+    <div style={styles.container}>
       {topbar}
 
-      {/* Message list */}
-      <div style={styles.listWrapper}>
-        <PullProgressBar pullProgress={Math.min(pullDistance / 56, 1)} refreshing={isRefreshing} />
-        <div
-          ref={containerRef}
-          onScroll={handleScroll}
-          onTouchStart={handleScrollTouchStart}
-          onTouchMove={handleScrollTouchMove}
-          onTouchEnd={handleScrollTouchEnd}
-          style={styles.listScroll}
-        >
-          <div style={styles.inner}>
-          <div style={styles.spacer} />
-
-          {messages.map((msg, i) => {
-            const prevMsg = messages[i - 1];
-            const isSameSender = prevMsg?.sender_id === msg.sender_id;
-            const isMe = msg.sender_id === currentUserId;
-            const isBruce = msg.sender_id === null && msg.role === "assistant";
-            const memberColor = msg.sender_id ? (colorMap[msg.sender_id] ?? "#6B7280") : "#6B7280";
-            const myColor = colorMap[currentUserId] ?? "#6B7280";
-
-            return (
-              <div
-                key={msg.id}
-                style={{
-                  ...styles.messageRow,
-                  justifyContent: isMe ? "flex-end" : "flex-start",
-                  paddingTop: isSameSender ? "2px" : "10px",
-                }}
-                onTouchStart={(e) => handleTouchStart(e, msg)}
-                onTouchEnd={handleTouchEnd}
-                onTouchMove={handleTouchEnd}
-                onContextMenu={(e) => handleContextMenu(e, msg)}
-              >
-                <div className="msg-group" style={{ ...styles.messageGroup, alignItems: isMe ? "flex-end" : "flex-start", ...(isBruce ? { width: "100%" } : { maxWidth: "85%" }) }}>
-                  {!isSameSender && (
-                    <div
-                      style={{
-                        ...styles.senderName,
-                        paddingLeft: isMe ? 0 : "2px",
-                        paddingRight: isMe ? "2px" : 0,
-                        color: isBruce ? "var(--text-tertiary)" : isMe ? "var(--text-tertiary)" : memberColor,
-                      }}
-                    >
-                      {isBruce ? "Bruce" : (msg.sender_name?.split(" ")[0] ?? "Someone")}
-                    </div>
-                  )}
-
-                  {isBruce && (msg.taskData || msg.metadata?.content_type === "task") ? (
-                    <div style={styles.bruceContent}>
-                      <TaskCard
-                        data={(msg.taskData ?? msg.metadata?.task_data) as TaskProgressData}
-                        isStreaming={msg.isStreaming}
-                      />
-                      {msg.content && !msg.isStreaming && (
-                        <div style={{ paddingTop: "6px", fontSize: "0.9375rem", lineHeight: "1.55", whiteSpace: "pre-wrap" }}>
-                          {msg.content}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                  <div
-                    className={!isBruce ? "bubble-tint" : undefined}
-                    style={
-                      isBruce
-                        ? styles.bruceContent
-                        : {
-                            ...styles.bubble,
-                            ["--bubble-color" as string]: isMe ? myColor : memberColor,
-                            ...(isMe
-                              ? { borderRight: `2.5px solid ${myColor}`, borderRadius: "10px 0 0 10px" }
-                              : { borderLeft: `2.5px solid ${memberColor}`, borderRadius: "0 10px 10px 0" }),
-                            color: "var(--text-primary)",
-                          }
-                    }
-                  >
-                    {msg.isStreaming && !msg.content ? (
-                      <span style={{ display: "inline-flex", flexDirection: "column", gap: "4px" }}>
-                        <span style={styles.dotsRow}>
-                          <span style={styles.dot1} />
-                          <span style={styles.dot2} />
-                          <span style={styles.dot3} />
-                        </span>
-                        {bruceState === "working" && (
-                          <span style={styles.indicatorStatus}>Working on it…</span>
-                        )}
-                      </span>
-                    ) : (
-                      <>
-                        {(() => {
-                          const list: FamilyMessageAttachment[] =
-                            msg.attachments ??
-                            (msg.imageUrl ? [{ url: msg.imageUrl, type: "image" }] : []);
-                          const images = list.filter((a) => a.type === "image");
-                          const docs = list.filter((a) => a.type === "document");
-                          return (
-                            <>
-                              {images.length > 0 && (
-                                <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginBottom: msg.content || docs.length > 0 ? "8px" : 0 }}>
-                                  {images.map((img, i) => (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img key={i} src={img.url} alt="" style={{ maxWidth: "240px", width: images.length > 1 ? "112px" : "100%", height: images.length > 1 ? "112px" : "auto", borderRadius: "var(--radius-md)", objectFit: "cover", display: "block" }} />
-                                  ))}
-                                </div>
-                              )}
-                              {docs.length > 0 && (
-                                <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginBottom: msg.content ? "8px" : 0 }}>
-                                  {docs.map((doc, i) => (
-                                    <div key={i} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 10px", borderRadius: "var(--radius-sm)", border: "1px solid rgba(255,255,255,0.2)", backgroundColor: "rgba(255,255,255,0.1)" }}>
-                                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                                        <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-                                        <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                                      </svg>
-                                      <span style={{ fontSize: "0.8125rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "160px" }}>{doc.filename ?? "Document"}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </>
-                          );
-                        })()}
-                        {msg.content}
-                      </>
-                    )}
-                  </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          <div style={styles.bottomPad} />
-          <div ref={endRef} />
-          </div>
-        </div>
-
-        {showScrollButton && (
-          <button
-            onClick={() => { userScrolledUp.current = false; scrollToBottom("smooth"); }}
-            style={styles.scrollButton}
-            aria-label="Scroll to bottom"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M8 3v10M4 9l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        )}
-      </div>
+      <MessageList
+        messages={messages}
+        onRefresh={loadMessages}
+        userColorHex={userColorHex}
+        streamingStatus={workingStatus}
+        currentUserId={currentUserId}
+        onDeleteMessage={deleteMessage}
+        groupContext
+      />
 
       {error && (
         <div style={styles.errorRow}>
@@ -677,64 +422,20 @@ export default function FamilyChatWindow({
         value={input}
         onChange={setInput}
         onSend={handleSend}
-        disabled={bruceState !== "idle"}
+        onStop={handleStop}
+        isStreaming={isStreaming}
         placeholder={placeholder}
         attachedFiles={attachedFiles}
         onFilesAttach={(files) => setAttachedFiles((prev) => [...prev, ...files])}
         onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
       />
-
-      {contextMenu && (
-        <>
-          <div style={styles.menuBackdrop} onClick={() => setContextMenu(null)} />
-          <div
-            style={{ ...styles.contextMenu, left: contextMenu.x, top: contextMenu.y }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button style={styles.menuItem} onClick={() => handleAskBruce(contextMenu.content)}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                <path d="M7 1C3.686 1 1 3.134 1 5.75c0 1.4.7 2.65 1.82 3.52-.12.86-.55 1.73-1.32 2.23a4.5 4.5 0 0 0 3.13-1.08C5.1 10.61 6.03 10.75 7 10.75 10.314 10.75 13 8.616 13 6S10.314 1 7 1Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-              </svg>
-              Ask Bruce
-            </button>
-            <button style={styles.menuItem} onClick={() => handleCopy(contextMenu.content)}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                <rect x="4" y="4" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-                <path d="M2 10V3a1 1 0 0 1 1-1h7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-              </svg>
-              Copy
-            </button>
-          </div>
-        </>
-      )}
     </div>
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
-
 const styles: Record<string, React.CSSProperties> = {
   container: { display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", position: "relative" },
-  listWrapper: { flex: 1, position: "relative", overflow: "hidden" },
-  listScroll: { height: "100%", overflowY: "auto", display: "flex", flexDirection: "column" },
-  inner: { width: "100%", maxWidth: 780, margin: "0 auto", display: "flex", flexDirection: "column", flex: 1 },
-  spacer: { flex: 1 },
-  bottomPad: { height: "8px" },
-  messageRow: { display: "flex", padding: "0 14px" },
-  messageGroup: { display: "flex", flexDirection: "column", gap: "3px" },
-  senderName: { fontSize: "0.6875rem", fontWeight: "400", letterSpacing: "0.01em", marginBottom: "1px", color: "var(--text-tertiary)" },
-  bubble: { padding: "10px 14px", borderRadius: "var(--radius-lg)", fontSize: "0.9375rem", lineHeight: "1.55", wordBreak: "break-word", whiteSpace: "pre-wrap", userSelect: "text" },
-  bruceContent: { fontSize: "0.9375rem", lineHeight: "1.55", wordBreak: "break-word", color: "var(--text-primary)", padding: "8px 0", width: "100%", userSelect: "text", whiteSpace: "pre-wrap" },
-  dotsRow: { display: "inline-flex", alignItems: "center", gap: "4px" },
-  dot1: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "0ms" },
-  dot2: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "150ms" },
-  dot3: { display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--text-tertiary)", animation: "dotFade 1.2s ease-in-out infinite", animationDelay: "300ms" },
-  indicatorStatus: { fontSize: "0.6875rem", color: "var(--text-tertiary)", lineHeight: 1.3 },
-  scrollButton: { position: "absolute", bottom: "16px", left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", justifyContent: "center", width: "36px", height: "36px", backgroundColor: "var(--bg-primary)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-full)", color: "var(--text-secondary)", cursor: "pointer", boxShadow: "var(--shadow-md)" },
   errorRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", padding: "8px 16px", flexShrink: 0 },
   errorText: { fontSize: "0.8125rem", color: "var(--text-secondary)" },
   retryButton: { fontSize: "0.8125rem", fontWeight: "500", color: "var(--accent)", cursor: "pointer" },
-  menuBackdrop: { position: "fixed", inset: 0, zIndex: 400 },
-  contextMenu: { position: "fixed", zIndex: 401, backgroundColor: "var(--bg-primary)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-lg)", overflow: "hidden", minWidth: "160px" },
-  menuItem: { width: "100%", display: "flex", alignItems: "center", gap: "10px", padding: "11px 16px", fontSize: "0.875rem", color: "var(--text-primary)", cursor: "pointer", textAlign: "left", transition: "background-color var(--transition)" },
 };

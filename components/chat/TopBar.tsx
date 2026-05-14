@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useChatContext } from "@/components/layout/ChatShell";
 import ModelPicker from "@/components/ui/ModelPicker";
+import ChatTopBar from "./ChatTopBar";
 
 interface TopBarProps {
   title: string;
@@ -22,7 +23,6 @@ export default function TopBar({ title, hasMessages, onRefresh, model, onModelCh
       return;
     }
     if (hasMessages) {
-      // Navigate to welcome screen and start incognito session
       setIncognito(true);
       router.push("/chat");
     } else {
@@ -30,49 +30,32 @@ export default function TopBar({ title, hasMessages, onRefresh, model, onModelCh
     }
   }
 
-  return (
-    <div style={styles.topBar}>
-      {/* Hamburger — mobile only, welcome screen only */}
-      {!hasMessages && (
-        <button
-          onClick={openDrawer}
-          style={styles.hamburger}
-          aria-label="Open menu"
-          className="mobile-only"
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-            <path
-              d="M2 4h14M2 9h14M2 14h14"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-      )}
+  const leftButton = !hasMessages ? (
+    <button
+      onClick={openDrawer}
+      style={styles.iconButton}
+      aria-label="Open menu"
+      className="mobile-only"
+    >
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+        <path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    </button>
+  ) : (
+    <button
+      onClick={() => router.push("/chat")}
+      style={styles.iconButton}
+      aria-label="Back"
+      className="mobile-only"
+    >
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+        <path d="M11 4L5 9l6 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  );
 
-      {/* Back button — mobile only, inside an open chat */}
-      {hasMessages && (
-        <button
-          onClick={() => router.push("/chat")}
-          style={styles.backButton}
-          aria-label="Back"
-          className="mobile-only"
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-            <path
-              d="M11 4L5 9l6 5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      )}
-
-      <h1 style={styles.title}>{title}</h1>
-
+  const rightCluster = (
+    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
       {onRefresh && (
         <button
           onClick={onRefresh}
@@ -101,6 +84,14 @@ export default function TopBar({ title, hasMessages, onRefresh, model, onModelCh
         <span style={styles.incognitoLabel}>Incognito</span>
       </button>
     </div>
+  );
+
+  return (
+    <ChatTopBar
+      left={leftButton}
+      title={title}
+      right={rightCluster}
+    />
   );
 }
 
@@ -145,17 +136,8 @@ function EyeSlashIcon() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  topBar: {
-    height: "var(--topbar-height)",
-    display: "flex",
-    alignItems: "center",
-    padding: "0 16px",
-    borderBottom: "1px solid var(--border)",
-    gap: "8px",
-    flexShrink: 0,
-  },
-  hamburger: {
-    display: "none", // shown via CSS in globals
+  iconButton: {
+    display: "none", // shown via CSS in globals for mobile-only
     flexShrink: 0,
     width: "32px",
     height: "32px",
@@ -164,27 +146,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-secondary)",
     borderRadius: "var(--radius-sm)",
     cursor: "pointer",
-  },
-  backButton: {
-    display: "none", // shown via CSS in globals
-    flexShrink: 0,
-    width: "32px",
-    height: "32px",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "var(--text-secondary)",
-    borderRadius: "var(--radius-sm)",
-    cursor: "pointer",
-  },
-  title: {
-    flex: 1,
-    minWidth: 0,
-    fontSize: "0.9375rem",
-    fontWeight: "500",
-    color: "var(--text-primary)",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
   },
   incognitoButton: {
     display: "flex",

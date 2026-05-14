@@ -26,3 +26,4 @@ This file tracks which migrations have been applied to the production Supabase i
 | 021 | Anthropic Files API — adds `file_ids JSONB` to `messages`; stores Anthropic file IDs parallel to `metadata.attachments` for context-window-efficient history replay | ⬜ |
 | 022 | Meals & Groceries project instructions — appends planning-first guidance to the project: lead with a plan, one round of questions max, conversational prose for questions in group chat | ✅ |
 | 023 | Remove Loubi from memory — updates 6 memory records to strip the "Loubi" nickname, deletes 4 records whose content was solely about the nickname; applied directly via REST API 2026-05-12 | ✅ |
+| 024 | Chat members `last_read_at` — adds nullable `last_read_at TIMESTAMPTZ` to `chat_members`, an index on `(chat_id, user_id, last_read_at)`, and an `UPDATE` RLS policy letting a member set their own `last_read_at`. Powers the sidebar unread-dot logic. | ⬜ |

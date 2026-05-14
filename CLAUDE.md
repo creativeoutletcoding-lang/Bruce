@@ -114,6 +114,27 @@ Two types: **private** (one member + Bruce) and **shared** (multiple members). A
 
 ---
 
+## Chat Architecture
+
+All three chat contexts (standalone, project, family) share the same code paths. Context wrappers (`ChatWindow`, `ProjectChatView`, `FamilyChatWindow`) assemble per-context data and callbacks; visual rendering, streaming, persistence, and memory generation are shared.
+
+| Concern | Shared module |
+|---|---|
+| Bubble rendering | `components/chat/MessageBubble.tsx` |
+| Message list | `components/chat/MessageList.tsx` |
+| Input bar (send/stop/attach) | `components/chat/MessageInput.tsx` |
+| Top bar shell (back/title/right slot) | `components/chat/ChatTopBar.tsx` |
+| Server stream + tools + persistence | `lib/chat/streamHandler.ts` |
+| Client stream consumer (flush, abort, image-req) | `lib/chat/clientStream.ts` |
+| Memory generation on unmount | `lib/chat/useChatMemory.ts` |
+| Sender display name + color resolution | `lib/chat/senderProfile.ts` |
+
+**CHAT UI RULE:** Visual changes (bubble styling, list layout, input bar, top bar layout, dots, indicators) must always be made in the shared components above, never in the context wrappers. Context variations are handled via props — never by forking a component.
+
+**Streaming model:** the server emits one consolidated assistant message per turn even when tools interleave (no per-turn DB rows). The client consumes the stream through `consumeStream()` with a 24ms flush tick so partial markdown renders progressively. An `AbortController` from `ChatWindow`/`ProjectChatView`/`FamilyChatWindow` is passed both to `fetch` and `consumeStream` — pressing Stop in `MessageInput` cancels both, preserves whatever text has been emitted, and marks any in-flight task steps as cancelled.
+
+**Unread indicators:** `chat_members.last_read_at` (migration 024) is updated to `now()` whenever a chat is opened via `POST /api/chats/mark-read`. The sidebar queries `chat_members` on mount and renders an 8px `#0F6E56` dot when `chats.last_message_at > last_read_at` and the latest message wasn't sent by the current user.
+
 ## Build Conventions
 
 - **Model:** always `claude-sonnet-4-6`. Never hardcode another.
