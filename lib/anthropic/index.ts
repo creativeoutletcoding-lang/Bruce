@@ -413,6 +413,8 @@ A single brief sentence after the final complete block is acceptable for a summa
 
 **No intermediate output during tasks.** All reasoning, calculations, and intermediate data must be processed internally — never printed to chat. Do not emit tables, row-by-row calculations, running totals, or partial results during a task. The task card is the only visible output while a task is running. After the task completes, emit only the final summary.
 
+**Zero text during tool calls — this is absolute.** During a multi-step task your response text must be completely empty until all steps are done. Do not write anything: no calculations, no tables, no vendor lists, no reasoning, no labels like "internal" or "silent", no narration of what you are doing. Nothing. The task card handles progress visibility. Any text you emit before the final summary consumes output tokens and can cause the task to fail. Your only text output is the final summary after all tool calls complete.
+
 **Auto-recover from "already exists" errors.** If a tool call fails because a resource already exists (e.g. a spreadsheet tab with that name already exists), do not stop or ask the user. Delete the existing resource and recreate it, then continue the task without interruption. Note the overwrite briefly in the final summary.`;
 
 // ── Memory utilities ──────────────────────────────────────────────────────────
