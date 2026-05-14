@@ -34,7 +34,7 @@ export interface PathResolutionStep {
   segment: string;
   folderId: string | null;
   duplicateCount: number;
-  allFolderIds: Array<{ id: string; createdTime: string }>;
+  allFolderIds: Array<{ id: string; createdTime: string; childCount: number }>;
 }
 
 export interface PathResolutionResult {
@@ -64,7 +64,6 @@ async function driveGet(
 }
 
 // Returns all folders with the given name under parentId, sorted oldest-first.
-// Oldest is the safest pick: real folders predate phantom copies created by ensureFolderByName bugs.
 async function findAllFoldersByName(
   token: string,
   name: string,
@@ -80,13 +79,31 @@ async function findAllFoldersByName(
   return (data.files ?? []) as Array<{ id: string; createdTime: string }>;
 }
 
+// Returns the number of children in a folder (capped at 10 for efficiency).
+async function getFolderChildCount(token: string, folderId: string): Promise<number> {
+  const data = await driveGet(token, "/files", {
+    q: `'${folderId}' in parents and trashed=false`,
+    fields: "files(id)",
+    pageSize: "10",
+  });
+  return ((data.files ?? []) as unknown[]).length;
+}
+
+// Prefers the folder with children when duplicates exist.
+// If only one candidate has children, use it. If both or neither have children, use the oldest.
 async function findFolderByName(
   token: string,
   name: string,
   parentId: string
 ): Promise<string | null> {
   const matches = await findAllFoldersByName(token, name, parentId);
-  return matches.length > 0 ? matches[0].id : null;
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0].id;
+
+  const counts = await Promise.all(matches.map((m) => getFolderChildCount(token, m.id)));
+  const withChildren = matches.filter((_, i) => counts[i] > 0);
+  if (withChildren.length === 1) return withChildren[0].id;
+  return matches[0].id; // oldest-first fallback when 0 or 2+ have children
 }
 
 async function ensureFolderByName(
@@ -242,7 +259,7 @@ export async function resolvePathDebug(
   let hasDuplicates = false;
 
   if (parts.length === 0) {
-    steps.push({ segment: "(root)", folderId: personalId, duplicateCount: 0, allFolderIds: [{ id: personalId, createdTime: "(cached)" }] });
+    steps.push({ segment: "(root)", folderId: personalId, duplicateCount: 0, allFolderIds: [{ id: personalId, createdTime: "(cached)", childCount: -1 }] });
     return { path: folderPath, steps, resolvedFolderId: personalId, hasDuplicates };
   }
 
@@ -250,22 +267,33 @@ export async function resolvePathDebug(
   const normalized = root.toLowerCase();
   let currentId: string | null;
 
+  async function enrichCandidates(
+    candidates: Array<{ id: string; createdTime: string }>
+  ): Promise<Array<{ id: string; createdTime: string; childCount: number }>> {
+    const counts = await Promise.all(candidates.map((c) => getFolderChildCount(token, c.id)));
+    return candidates.map((c, i) => ({ ...c, childCount: counts[i] }));
+  }
+
   if (normalized === "personal") {
     currentId = personalId;
-    steps.push({ segment: root, folderId: personalId, duplicateCount: 0, allFolderIds: [{ id: personalId, createdTime: "(cached)" }] });
+    steps.push({ segment: root, folderId: personalId, duplicateCount: 0, allFolderIds: [{ id: personalId, createdTime: "(cached)", childCount: -1 }] });
   } else if (normalized === "projects") {
     currentId = projectsId;
-    steps.push({ segment: root, folderId: projectsId, duplicateCount: 0, allFolderIds: [{ id: projectsId, createdTime: "(cached)" }] });
+    steps.push({ segment: root, folderId: projectsId, duplicateCount: 0, allFolderIds: [{ id: projectsId, createdTime: "(cached)", childCount: -1 }] });
   } else if (normalized === "shared") {
     const candidates = await findAllFoldersByName(token, "Shared", rootId);
-    currentId = candidates[0]?.id ?? null;
+    const enriched = await enrichCandidates(candidates);
+    const withChildren = enriched.filter((c) => c.childCount > 0);
+    currentId = withChildren.length === 1 ? withChildren[0].id : (enriched[0]?.id ?? null);
     if (candidates.length > 1) hasDuplicates = true;
-    steps.push({ segment: root, folderId: currentId, duplicateCount: candidates.length, allFolderIds: candidates });
+    steps.push({ segment: root, folderId: currentId, duplicateCount: candidates.length, allFolderIds: enriched });
   } else {
     const candidates = await findAllFoldersByName(token, root, personalId);
-    currentId = candidates[0]?.id ?? null;
+    const enriched = await enrichCandidates(candidates);
+    const withChildren = enriched.filter((c) => c.childCount > 0);
+    currentId = withChildren.length === 1 ? withChildren[0].id : (enriched[0]?.id ?? null);
     if (candidates.length > 1) hasDuplicates = true;
-    steps.push({ segment: root, folderId: currentId, duplicateCount: candidates.length, allFolderIds: candidates });
+    steps.push({ segment: root, folderId: currentId, duplicateCount: candidates.length, allFolderIds: enriched });
   }
 
   for (const segment of rest) {
@@ -274,9 +302,12 @@ export async function resolvePathDebug(
       continue;
     }
     const candidates = await findAllFoldersByName(token, segment, currentId);
-    currentId = candidates[0]?.id ?? null;
+    const enriched = await enrichCandidates(candidates);
+    // Prefer folder with children; fall back to oldest
+    const withChildren = enriched.filter((c) => c.childCount > 0);
+    currentId = withChildren.length === 1 ? withChildren[0].id : (enriched[0]?.id ?? null);
     if (candidates.length > 1) hasDuplicates = true;
-    steps.push({ segment, folderId: currentId, duplicateCount: candidates.length, allFolderIds: candidates });
+    steps.push({ segment, folderId: currentId, duplicateCount: candidates.length, allFolderIds: enriched });
   }
 
   return { path: folderPath, steps, resolvedFolderId: currentId, hasDuplicates };
