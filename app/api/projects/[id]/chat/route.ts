@@ -305,12 +305,25 @@ export async function POST(request: NextRequest, { params }: Props) {
     userContent = message;
   }
 
-  const anthropicMessages: Anthropic.Messages.MessageParam[] = [
+  // Sanitize history: failed requests can leave consecutive user messages in the DB
+  // (user message persisted, assistant message never written because the stream died).
+  // Anthropic rejects non-alternating roles, causing the stream to close with no output.
+  const rawMessages: Anthropic.Messages.MessageParam[] = [
     ...history
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as Anthropic.Messages.MessageParam["content"] })),
     { role: "user" as const, content: userContent },
   ];
+  const anthropicMessages = rawMessages
+    .reduce<Anthropic.Messages.MessageParam[]>((acc, msg) => {
+      if (acc.length > 0 && acc[acc.length - 1].role === msg.role) {
+        acc[acc.length - 1] = msg; // collapse consecutive same-role, keep latest
+      } else {
+        acc.push(msg);
+      }
+      return acc;
+    }, [])
+    .filter((_, i, arr) => i !== 0 || arr[0].role === "user"); // must start with user
 
   // Files API beta header needed so Anthropic recognises { type:"file" } sources
   const anthropic = new Anthropic({
@@ -368,6 +381,8 @@ export async function POST(request: NextRequest, { params }: Props) {
         let webSearchUsed = false;
         let browseUrlUsed = false;
 
+        console.error(`[api/projects/chat] Starting stream: ${anthropicMessages.length} messages, roles: ${anthropicMessages.map(m => m.role).join(",")}, systemLen: ${systemPrompt.length}`);
+
         while (true) {
           currentTurnText = "";
 
@@ -386,6 +401,8 @@ export async function POST(request: NextRequest, { params }: Props) {
           });
 
           const finalMsg = await stream.finalMessage();
+
+          console.error(`[api/projects/chat] Turn done: stop_reason=${finalMsg.stop_reason}, textLen=${currentTurnText.length}, toolCalls=${finalMsg.content.filter(b => b.type === "tool_use").length}`);
 
           if (finalMsg.stop_reason !== "tool_use") break;
 

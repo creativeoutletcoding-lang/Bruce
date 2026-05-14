@@ -228,7 +228,10 @@ export async function POST(request: NextRequest) {
     userContent = message;
   }
 
-  const anthropicMessages: Anthropic.Messages.MessageParam[] = [
+  // Sanitize history: failed requests can leave consecutive user messages in the DB
+  // (user message persisted, assistant message never written because the stream died).
+  // Anthropic rejects non-alternating roles, causing the stream to close with no output.
+  const rawMessages: Anthropic.Messages.MessageParam[] = [
     ...history
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({
@@ -237,6 +240,16 @@ export async function POST(request: NextRequest) {
       })),
     { role: "user" as const, content: userContent },
   ];
+  const anthropicMessages = rawMessages
+    .reduce<Anthropic.Messages.MessageParam[]>((acc, msg) => {
+      if (acc.length > 0 && acc[acc.length - 1].role === msg.role) {
+        acc[acc.length - 1] = msg;
+      } else {
+        acc.push(msg);
+      }
+      return acc;
+    }, [])
+    .filter((_, i, arr) => i !== 0 || arr[0].role === "user");
 
   // Files API beta header needed so Anthropic recognises { type:"file" } sources
   const anthropic = new Anthropic({
