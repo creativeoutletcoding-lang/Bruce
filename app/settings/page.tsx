@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import BackButton from "./BackButton";
 import ModelPreference from "./ModelPreference";
+import GoogleReconnect from "./GoogleReconnect";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -43,6 +44,16 @@ export default async function SettingsPage() {
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>AI Model</h2>
           <ModelPreference initialModel={(profile as { name: string; email: string; avatar_url: string | null; preferred_model: string | null } | null)?.preferred_model ?? "claude-sonnet-4-6"} />
+        </div>
+
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Google</h2>
+          <p style={styles.placeholder}>
+            Re-run the Google authorization flow to refresh your OAuth token and ensure
+            Bruce has the correct Drive permissions. Required if Bruce cannot see files
+            inside existing Drive folders.
+          </p>
+          <GoogleReconnect />
         </div>
       </div>
     </div>
