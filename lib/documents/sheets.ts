@@ -381,68 +381,56 @@ export async function addTab(
   const numCols = data?.headers?.length ?? (data?.rows[0]?.length ?? 0);
   console.error(`[sheets.addTab] hasTitleRow=${hasTitleRow} numCols=${numCols}`);
 
-  // When a title row is present, default freeze to 2 (title + headers) instead of 1
+  // ── Step 2: write values (critical — must succeed before formatting) ──
+  if (data) {
+    const values = buildRowValues(data);
+    if (values.length > 0) {
+      console.error(`[sheets.addTab] writing ${values.length} rows`);
+      await sheetsPut(
+        token,
+        `/${fileId}/values/${encodeURIComponent(tabName + "!A1")}?valueInputOption=USER_ENTERED`,
+        { range: `${tabName}!A1`, majorDimension: "ROWS", values }
+      );
+      console.error(`[sheets.addTab] values write ok`);
+    }
+  }
+
+  // ── Step 3: apply formatting (optional — failure never blocks success) ──
+  // When a title row is present, default freeze to 2 (title + headers) instead of 1.
   const effectiveFormatting: TabFormatSpec | undefined = hasTitleRow
     ? { boldHeaders: true, ...formatting, freezeRows: formatting?.freezeRows ?? 2 }
     : formatting;
 
-  const requests: Record<string, unknown>[] = [];
+  const formatRequests: Record<string, unknown>[] = [];
 
   if (hasTitleRow && numCols > 1) {
-    // Merge the title row across all data columns
-    requests.push({
+    formatRequests.push({
       mergeCells: {
-        range: {
-          sheetId,
-          startRowIndex: 0,
-          endRowIndex: 1,
-          startColumnIndex: 0,
-          endColumnIndex: numCols,
-        },
+        range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: numCols },
         mergeType: "MERGE_ALL",
       },
     });
-    // Bold + centered title row
-    requests.push({
+    formatRequests.push({
       repeatCell: {
-        range: {
-          sheetId,
-          startRowIndex: 0,
-          endRowIndex: 1,
-          startColumnIndex: 0,
-          endColumnIndex: numCols,
-        },
-        cell: {
-          userEnteredFormat: {
-            textFormat: { bold: true },
-            horizontalAlignment: "CENTER",
-          },
-        },
+        range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: numCols },
+        cell: { userEnteredFormat: { textFormat: { bold: true }, horizontalAlignment: "CENTER" } },
         fields: "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment",
       },
     });
   }
 
   if (data && effectiveFormatting) {
-    requests.push(...buildFormatRequests(sheetId, effectiveFormatting, numCols, headerRowIndex));
+    formatRequests.push(...buildFormatRequests(sheetId, effectiveFormatting, numCols, headerRowIndex));
   }
 
-  if (requests.length > 0) {
-    console.error(`[sheets.addTab] applying ${requests.length} format requests`);
-    await sheetsPost(token, `/${fileId}:batchUpdate`, { requests });
-    console.error(`[sheets.addTab] format requests ok`);
-  }
-
-  if (data) {
-    const values = buildRowValues(data);
-    if (values.length > 0) {
-      console.error(`[sheets.addTab] writing ${values.length} rows`);
-      await sheetsPut(token, `/${fileId}/values/${encodeURIComponent(tabName + "!A1")}?valueInputOption=USER_ENTERED`, {
-        range: `${tabName}!A1`,
-        majorDimension: "ROWS",
-        values,
-      });
-      console.error(`[sheets.addTab] values write ok`);
+  if (formatRequests.length > 0) {
+    console.error(`[sheets.addTab] applying ${formatRequests.length} format requests`);
+    try {
+      await sheetsPost(token, `/${fileId}:batchUpdate`, { requests: formatRequests });
+      console.error(`[sheets.addTab] formatting ok`);
+    } catch (fmtErr) {
+      // Formatting is cosmetic — log and continue so the caller gets a success result.
+      console.error(`[sheets.addTab] formatting failed (non-fatal): ${fmtErr instanceof Error ? fmtErr.message : String(fmtErr)}`);
     }
   }
 
