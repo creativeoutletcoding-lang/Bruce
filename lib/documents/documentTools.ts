@@ -7,7 +7,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createSheet, addTab, readSheet, updateCells, formatTab } from "@/lib/documents/sheets";
 import { createDoc, readDoc, updateDoc, appendDoc } from "@/lib/documents/docs";
-import { listFiles, moveFile, exportAsPDF, createFolder } from "@/lib/documents/drive";
+import { listFiles, moveFile, exportAsPDF, createFolder, resolvePathDebug } from "@/lib/documents/drive";
 import { generateCSV, readCSV } from "@/lib/documents/csv";
 import { getFileContent } from "@/lib/google/drive";
 import type { TabFormatSpec, SheetData } from "@/lib/documents/sheets";
@@ -246,6 +246,24 @@ export const DOCUMENT_TOOLS: Anthropic.Messages.Tool[] = [
     },
   },
   {
+    name: "resolve_drive_path",
+    description:
+      "Resolve a Bruce Drive folder path step by step, showing the exact Drive folder ID chosen at each segment. " +
+      "Use this when list_drive_files returns unexpected results or empty folders — it reveals duplicate phantom folders " +
+      "alongside real ones and shows which ID was selected (always the oldest). " +
+      "Also use this before navigating into a subfolder to confirm the correct folder_id.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        folder_path: {
+          type: "string",
+          description: "Bruce Drive folder path to resolve. Example: 'Projects/CPS PAYROLL/Imports'.",
+        },
+      },
+      required: ["folder_path"],
+    },
+  },
+  {
     name: "export_as_pdf",
     description:
       "Export a Google Doc as a PDF and save it to Drive. " +
@@ -347,7 +365,9 @@ Use \`currency_columns\` (array of 0-indexed column indices) to format monetary 
 
 **When a file ID is needed:** use \`list_drive_files\` first to find existing files in the relevant folder. Never guess a file ID.
 
-**Navigating subfolders:** \`list_drive_files\` results include subfolders with \`isFolder: true\` and their Drive \`id\`. To list the contents of a subfolder, call \`list_drive_files\` with \`folder_id\` set to that entry's \`id\` — do not construct deep \`folder_path\` strings (path resolution only works one level under Projects/Personal/Shared). Example: list \`Projects/CPS PAYROLL\`, find the Imports entry (\`isFolder: true\`), then call \`list_drive_files\` with \`folder_id: "<that id>"\`.`;
+**Navigating subfolders:** \`list_drive_files\` results include subfolders with \`isFolder: true\` and their Drive \`id\`. To list the contents of a subfolder, call \`list_drive_files\` with \`folder_id\` set to that entry's \`id\` — do not construct deep \`folder_path\` strings (path resolution only works one level under Projects/Personal/Shared). Example: list \`Projects/CPS PAYROLL\`, find the Imports entry (\`isFolder: true\`), then call \`list_drive_files\` with \`folder_id: "<that id>"\`.
+
+**Duplicate folders (phantom cleanup):** If \`list_drive_files\` returns a \`warnings\` field mentioning duplicate folder names, or if a folder appears empty when it should have files, use \`resolve_drive_path\` first. It shows every candidate folder ID at each path segment (with \`duplicateCount\` and \`allFolderIds\`). Path resolution always picks the oldest folder — real folders predate phantoms — but if the wrong ID is still being used, tell the user exactly which IDs exist so they can delete the phantom from Google Drive directly.`;
 
 // ── Status sentinels ───────────────────────────────────────────
 
@@ -529,6 +549,11 @@ export async function executeDocumentTool(
         (input.folder_path as string | undefined) ?? "Personal",
         input.folder_id as string | undefined
       );
+      return JSON.stringify(result);
+    }
+
+    case "resolve_drive_path": {
+      const result = await resolvePathDebug(userId, input.folder_path as string);
       return JSON.stringify(result);
     }
 

@@ -27,6 +27,21 @@ export interface DriveFileEntry {
 export interface DriveListResult {
   folderPath: string;
   files: DriveFileEntry[];
+  warnings?: string[];
+}
+
+export interface PathResolutionStep {
+  segment: string;
+  folderId: string | null;
+  duplicateCount: number;
+  allFolderIds: Array<{ id: string; createdTime: string }>;
+}
+
+export interface PathResolutionResult {
+  path: string;
+  steps: PathResolutionStep[];
+  resolvedFolderId: string | null;
+  hasDuplicates: boolean;
 }
 
 // ── Low-level helpers ────────────────────────────────────────
@@ -48,19 +63,30 @@ async function driveGet(
   return res.json() as Promise<Record<string, unknown>>;
 }
 
+// Returns all folders with the given name under parentId, sorted oldest-first.
+// Oldest is the safest pick: real folders predate phantom copies created by ensureFolderByName bugs.
+async function findAllFoldersByName(
+  token: string,
+  name: string,
+  parentId: string
+): Promise<Array<{ id: string; createdTime: string }>> {
+  const q = `name='${name.replace(/'/g, "\\'")}' and mimeType='${FOLDER_MIME}' and '${parentId}' in parents and trashed=false`;
+  const data = await driveGet(token, "/files", {
+    q,
+    fields: "files(id,createdTime)",
+    orderBy: "createdTime asc",
+    pageSize: "10",
+  });
+  return (data.files ?? []) as Array<{ id: string; createdTime: string }>;
+}
+
 async function findFolderByName(
   token: string,
   name: string,
   parentId: string
 ): Promise<string | null> {
-  const q = `name='${name.replace(/'/g, "\\'")}' and mimeType='${FOLDER_MIME}' and '${parentId}' in parents and trashed=false`;
-  const data = await driveGet(token, "/files", {
-    q,
-    fields: "files(id)",
-    pageSize: "1",
-  });
-  const files = data.files as Array<{ id: string }>;
-  return files.length > 0 ? files[0].id : null;
+  const matches = await findAllFoldersByName(token, name, parentId);
+  return matches.length > 0 ? matches[0].id : null;
 }
 
 async function ensureFolderByName(
@@ -169,18 +195,91 @@ export async function listFiles(
     size?: string;
   }>;
 
+  const mapped = files.map((f) => ({
+    id: f.id,
+    name: f.name,
+    mimeType: f.mimeType,
+    isFolder: f.mimeType === "application/vnd.google-apps.folder",
+    webViewLink: f.webViewLink ?? "",
+    modifiedTime: f.modifiedTime,
+    size: f.size,
+  }));
+
+  // Detect duplicate-named subfolders — symptom of phantom folder creation
+  const folderNameCounts = new Map<string, number>();
+  for (const f of mapped) {
+    if (f.isFolder) folderNameCounts.set(f.name, (folderNameCounts.get(f.name) ?? 0) + 1);
+  }
+  const warnings: string[] = [];
+  for (const [name, count] of folderNameCounts) {
+    if (count > 1) {
+      warnings.push(
+        `Duplicate folder: "${name}" appears ${count} times in this listing. ` +
+        `This usually means a phantom empty folder was created alongside the real one. ` +
+        `Use resolve_drive_path to identify which ID is correct, then navigate with folder_id.`
+      );
+    }
+  }
+
   return {
     folderPath: folderId ? `(folder_id:${folderId})` : folderPath,
-    files: files.map((f) => ({
-      id: f.id,
-      name: f.name,
-      mimeType: f.mimeType,
-      isFolder: f.mimeType === "application/vnd.google-apps.folder",
-      webViewLink: f.webViewLink ?? "",
-      modifiedTime: f.modifiedTime,
-      size: f.size,
-    })),
+    files: mapped,
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
+}
+
+// Returns step-by-step resolution of a folder path with all candidate folder IDs at each step.
+// Use this to diagnose which Drive folder IDs Bruce is navigating through.
+export async function resolvePathDebug(
+  userId: string,
+  folderPath: string
+): Promise<PathResolutionResult> {
+  const token = await getValidToken(userId);
+  const { rootId, personalId, projectsId } = await ensureBruceFolders(userId);
+
+  const parts = folderPath.trim().replace(/^\/|\/$/g, "").split("/").filter(Boolean);
+  const steps: PathResolutionStep[] = [];
+  let hasDuplicates = false;
+
+  if (parts.length === 0) {
+    steps.push({ segment: "(root)", folderId: personalId, duplicateCount: 0, allFolderIds: [{ id: personalId, createdTime: "(cached)" }] });
+    return { path: folderPath, steps, resolvedFolderId: personalId, hasDuplicates };
+  }
+
+  const [root, ...rest] = parts;
+  const normalized = root.toLowerCase();
+  let currentId: string | null;
+
+  if (normalized === "personal") {
+    currentId = personalId;
+    steps.push({ segment: root, folderId: personalId, duplicateCount: 0, allFolderIds: [{ id: personalId, createdTime: "(cached)" }] });
+  } else if (normalized === "projects") {
+    currentId = projectsId;
+    steps.push({ segment: root, folderId: projectsId, duplicateCount: 0, allFolderIds: [{ id: projectsId, createdTime: "(cached)" }] });
+  } else if (normalized === "shared") {
+    const candidates = await findAllFoldersByName(token, "Shared", rootId);
+    currentId = candidates[0]?.id ?? null;
+    if (candidates.length > 1) hasDuplicates = true;
+    steps.push({ segment: root, folderId: currentId, duplicateCount: candidates.length, allFolderIds: candidates });
+  } else {
+    const candidates = await findAllFoldersByName(token, root, personalId);
+    currentId = candidates[0]?.id ?? null;
+    if (candidates.length > 1) hasDuplicates = true;
+    steps.push({ segment: root, folderId: currentId, duplicateCount: candidates.length, allFolderIds: candidates });
+  }
+
+  for (const segment of rest) {
+    if (!currentId) {
+      steps.push({ segment, folderId: null, duplicateCount: 0, allFolderIds: [] });
+      continue;
+    }
+    const candidates = await findAllFoldersByName(token, segment, currentId);
+    currentId = candidates[0]?.id ?? null;
+    if (candidates.length > 1) hasDuplicates = true;
+    steps.push({ segment, folderId: currentId, duplicateCount: candidates.length, allFolderIds: candidates });
+  }
+
+  return { path: folderPath, steps, resolvedFolderId: currentId, hasDuplicates };
 }
 
 export async function moveFile(
