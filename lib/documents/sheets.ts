@@ -54,24 +54,45 @@ export interface ReadSheetResult {
 
 // ── Helpers ──────────────────────────────────────────────────
 
+const SHEETS_TIMEOUT_MS = 30_000;
+
+function makeAbortSignal(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
+
 async function sheetsPost(
   token: string,
   path: string,
   body: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  const res = await fetch(`${SHEETS_API}${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Sheets API POST ${path} failed: ${res.status} — ${err}`);
+  const { signal, clear } = makeAbortSignal(SHEETS_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${SHEETS_API}${path}`, {
+      method: "POST",
+      signal,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`[sheets] POST ${path} failed: ${res.status} — ${err}`);
+      throw new Error(`Sheets API error ${res.status}: ${err}`);
+    }
+    return res.json() as Promise<Record<string, unknown>>;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      console.error(`[sheets] POST ${path} timed out after ${SHEETS_TIMEOUT_MS / 1000}s`);
+      throw new Error(`Sheets API timed out after ${SHEETS_TIMEOUT_MS / 1000}s — check Google API status or token validity`);
+    }
+    throw err;
+  } finally {
+    clear();
   }
-  return res.json() as Promise<Record<string, unknown>>;
 }
 
 async function sheetsPut(
@@ -79,19 +100,32 @@ async function sheetsPut(
   path: string,
   body: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  const res = await fetch(`${SHEETS_API}${path}`, {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Sheets API PUT ${path} failed: ${res.status} — ${err}`);
+  const { signal, clear } = makeAbortSignal(SHEETS_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${SHEETS_API}${path}`, {
+      method: "PUT",
+      signal,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`[sheets] PUT ${path} failed: ${res.status} — ${err}`);
+      throw new Error(`Sheets API error ${res.status}: ${err}`);
+    }
+    return res.json() as Promise<Record<string, unknown>>;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      console.error(`[sheets] PUT ${path} timed out after ${SHEETS_TIMEOUT_MS / 1000}s`);
+      throw new Error(`Sheets API timed out after ${SHEETS_TIMEOUT_MS / 1000}s — check Google API status or token validity`);
+    }
+    throw err;
+  } finally {
+    clear();
   }
-  return res.json() as Promise<Record<string, unknown>>;
 }
 
 async function sheetsGet(
@@ -101,14 +135,27 @@ async function sheetsGet(
 ): Promise<Record<string, unknown>> {
   const url = new URL(`${SHEETS_API}${path}`);
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Sheets API GET ${path} failed: ${res.status} — ${err}`);
+  const { signal, clear } = makeAbortSignal(SHEETS_TIMEOUT_MS);
+  try {
+    const res = await fetch(url.toString(), {
+      signal,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`[sheets] GET ${path} failed: ${res.status} — ${err}`);
+      throw new Error(`Sheets API error ${res.status}: ${err}`);
+    }
+    return res.json() as Promise<Record<string, unknown>>;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      console.error(`[sheets] GET ${path} timed out after ${SHEETS_TIMEOUT_MS / 1000}s`);
+      throw new Error(`Sheets API timed out after ${SHEETS_TIMEOUT_MS / 1000}s — check Google API status or token validity`);
+    }
+    throw err;
+  } finally {
+    clear();
   }
-  return res.json() as Promise<Record<string, unknown>>;
 }
 
 function buildFormatRequests(
@@ -315,7 +362,9 @@ export async function addTab(
   data?: SheetData,
   formatting?: TabFormatSpec
 ): Promise<{ tabName: string; sheetId: number }> {
+  console.error(`[sheets.addTab] start fileId=${fileId} tabName="${tabName}"`);
   const token = await getValidToken(userId);
+  console.error(`[sheets.addTab] got token, calling addSheet`);
 
   const addResp = await sheetsPost(token, `/${fileId}:batchUpdate`, {
     requests: [{ addSheet: { properties: { title: tabName } } }],
@@ -325,10 +374,12 @@ export async function addTab(
     addSheet: { properties: { sheetId: number } };
   }>;
   const sheetId = replies[0].addSheet.properties.sheetId;
+  console.error(`[sheets.addTab] addSheet ok, sheetId=${sheetId}`);
 
   const hasTitleRow = !!data?.titleRow;
   const headerRowIndex = hasTitleRow ? 1 : 0;
   const numCols = data?.headers?.length ?? (data?.rows[0]?.length ?? 0);
+  console.error(`[sheets.addTab] hasTitleRow=${hasTitleRow} numCols=${numCols}`);
 
   // When a title row is present, default freeze to 2 (title + headers) instead of 1
   const effectiveFormatting: TabFormatSpec | undefined = hasTitleRow
@@ -377,20 +428,25 @@ export async function addTab(
   }
 
   if (requests.length > 0) {
+    console.error(`[sheets.addTab] applying ${requests.length} format requests`);
     await sheetsPost(token, `/${fileId}:batchUpdate`, { requests });
+    console.error(`[sheets.addTab] format requests ok`);
   }
 
   if (data) {
     const values = buildRowValues(data);
     if (values.length > 0) {
+      console.error(`[sheets.addTab] writing ${values.length} rows`);
       await sheetsPut(token, `/${fileId}/values/${encodeURIComponent(tabName + "!A1")}?valueInputOption=USER_ENTERED`, {
         range: `${tabName}!A1`,
         majorDimension: "ROWS",
         values,
       });
+      console.error(`[sheets.addTab] values write ok`);
     }
   }
 
+  console.error(`[sheets.addTab] done: "${tabName}" (sheetId=${sheetId})`);
   return { tabName, sheetId };
 }
 
