@@ -40,3 +40,4 @@ next-env.d.ts
 
 # large binaries and drafts
 *.pdf
+.claude/
