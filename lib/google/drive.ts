@@ -1,7 +1,7 @@
 // ============================================================
 // Bruce — Google Drive client
 // All Drive operations are server-side only.
-// Uses drive.file scope — Bruce only touches files he created/opened.
+// Uses drive scope — can access any file or folder the user owns.
 // Folder structure: Bruce/ → Bruce/Personal/, Bruce/Projects/[name]/
 // ============================================================
 

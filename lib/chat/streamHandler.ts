@@ -204,6 +204,10 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
         let currentMessages = [...initialMessages];
         let webSearchUsed = false;
         let browseUrlUsed = false;
+        // Tracks how many times we've pushed a "Continue." message to recover from
+        // a max_tokens truncation that left no complete tool call in the turn.
+        let maxTokensContinues = 0;
+        const MAX_TOKENS_CONTINUES = 3;
 
         while (true) {
           let turnText = "";
@@ -223,22 +227,38 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
 
           const finalMsg = await stream.finalMessage();
 
-          if (finalMsg.stop_reason !== "tool_use") {
+          // Extract tool calls first — a max_tokens truncation can still contain
+          // a complete tool_use block if the tool call finished before the limit.
+          // Gating the loop on toolCalls.length (not stop_reason) ensures those
+          // tool calls are executed even when stop_reason is not "tool_use".
+          const toolCalls = finalMsg.content.filter(
+            (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
+          );
+
+          if (toolCalls.length === 0) {
+            if (finalMsg.stop_reason === "max_tokens" && maxTokensContinues < MAX_TOKENS_CONTINUES) {
+              // Model was cut off mid-response with no complete tool call.
+              // Push a continuation and let it finish its thought / remaining tool calls.
+              maxTokensContinues++;
+              currentMessages = [
+                ...currentMessages,
+                { role: "assistant" as const, content: finalMsg.content },
+                { role: "user" as const, content: "Continue." },
+              ];
+              continue;
+            }
             handleText(turnText);
             break;
           }
 
+          // Has tool calls — reset the continuation counter and execute them.
           // No per-turn DB write here: writing intermediate rows caused the
           // assistant bubble to fragment after loadMessages() — a single
           // 'text → tool → text' sequence would become two stored rows but
           // one optimistic bubble, producing a flicker on reload. The full
           // response is persisted once after the loop. Connection death is
           // still safe — the catch handler below saves fullResponse.
-
-          const toolCalls = finalMsg.content.filter(
-            (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
-          );
-          if (toolCalls.length === 0) break;
+          maxTokensContinues = 0;
 
           if (toolCalls.some((tc) => tc.name === "web_search")) {
             webSearchUsed = true;

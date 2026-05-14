@@ -235,19 +235,20 @@ export const DOCUMENT_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "list_drive_files",
     description:
-      "List files and subfolders in a Bruce Drive folder. Results include folders with isFolder:true and their Drive IDs. " +
-      "Use folder_id to navigate into a subfolder by its Drive ID (faster and more reliable than folder_path for nested folders). " +
-      "Use to check what files exist before creating or referencing them.",
+      "List files and subfolders in any Google Drive folder the user owns. Results include folders with isFolder:true and their Drive IDs. " +
+      "Use folder_id when you have a known Drive folder ID — this works for any folder, including external folders not inside the Bruce/ structure. " +
+      "Use folder_path only for Bruce's own folders (Personal, Projects/<name>, Shared). " +
+      "Use to check what files exist before creating or referencing them. Never ask the user for a file ID — list the folder and find it yourself.",
     input_schema: {
       type: "object" as const,
       properties: {
         folder_path: {
           type: "string",
-          description: "Bruce Drive folder path. Examples: 'Personal', 'Projects/CPS', 'Shared'. Default: 'Personal'. Only works one level deep under Projects — use folder_id for deeper navigation.",
+          description: "Bruce Drive folder path. Examples: 'Personal', 'Projects/CPS', 'Shared'. Default: 'Personal'. Only works one level deep under Projects — use folder_id for deeper or external navigation.",
         },
         folder_id: {
           type: "string",
-          description: "Google Drive folder ID to list directly. Use this to navigate into a subfolder returned from a previous list_drive_files call — copy the id field from any entry where isFolder is true.",
+          description: "Google Drive folder ID to list directly. Works with any Drive folder the user owns — use when you have a known ID from project instructions, from the user, or from a previous listing. Takes precedence over folder_path.",
         },
       },
     },
@@ -379,9 +380,11 @@ Every CPS payroll tab must match this exact layout:
 - \`currency_columns\`: [3, 4, 5, 6, 7] (Visit Pay through Total Pay, 0-indexed).
 - \`freeze_rows\` is automatically set to 2 when \`title_row\` is provided.
 
-**When a file ID is needed:** use \`list_drive_files\` first to find existing files in the relevant folder. Never guess a file ID.
+**When a file ID is needed:** use \`list_drive_files\` to find existing files in the relevant folder. Never guess a file ID. Never ask the user for a file ID — resolve it yourself.
 
-**Navigating subfolders:** \`list_drive_files\` results include subfolders with \`isFolder: true\` and their Drive \`id\`. To list the contents of a subfolder, call \`list_drive_files\` with \`folder_id\` set to that entry's \`id\` — do not construct deep \`folder_path\` strings (path resolution only works one level under Projects/Personal/Shared). Example: list \`Projects/CPS PAYROLL\`, find the Imports entry (\`isFolder: true\`), then call \`list_drive_files\` with \`folder_id: "<that id>"\`.
+**Known folder IDs:** if you have a Drive folder ID (from project instructions, from context, or told by the user), pass it directly as \`folder_id\` to \`list_drive_files\`. The folder does not need to be inside the Bruce/ structure — \`folder_id\` works for any folder the user owns. Do not attempt path resolution for a folder you already have an ID for.
+
+**Navigating subfolders:** \`list_drive_files\` results include subfolders with \`isFolder: true\` and their Drive \`id\`. To list the contents of a subfolder, call \`list_drive_files\` with \`folder_id\` set to that entry's \`id\` — do not construct deep \`folder_path\` strings (path resolution only works one level under Projects/Personal/Shared). Example: you have folder ID \`abc123\` for a payroll folder → call \`list_drive_files\` with \`folder_id: "abc123"\` → find the Imports entry (\`isFolder: true\`) → call \`list_drive_files\` with \`folder_id: "<imports id>"\` to list its contents.
 
 **Duplicate folders (phantom cleanup):** If \`list_drive_files\` returns a \`warnings\` field mentioning duplicate folder names, or if a folder appears empty when it should have files, use \`resolve_drive_path\` first. It shows every candidate folder ID at each path segment (with \`duplicateCount\` and \`allFolderIds\`). Path resolution prefers the folder with children over an empty one when duplicates exist (real folders have content; phantoms are empty). If both or neither have children it falls back to oldest. Each candidate in \`allFolderIds\` now includes a \`childCount\` field (capped at 10) so you can verify which folder was selected and why. If the wrong ID is still selected, tell the user exactly which IDs and child counts exist so they can delete the empty phantom from Google Drive directly.`;
 
