@@ -281,7 +281,7 @@ export async function getFileContent(
   });
   const mimeType = meta.mimeType as string;
 
-  const MAX_CHARS = 8000;
+  const MAX_CHARS = 25000;
 
   async function fetchText(url: string): Promise<string> {
     const res = await fetch(url, {
