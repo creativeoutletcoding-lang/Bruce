@@ -206,6 +206,8 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
         let browseUrlUsed = false;
 
         while (true) {
+          let turnText = "";
+
           const stream = anthropic.messages.stream({
             model,
             max_tokens: maxTokens ?? 2048,
@@ -215,13 +217,16 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
           }, { signal: clientAbort.signal });
 
           stream.on("text", (text) => {
+            turnText += text;
             fullResponse += text;
-            handleText(text);
           });
 
           const finalMsg = await stream.finalMessage();
 
-          if (finalMsg.stop_reason !== "tool_use") break;
+          if (finalMsg.stop_reason !== "tool_use") {
+            handleText(turnText);
+            break;
+          }
 
           // No per-turn DB write here: writing intermediate rows caused the
           // assistant bubble to fragment after loadMessages() — a single
