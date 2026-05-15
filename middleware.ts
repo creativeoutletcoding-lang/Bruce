@@ -40,7 +40,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/auth") ||
     pathname.startsWith("/join") ||
     // Invite token validation — new users have no session when they hit /join
-    pathname.startsWith("/api/admin/invites/");
+    pathname.startsWith("/api/admin/invites/") ||
+    // Calendar reauth callback — Google redirects here without a session cookie
+    pathname === "/api/admin/calendar-reauth/callback";
 
   if (!user && !isPublic) {
     return NextResponse.redirect(new URL("/login", request.url));

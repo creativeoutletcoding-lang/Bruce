@@ -15,6 +15,7 @@
 // ============================================================
 
 import type { CalendarEvent } from "@/lib/types";
+import { createServiceRoleClient } from "@/lib/supabase/server";
 import {
   HOUSEHOLD_CALENDAR_IDS,
   allCalendarIds,
@@ -29,22 +30,44 @@ const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 // ============================================================
 
 async function getCalendarAccessToken(callerUserId?: string): Promise<string> {
-  const refreshToken = process.env.FAMILY_CALENDAR_REFRESH_TOKEN;
+  // Read from system_config first (set via /admin/calendar-reauth);
+  // fall back to the FAMILY_CALENDAR_REFRESH_TOKEN env var.
+  let refreshToken: string | undefined;
+  let tokenSource: "supabase" | "env" = "env";
+
+  try {
+    const adminSupabase = createServiceRoleClient();
+    const { data } = await adminSupabase
+      .from("system_config")
+      .select("value")
+      .eq("key", "family_calendar_refresh_token")
+      .maybeSingle();
+    if (data?.value) {
+      refreshToken = data.value;
+      tokenSource = "supabase";
+    }
+  } catch {
+    // system_config table may not exist yet (pre-migration 025) — fall through to env var
+  }
+
+  if (!refreshToken) {
+    refreshToken = process.env.FAMILY_CALENDAR_REFRESH_TOKEN;
+  }
 
   // ── Diagnostic log ────────────────────────────────────────────────────────
-  // NOTE: calendar uses a SHARED service-account token (env var), not a per-
-  // member DB token. "DB refresh token" is not applicable here; token source
-  // is always FAMILY_CALENDAR_REFRESH_TOKEN.
   console.log("[calendar:token-refresh] attempt", {
     callerUserId: callerUserId ?? "(not provided)",
-    tokenEnvSet: !!refreshToken,
+    tokenSource,
+    tokenSet: !!refreshToken,
     tokenPrefix: refreshToken ? refreshToken.slice(0, 20) : "(missing)",
     clientIdPrefix: process.env.GOOGLE_CLIENT_ID?.slice(0, 20) ?? "(missing)",
   });
   // ─────────────────────────────────────────────────────────────────────────
 
   if (!refreshToken) {
-    throw new Error("FAMILY_CALENDAR_REFRESH_TOKEN is not configured.");
+    throw new Error(
+      "No calendar refresh token found in system_config or FAMILY_CALENDAR_REFRESH_TOKEN env var."
+    );
   }
 
   const res = await fetch(TOKEN_ENDPOINT, {

@@ -1,6 +1,6 @@
 -- ============================================================
 -- BRUCE HOUSEHOLD AI — SUPABASE SCHEMA
--- Synced through migration 013 (2026-05-03)
+-- Synced through migration 025 (2026-05-15)
 -- This file reflects the full current database state.
 -- Run this in full in the Supabase SQL editor for a fresh install.
 -- For incremental changes, run the numbered files in migrations/.
@@ -859,6 +859,32 @@ ALTER PUBLICATION supabase_realtime ADD TABLE messages;
 ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
 ALTER PUBLICATION supabase_realtime ADD TABLE chats;
 ALTER PUBLICATION supabase_realtime ADD TABLE chat_members;
+
+
+-- ============================================================
+-- SYSTEM CONFIG
+-- Runtime-mutable key/value store for config that cannot live in
+-- env vars (e.g. OAuth tokens refreshed through the admin UI).
+-- Writes are service-role only; admins can read via RLS.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS system_config (
+  key        TEXT        PRIMARY KEY,
+  value      TEXT        NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE system_config ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "system_config_admin_read"
+  ON system_config FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM users
+      WHERE users.id = auth.uid() AND users.role = 'admin'
+    )
+  );
 
 
 -- ============================================================
