@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
@@ -61,6 +62,8 @@ export default function FamilyChatWindow({
   topbar,
   placeholder = "Message the family…",
 }: FamilyChatWindowProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const memberMapRef = useRef<Record<string, { name: string; color_hex: string }>>(
     Object.fromEntries(members.map((m) => [m.id, { name: m.name, color_hex: m.color_hex }]))
   );
@@ -194,6 +197,7 @@ export default function FamilyChatWindow({
     setInput("");
     setAttachedFiles([]);
     setError(null);
+    router.replace(pathname);
 
     const userMsgId = `tmp-user-${Date.now()}`;
     const streamMsgId = `tmp-stream-${Date.now()}`;

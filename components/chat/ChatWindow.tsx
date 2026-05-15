@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useChatContext } from "@/components/layout/ChatShell";
 import TopBar from "./TopBar";
@@ -49,6 +50,8 @@ export default function ChatWindow({
   initialModel,
   currentUserId,
 }: ChatWindowProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const { incognito } = useChatContext();
   const [isClient, setIsClient] = useState(() => typeof window !== "undefined");
   const [messages, setMessages] = useState<ChatMessage[]>(
@@ -143,6 +146,7 @@ export default function ChatWindow({
     setInput("");
     setAttachedFiles([]);
     setError(null);
+    router.replace(pathname);
 
     const userMsgId = `tmp-user-${Date.now()}`;
     const streamMsgId = `tmp-stream-${Date.now()}`;

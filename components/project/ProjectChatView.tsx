@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import ProjectTopBar from "./ProjectTopBar";
 import MessageList from "@/components/chat/MessageList";
@@ -65,6 +66,8 @@ export default function ProjectChatView({
   currentUserId,
   members,
 }: ProjectChatViewProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const memberMapRef = useRef<Record<string, { name: string; color_hex: string }>>(
     Object.fromEntries(members.map((m) => [m.id, { name: m.name, color_hex: m.color_hex }]))
   );
@@ -216,6 +219,7 @@ export default function ProjectChatView({
     setInput("");
     setAttachedFiles([]);
     setError(null);
+    router.replace(pathname);
 
     const userMsgId = `tmp-user-${Date.now()}`;
     const streamMsgId = `tmp-stream-${Date.now()}`;
