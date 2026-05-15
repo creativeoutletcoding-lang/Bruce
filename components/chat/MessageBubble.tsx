@@ -39,6 +39,8 @@ interface MessageBubbleProps {
 
 const REVEAL_WIDTH = 80;
 const SWIPE_THRESHOLD = 56;
+const LONG_PRESS_MS = 500;
+const MOVE_THRESHOLD_PX = 4;
 
 function formatTimestamp(dateStr: string): string {
   return new Date(dateStr).toLocaleTimeString("en-US", {
@@ -83,6 +85,7 @@ export default function MessageBubble({
   const startOffset = useRef(0);
   const isDragging = useRef(false);
   const gestureAborted = useRef(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { swipeOffsetRef.current = swipeOffset; }, [swipeOffset]);
 
@@ -129,20 +132,36 @@ export default function MessageBubble({
     startOffset.current = swipeOffsetRef.current;
     isDragging.current = false;
     gestureAborted.current = false;
+    // Start long-press timer; if significant movement comes first the timer is
+    // cancelled and native text selection / scroll proceeds uninterrupted.
+    longPressTimer.current = setTimeout(() => {
+      longPressTimer.current = null;
+    }, LONG_PRESS_MS);
   }
 
   function handleSwipeTouchMove(e: React.TouchEvent) {
     if (!canDelete || gestureAborted.current) return;
     const t = e.touches[0];
     const totalDx = t.clientX - touchStartX.current;
-    const totalDy = Math.abs(t.clientY - touchStartY.current);
+    const totalDy = t.clientY - touchStartY.current;
+    const totalMovement = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
+
+    // Cancel long-press the moment the finger moves more than 4 px — this
+    // releases native control so text selection can proceed in any direction.
+    if (longPressTimer.current !== null && totalMovement > MOVE_THRESHOLD_PX) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
 
     if (!isDragging.current) {
-      if (Math.abs(totalDx) < 6 && totalDy < 6) return;
-      if (totalDy > Math.abs(totalDx)) {
+      // Wait until gesture direction is unambiguous.
+      if (Math.abs(totalDx) < MOVE_THRESHOLD_PX && Math.abs(totalDy) < MOVE_THRESHOLD_PX) return;
+      // Vertical movement dominant — abort swipe, let native scroll/selection proceed.
+      if (Math.abs(totalDy) > Math.abs(totalDx)) {
         gestureAborted.current = true;
         return;
       }
+      // Horizontal movement dominant — commit to swipe-to-delete.
       isDragging.current = true;
       onSwipeOpen?.();
     }
@@ -153,6 +172,10 @@ export default function MessageBubble({
   }
 
   function handleSwipeTouchEnd() {
+    if (longPressTimer.current !== null) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
     if (!isDragging.current) {
       // Tap (no drag) — close if open
       if (swipeOffsetRef.current < 0) {
@@ -170,6 +193,17 @@ export default function MessageBubble({
     } else {
       setSwipeOffset(0);
     }
+  }
+
+  function handleSwipeTouchCancel() {
+    if (longPressTimer.current !== null) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    isDragging.current = false;
+    gestureAborted.current = false;
+    setIsSwiping(false);
+    setSwipeOffset(0);
   }
 
   const isUser = isOwn !== undefined ? isOwn : role === "user";
@@ -209,7 +243,6 @@ export default function MessageBubble({
           transition: isSwiping ? "none" : "transform 0.2s cubic-bezier(0.25,0.46,0.45,0.94)",
           position: "relative",
           zIndex: 1,
-          touchAction: canDelete ? "pan-y" : undefined,
           backgroundColor: "var(--bg-primary)",
         }}
         onMouseEnter={() => setHovered(true)}
@@ -217,6 +250,7 @@ export default function MessageBubble({
         onTouchStart={handleSwipeTouchStart}
         onTouchMove={handleSwipeTouchMove}
         onTouchEnd={handleSwipeTouchEnd}
+        onTouchCancel={handleSwipeTouchCancel}
         onContextMenu={handleContextMenu}
       >
       <div className="msg-group" data-role={role} style={{ ...styles.messageGroup, ...(isHumanMessage ? { maxWidth: "85%", alignItems: isUser ? "flex-end" : "flex-start" } : { width: "100%" }) }}>
