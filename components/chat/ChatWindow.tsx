@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { buildDisplayMessage } from "@/lib/chat/pastedText";
 import { createClient } from "@/lib/supabase/client";
 import { useChatContext } from "@/components/layout/ChatShell";
 import TopBar from "./TopBar";
@@ -154,7 +155,7 @@ export default function ChatWindow({
     const userMsg: ChatMessage = {
       id: userMsgId,
       role: "user",
-      content: text,
+      content: buildDisplayMessage(text),
       created_at: new Date().toISOString(),
       sender_id: currentUserId,
       attachments: filesToSend.length > 0

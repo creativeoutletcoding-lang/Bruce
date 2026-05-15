@@ -5,6 +5,7 @@ import {
   assembleMemoryBlock,
   buildMemberCombination,
 } from "@/lib/anthropic";
+import { buildDisplayMessage } from "@/lib/chat/pastedText";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import {
   runChatStream,
@@ -63,6 +64,8 @@ export async function POST(request: NextRequest) {
 
   if (!message?.trim() && attachments.length === 0) return new Response("Message required", { status: 400 });
   if (!chatId) return new Response("chatId required", { status: 400 });
+
+  const displayMessage = buildDisplayMessage(message);
 
   const adminSupabase = createServiceRoleClient();
 
@@ -132,7 +135,7 @@ export async function POST(request: NextRequest) {
     chat_id: chatId,
     sender_id: user.id,
     role: "user",
-    content: message,
+    content: displayMessage,
     image_url: attachmentMeta[0]?.url ?? null,
     attachment_type: firstAtt?.type ?? null,
     attachment_filename: firstDocFilename,
@@ -163,7 +166,7 @@ export async function POST(request: NextRequest) {
     .map((r) => r.user_id)
     .filter((id) => id !== user.id);
 
-  const notifText = message.trim() || (attachments.length > 0 ? `Sent ${attachments.length === 1 ? "a file" : `${attachments.length} files`}` : "");
+  const notifText = displayMessage || (attachments.length > 0 ? `Sent ${attachments.length === 1 ? "a file" : `${attachments.length} files`}` : "");
   const truncatedBody = notifText.length > 120 ? notifText.slice(0, 120) + "…" : notifText;
 
   await Promise.all(

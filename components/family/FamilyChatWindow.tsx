@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { buildDisplayMessage } from "@/lib/chat/pastedText";
 import { createClient } from "@/lib/supabase/client";
 import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
@@ -210,7 +211,7 @@ export default function FamilyChatWindow({
       {
         id: userMsgId,
         role: "user" as const,
-        content: text,
+        content: buildDisplayMessage(text),
         sender_id: currentUserId,
         senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
         senderColorHex: senderInfo?.color_hex,

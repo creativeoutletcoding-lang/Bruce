@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { buildDisplayMessage } from "@/lib/chat/pastedText";
 import { createClient } from "@/lib/supabase/client";
 import ProjectTopBar from "./ProjectTopBar";
 import MessageList from "@/components/chat/MessageList";
@@ -229,7 +230,7 @@ export default function ProjectChatView({
       {
         id: userMsgId,
         role: "user",
-        content: text,
+        content: buildDisplayMessage(text),
         created_at: new Date().toISOString(),
         attachments: filesToSend.length > 0
           ? filesToSend.map((f) => ({ url: f.previewUrl ?? "", type: f.type, filename: f.filename }))

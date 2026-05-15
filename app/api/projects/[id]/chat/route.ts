@@ -6,6 +6,7 @@ import {
   buildMemberCombination,
   generateChatTitle,
 } from "@/lib/anthropic";
+import { buildDisplayMessage } from "@/lib/chat/pastedText";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import {
   runChatStream,
@@ -199,9 +200,11 @@ export async function POST(request: NextRequest, { params }: Props) {
     currentChatId = newChat.id;
   }
 
+  const displayMessage = buildDisplayMessage(message);
+
   let chatTitle: string | undefined;
   if (isFirstMessage) {
-    chatTitle = generateChatTitle(message);
+    chatTitle = generateChatTitle(displayMessage);
     const { error: titleErr } = await adminSupabase
       .from("chats")
       .update({ title: chatTitle })
@@ -223,7 +226,7 @@ export async function POST(request: NextRequest, { params }: Props) {
     chat_id: currentChatId,
     sender_id: user.id,
     role: "user",
-    content: message,
+    content: displayMessage,
     image_url: attachmentMeta[0]?.url ?? null,
     attachment_type: firstAtt?.type ?? null,
     attachment_filename: firstDocFilename,
