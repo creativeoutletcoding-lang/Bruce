@@ -41,6 +41,10 @@ export default function ChatShell({ user, children }: ChatShellProps) {
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [incognito, setIncognito] = useState(false);
+  // isMounted gates the toast so it never renders during SSR or the initial
+  // hydration pass. This prevents React #418: the server emits no toast HTML,
+  // and the client fiber tree must match before any effects run.
+  const [isMounted, setIsMounted] = useState(false);
   const [toast, setToast] = useState<ForegroundToast | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshCallbacks = useRef<Set<() => void>>(new Set());
@@ -54,14 +58,17 @@ export default function ChatShell({ user, children }: ChatShellProps) {
     refreshCallbacks.current.forEach((fn) => fn());
   }, []);
 
+  useEffect(() => { setIsMounted(true); }, []);
+
   // Request notification permission and register FCM token once on mount.
   useEffect(() => {
+    const deviceHint = getDeviceHint();
     requestAndGetToken().then((token) => {
       if (!token) return;
       fetch("/api/notifications/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, deviceHint }),
       }).catch(() => {});
     });
   }, []);
@@ -114,7 +121,7 @@ export default function ChatShell({ user, children }: ChatShellProps) {
 
   return (
     <ChatContext.Provider value={{ openDrawer, incognito, setIncognito, refreshChats, registerRefresh }}>
-      {toast && (
+      {isMounted && toast && (
         <div role="alert" onClick={handleToastClick} style={styles.toast} className="bruce-toast">
           <div style={styles.toastContent}>
             <span style={styles.toastTitle}>{toast.title}</span>
@@ -260,3 +267,13 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
   },
 };
+
+function getDeviceHint(): string {
+  const ua = navigator.userAgent;
+  if (/iPhone/.test(ua)) return "iPhone";
+  if (/iPad/.test(ua)) return "iPad";
+  if (/Android/.test(ua)) return "Android";
+  if (/Mac/.test(ua)) return "Mac";
+  if (/Windows/.test(ua)) return "Windows";
+  return "Browser";
+}

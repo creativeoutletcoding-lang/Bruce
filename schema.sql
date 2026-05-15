@@ -348,6 +348,30 @@ CREATE TABLE user_presence (
 
 
 -- ============================================================
+-- TABLE: user_fcm_tokens
+-- One row per device per user. Token uniqueness is enforced globally
+-- so a token that moves to a different account is re-attributed on
+-- the next registration. Stale tokens (FCM 404) are deleted by
+-- notifyUser after a failed send attempt.
+-- ============================================================
+
+CREATE TABLE user_fcm_tokens (
+  id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  token         TEXT        NOT NULL,
+  device_hint   TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(token)
+);
+
+CREATE INDEX idx_user_fcm_tokens_user_id ON user_fcm_tokens(user_id);
+
+ALTER TABLE user_fcm_tokens ENABLE ROW LEVEL SECURITY;
+-- No user-facing policies — accessed exclusively via service role.
+
+
+-- ============================================================
 -- ROW LEVEL SECURITY
 -- Enabled on every table. No data returns without a matching
 -- authenticated identity. This is architectural — not a setting.

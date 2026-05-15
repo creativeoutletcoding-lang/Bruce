@@ -81,7 +81,7 @@ export default function NotificationSettings({
       </div>
 
       {/* Per-type toggles — dimmed when paused */}
-      <div style={{ ...styles.group, opacity: isPaused ? 0.4 : 1, pointerEvents: isPaused ? "none" : "auto" }}>
+      <div style={{ ...styles.group, opacity: isPaused ? 0.4 : 1, ...(isPaused ? { pointerEvents: "none" as const } : {}) }}>
         <ToggleRow
           title="Family messages"
           desc="Messages sent by family members"
@@ -107,7 +107,7 @@ export default function NotificationSettings({
       </div>
 
       {/* Sensitivity */}
-      <div style={{ ...styles.group, gap: "12px", borderBottom: "none", paddingBottom: 0, opacity: isPaused ? 0.4 : 1, pointerEvents: isPaused ? "none" : "auto" }}>
+      <div style={{ ...styles.group, gap: "12px", borderBottom: "none", paddingBottom: 0, opacity: isPaused ? 0.4 : 1, ...(isPaused ? { pointerEvents: "none" as const } : {}) }}>
         <span style={styles.groupLabel}>Delivery timing</span>
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           {SENSITIVITY_OPTIONS.map((opt) => (

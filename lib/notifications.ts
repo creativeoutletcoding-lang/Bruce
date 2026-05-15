@@ -7,10 +7,10 @@ export type NotifCategory =
   | "bruce_response";
 
 interface NotifPrefs {
-  paused?: boolean;           // master kill-switch; default false
-  bruce_responses?: boolean;  // default true
-  family_messages?: boolean;  // default true
-  project_messages?: boolean; // default true
+  paused?: boolean;
+  bruce_responses?: boolean;
+  family_messages?: boolean;
+  project_messages?: boolean;
 }
 
 // Maps notification_sensitivity to a presence-window in milliseconds.
@@ -41,9 +41,19 @@ async function isActiveInChat(
   return !!data;
 }
 
-// Sends a push notification to a single user and logs it to the notifications
-// table. Skips if: same sender, no FCM token, preferences block it, or presence
-// active within sensitivity window.
+// Firebase returns this error code when a token is no longer registered
+// (device uninstalled the app or FCM rotated the token).
+function isStaleTokenError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  return (
+    code === "messaging/registration-token-not-registered" ||
+    code === "messaging/invalid-registration-token"
+  );
+}
+
+// Sends a push notification to all registered devices for a user.
+// Skips if: same sender, preferences block it, or presence active within the
+// sensitivity window. Stale tokens (FCM 404 / not-registered) are deleted.
 export async function notifyUser({
   userId,
   senderId,
@@ -60,7 +70,6 @@ export async function notifyUser({
   title: string;
   body: string;
   type: string;
-  /** Maps to notification_preferences keys for per-type opt-out. */
   category?: NotifCategory;
   url: string;
   metadata?: Record<string, unknown>;
@@ -70,16 +79,23 @@ export async function notifyUser({
 
   const adminSupabase = createServiceRoleClient();
 
-  const { data: userRow } = await adminSupabase
-    .from("users")
-    .select("fcm_token, notification_preferences, notification_sensitivity")
-    .eq("id", userId)
-    .single();
+  // Fetch user preferences alongside all registered tokens in one query.
+  const [{ data: userRow }, { data: tokenRows }] = await Promise.all([
+    adminSupabase
+      .from("users")
+      .select("notification_preferences, notification_sensitivity")
+      .eq("id", userId)
+      .single(),
+    adminSupabase
+      .from("user_fcm_tokens")
+      .select("id, token")
+      .eq("user_id", userId),
+  ]);
 
-  if (!userRow?.fcm_token) return;
+  if (!tokenRows || tokenRows.length === 0) return;
 
   // Preference gate — all keys default to enabled (true) when absent.
-  const prefs = (userRow.notification_preferences ?? {}) as NotifPrefs;
+  const prefs = (userRow?.notification_preferences ?? {}) as NotifPrefs;
   if (prefs.paused) return;
   if (category === "bruce_response"  && prefs.bruce_responses  === false) return;
   if (category === "family_message"  && prefs.family_messages  === false) return;
@@ -87,14 +103,13 @@ export async function notifyUser({
 
   // Presence gate — window length depends on sensitivity setting.
   if (suppressIfActiveInChatId) {
-    const sensitivity = (userRow.notification_sensitivity as string | null) ?? "medium";
+    const sensitivity = (userRow?.notification_sensitivity as string | null) ?? "medium";
     const windowMs = PRESENCE_WINDOW_MS[sensitivity] ?? PRESENCE_WINDOW_MS.medium;
     const active = await isActiveInChat(userId, suppressIfActiveInChatId, windowMs);
     if (active) return;
   }
 
-  // Insert the notification row first to get a stable ID. That ID becomes the
-  // FCM notification tag so duplicate deliveries coalesce into one banner.
+  // Insert notification row to get a stable ID for FCM deduplication tag.
   const { data: notifRow } = await adminSupabase
     .from("notifications")
     .insert({
@@ -111,10 +126,29 @@ export async function notifyUser({
   if (suppressIfActiveInChatId) data.chatId = suppressIfActiveInChatId;
   if (notifRow?.id) data.notificationId = notifRow.id;
 
-  try {
-    await sendPushNotification({ fcmToken: userRow.fcm_token, title, body, data });
-  } catch (err) {
-    console.error("[notifications] sendPushNotification failed for user", userId, err);
+  // Fan out to all registered devices in parallel. Collect stale token IDs.
+  const staleIds: string[] = [];
+
+  await Promise.all(
+    (tokenRows as { id: string; token: string }[]).map(async (row) => {
+      try {
+        await sendPushNotification({ fcmToken: row.token, title, body, data });
+      } catch (err) {
+        if (isStaleTokenError(err)) {
+          staleIds.push(row.id);
+        } else {
+          console.error("[notifications] send failed for token", row.id, err);
+        }
+      }
+    })
+  );
+
+  // Remove any tokens Firebase told us are no longer valid.
+  if (staleIds.length > 0) {
+    await adminSupabase
+      .from("user_fcm_tokens")
+      .delete()
+      .in("id", staleIds);
   }
 }
 

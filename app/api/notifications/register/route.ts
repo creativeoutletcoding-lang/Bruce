@@ -2,7 +2,9 @@ import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import { NextRequest } from "next/server";
 
 // POST /api/notifications/register
-// Saves the caller's FCM token to users.fcm_token.
+// Upserts a device FCM token into user_fcm_tokens.
+// Conflict on token (unique) updates user_id + last_seen_at so a token that
+// moves to a different account is re-attributed on next registration.
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -11,7 +13,7 @@ export async function POST(request: NextRequest) {
 
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  let body: { token: string };
+  let body: { token: string; deviceHint?: string };
   try {
     body = await request.json();
   } catch {
@@ -22,9 +24,16 @@ export async function POST(request: NextRequest) {
 
   const adminSupabase = createServiceRoleClient();
   const { error } = await adminSupabase
-    .from("users")
-    .update({ fcm_token: body.token })
-    .eq("id", user.id);
+    .from("user_fcm_tokens")
+    .upsert(
+      {
+        user_id: user.id,
+        token: body.token,
+        device_hint: body.deviceHint ?? null,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: "token" }
+    );
 
   if (error) {
     console.error("[api/notifications/register] Failed:", error);
