@@ -12,9 +12,16 @@ export default async function ChatPage() {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("name")
+    .select("name, color_hex")
     .eq("id", user.id)
     .single();
 
-  return <NewChatOrchestrator userName={profile?.name ?? "there"} />;
+  const p = profile as { name: string; color_hex: string } | null;
+
+  return (
+    <NewChatOrchestrator
+      userName={p?.name ?? "there"}
+      userColorHex={p?.color_hex ?? undefined}
+    />
+  );
 }

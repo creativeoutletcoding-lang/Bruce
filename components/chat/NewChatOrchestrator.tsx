@@ -13,11 +13,13 @@ import { DEFAULT_MODEL } from "@/lib/models";
 
 interface NewChatOrchestratorProps {
   userName: string;
+  userColorHex?: string;
   initialInput?: string;
 }
 
 export default function NewChatOrchestrator({
   userName,
+  userColorHex,
   initialInput = "",
 }: NewChatOrchestratorProps) {
   const router = useRouter();
@@ -223,7 +225,7 @@ export default function NewChatOrchestrator({
         </div>
       )}
 
-      <MessageList messages={messages} streamingStatus={workingStatus} />
+      <MessageList messages={messages} streamingStatus={workingStatus} userColorHex={userColorHex} />
 
       {error && (
         <div style={styles.errorRow}>
