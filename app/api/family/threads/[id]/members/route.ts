@@ -75,6 +75,7 @@ export async function POST(
     title: `Added to thread: ${threadTitle}`,
     body: `${adderName} added you to "${threadTitle}"`,
     type: "thread_added",
+    category: "family_message",
     url: `https://heybruce.app/family/threads/${id}`,
     suppressIfActiveInChatId: id,
   });

@@ -214,6 +214,7 @@ export async function POST(request: NextRequest) {
         title: `New thread: ${name}`,
         body: `${creatorName} added you to "${name}"`,
         type: "thread_added",
+        category: "family_message",
         url: `https://heybruce.app/family/threads/${thread.id}`,
         suppressIfActiveInChatId: thread.id,
       })

@@ -83,6 +83,8 @@ export interface StreamRunOptions {
   /** When true, intercept the <image_request> tag and emit IMAGE_REQ sentinel. */
   handleImageRequest: boolean;
   persist: PersistOptions;
+  /** Called after the assistant message is persisted, before the stream closes. */
+  onComplete?: (responseText: string) => Promise<void>;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -172,7 +174,7 @@ async function executeOneTool(
 // reset at the start of each turn so we never double-write.
 
 export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array> {
-  const { anthropic, model, maxTokens, systemPrompt, initialMessages, tools, userId, handleImageRequest, persist } = opts;
+  const { anthropic, model, maxTokens, systemPrompt, initialMessages, tools, userId, handleImageRequest, persist, onComplete } = opts;
 
   // Aborted when the client disconnects (ReadableStream cancel callback below).
   const clientAbort = new AbortController();
@@ -411,6 +413,7 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
             metadata.task_data = taskData;
           }
           await persistAssistant(finalClean, metadata);
+          if (onComplete && finalClean) await onComplete(finalClean).catch(() => {});
         }
 
         controller.close();

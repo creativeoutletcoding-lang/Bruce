@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import BackButton from "./BackButton";
 import ModelPreference from "./ModelPreference";
 import GoogleReconnect from "./GoogleReconnect";
+import NotificationSettings from "./NotificationSettings";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -14,7 +15,7 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("name, email, avatar_url, preferred_model")
+    .select("name, email, avatar_url, preferred_model, notification_sensitivity, notification_preferences")
     .eq("id", user.id)
     .single();
 
@@ -38,7 +39,19 @@ export default async function SettingsPage() {
 
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Notifications</h2>
-          <p style={styles.placeholder}>Notification preferences coming in a future phase.</p>
+          <NotificationSettings
+            initialSensitivity={
+              ((profile as { notification_sensitivity?: string } | null)?.notification_sensitivity as "low" | "medium" | "high") ?? "medium"
+            }
+            initialPrefs={
+              ((profile as { notification_preferences?: Record<string, unknown> } | null)?.notification_preferences ?? {}) as {
+                paused?: boolean;
+                bruce_responses?: boolean;
+                family_messages?: boolean;
+                project_messages?: boolean;
+              }
+            }
+          />
         </div>
 
         <div style={styles.section}>

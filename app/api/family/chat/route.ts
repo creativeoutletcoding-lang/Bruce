@@ -177,6 +177,7 @@ export async function POST(request: NextRequest) {
         title: senderName,
         body: truncatedBody,
         type: "message",
+        category: "family_message",
         url: notifUrl,
         suppressIfActiveInChatId: chatId,
       })
@@ -254,6 +255,8 @@ export async function POST(request: NextRequest) {
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+  const bruceNotifRecipients = familyMemberIds;
+
   const stream = runChatStream({
     anthropic,
     model: "claude-sonnet-4-6",
@@ -267,6 +270,22 @@ export async function POST(request: NextRequest) {
       enabled: true,
       adminSupabase,
       chatId,
+    },
+    onComplete: async (responseText) => {
+      const body = responseText.length > 120 ? responseText.slice(0, 120) + "…" : responseText;
+      await Promise.all(
+        bruceNotifRecipients.map((recipientId) =>
+          notifyUser({
+            userId: recipientId,
+            title: "Bruce",
+            body,
+            type: "message",
+            category: "bruce_response",
+            url: notifUrl,
+            suppressIfActiveInChatId: chatId,
+          })
+        )
+      );
     },
   });
 

@@ -1,9 +1,16 @@
 "use client";
 
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
-import { requestAndGetToken } from "@/lib/firebase/client";
+import { useRouter } from "next/navigation";
+import { requestAndGetToken, listenForegroundMessages } from "@/lib/firebase/client";
 import type { User } from "@/lib/types";
 import Sidebar from "./Sidebar";
+
+interface ForegroundToast {
+  title: string;
+  body: string;
+  url: string;
+}
 
 interface ChatContextValue {
   openDrawer: () => void;
@@ -31,8 +38,11 @@ interface ChatShellProps {
 }
 
 export default function ChatShell({ user, children }: ChatShellProps) {
+  const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [incognito, setIncognito] = useState(false);
+  const [toast, setToast] = useState<ForegroundToast | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshCallbacks = useRef<Set<() => void>>(new Set());
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
@@ -62,8 +72,63 @@ export default function ChatShell({ user, children }: ChatShellProps) {
     fetch("/api/notifications/mark-read", { method: "POST" }).catch(() => {});
   }, []);
 
+  // Foreground FCM messages — show in-app toast unless already viewing that chat.
+  useEffect(() => {
+    const unsub = listenForegroundMessages((payload) => {
+      const title = payload.data?.title ?? "Bruce";
+      const body = payload.data?.body ?? "";
+      const url = payload.data?.url ?? "";
+
+      if (url) {
+        try {
+          const targetPath = new URL(url).pathname;
+          if (window.location.pathname === targetPath) return;
+        } catch {}
+      }
+
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      setToast({ title, body, url });
+      toastTimerRef.current = setTimeout(() => setToast(null), 5000);
+    });
+    return () => {
+      unsub();
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const dismissToast = useCallback(() => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(null);
+  }, []);
+
+  const handleToastClick = useCallback(() => {
+    if (toast?.url) {
+      try {
+        router.push(new URL(toast.url).pathname);
+      } catch {
+        router.push(toast.url);
+      }
+    }
+    dismissToast();
+  }, [toast, router, dismissToast]);
+
   return (
     <ChatContext.Provider value={{ openDrawer, incognito, setIncognito, refreshChats, registerRefresh }}>
+      {toast && (
+        <div role="alert" onClick={handleToastClick} style={styles.toast} className="bruce-toast">
+          <div style={styles.toastContent}>
+            <span style={styles.toastTitle}>{toast.title}</span>
+            {toast.body && <span style={styles.toastBody}>{toast.body}</span>}
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); dismissToast(); }}
+            style={styles.toastDismiss}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
       <div style={styles.shell}>
         {/* Desktop sidebar */}
         <div data-sidebar-desktop style={styles.sidebarDesktop}>
@@ -99,6 +164,59 @@ export default function ChatShell({ user, children }: ChatShellProps) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  toast: {
+    position: "fixed",
+    top: "calc(env(safe-area-inset-top, 0px) + 12px)",
+    left: "50%",
+    transform: "translateX(-50%)",
+    zIndex: 9999,
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "12px",
+    padding: "12px 14px",
+    maxWidth: "min(380px, calc(100vw - 32px))",
+    width: "max-content",
+    backgroundColor: "var(--bg-secondary)",
+    border: "1px solid var(--border)",
+    borderLeft: "3px solid var(--accent)",
+    borderRadius: "var(--radius-md)",
+    boxShadow: "var(--shadow-lg)",
+    cursor: "pointer",
+  },
+  toastContent: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+    minWidth: 0,
+  },
+  toastTitle: {
+    fontSize: "0.875rem",
+    fontWeight: 600,
+    color: "var(--text-primary)",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  toastBody: {
+    fontSize: "0.8125rem",
+    color: "var(--text-secondary)",
+    overflow: "hidden",
+    display: "-webkit-box",
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: "vertical",
+  },
+  toastDismiss: {
+    flexShrink: 0,
+    background: "none",
+    border: "none",
+    color: "var(--text-tertiary)",
+    fontSize: "1.125rem",
+    lineHeight: 1,
+    cursor: "pointer",
+    padding: "0 2px",
+    marginTop: "-2px",
+  },
   shell: {
     display: "flex",
     height: "100dvh",

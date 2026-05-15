@@ -14,6 +14,7 @@ import {
   TOOLS_FULL,
 } from "@/lib/chat/streamHandler";
 import { getFileContent } from "@/lib/google/drive";
+import { notifyUser } from "@/lib/notifications";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -236,6 +237,45 @@ export async function POST(request: NextRequest, { params }: Props) {
 
   if (msgError) console.error("[api/projects/chat] Failed to insert user message:", msgError);
 
+  // Thread-follow notifications: only notify project members who have already
+  // participated in this specific chat thread (not all project members).
+  // Query after inserting so the current user is included for Bruce responses.
+  let threadParticipantIds: string[] = [];
+  const projectNotifUrl = `https://heybruce.app/projects/${projectId}/chat/${currentChatId}`;
+
+  if (memberUserIds.length > 1 && currentChatId) {
+    const { data: participantRows } = await adminSupabase
+      .from("messages")
+      .select("sender_id")
+      .eq("chat_id", currentChatId)
+      .not("sender_id", "is", null);
+
+    threadParticipantIds = [
+      ...new Set((participantRows ?? []).map((r) => r.sender_id as string)),
+    ];
+
+    // Notify other thread participants about the human message.
+    const humanNotifBody = displayMessage.length > 120
+      ? displayMessage.slice(0, 120) + "…"
+      : displayMessage;
+    const humanRecipients = threadParticipantIds.filter((id) => id !== user.id);
+
+    await Promise.all(
+      humanRecipients.map((recipientId) =>
+        notifyUser({
+          userId: recipientId,
+          senderId: user.id,
+          title: userName,
+          body: humanNotifBody || (attachments.length > 0 ? `Sent ${attachments.length === 1 ? "a file" : `${attachments.length} files`}` : ""),
+          type: "message",
+          url: projectNotifUrl,
+          category: "project_message",
+          suppressIfActiveInChatId: currentChatId ?? undefined,
+        })
+      )
+    );
+  }
+
   let userContent: Anthropic.Messages.MessageParam["content"];
   if (attachments.length > 0) {
     const blocks: Anthropic.Messages.ContentBlockParam[] = [];
@@ -274,6 +314,8 @@ export async function POST(request: NextRequest, { params }: Props) {
   };
   if (chatTitle) responseHeaders["X-Chat-Title"] = encodeURIComponent(chatTitle);
 
+  const bruceNotifRecipients = threadParticipantIds;
+
   const stream = runChatStream({
     anthropic,
     model: preferredModel,
@@ -288,6 +330,24 @@ export async function POST(request: NextRequest, { params }: Props) {
       adminSupabase,
       chatId: currentChatId,
     },
+    onComplete: bruceNotifRecipients.length > 0
+      ? async (responseText) => {
+          const body = responseText.length > 120 ? responseText.slice(0, 120) + "…" : responseText;
+          await Promise.all(
+            bruceNotifRecipients.map((recipientId) =>
+              notifyUser({
+                userId: recipientId,
+                title: "Bruce",
+                body,
+                type: "message",
+                url: projectNotifUrl,
+                category: "bruce_response",
+                suppressIfActiveInChatId: currentChatId ?? undefined,
+              })
+            )
+          );
+        }
+      : undefined,
   });
 
   return new Response(stream, { headers: responseHeaders });
