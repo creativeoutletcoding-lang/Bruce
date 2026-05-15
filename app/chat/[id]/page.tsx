@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ChatWindow from "@/components/chat/ChatWindow";
-import type { Message } from "@/lib/types";
+import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -34,9 +34,13 @@ export default async function ChatIdPage({ params }: Props) {
   // Load messages
   const { data: messages } = await supabase
     .from("messages")
-    .select("id, chat_id, sender_id, role, content, metadata, created_at")
+    .select("id, sender_id, role, content, metadata, created_at, image_url, attachment_type, attachment_filename")
     .eq("chat_id", id)
     .order("created_at", { ascending: true });
+
+  const normalizedMessages = ((messages ?? []) as Array<Record<string, unknown>>).map((row) =>
+    normalizeMessage(row)
+  );
 
   const { data: userProfile } = await supabase
     .from("users")
@@ -49,7 +53,7 @@ export default async function ChatIdPage({ params }: Props) {
   return (
     <ChatWindow
       chatId={id}
-      initialMessages={(messages as Message[]) ?? []}
+      initialMessages={normalizedMessages}
       initialTitle={chat.title ?? "Chat"}
       userColorHex={userColorHex}
       initialModel={preferredModel}

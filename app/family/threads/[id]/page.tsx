@@ -3,15 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import FamilyChatWindow from "@/components/family/FamilyChatWindow";
 import FamilyThreadTopBar from "@/components/family/FamilyThreadTopBar";
+import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 import type { UserSummary } from "@/lib/types";
-
-interface RawMessage {
-  id: string;
-  role: string;
-  content: string;
-  created_at: string;
-  sender_id: string | null;
-}
 
 export default async function FamilyThreadPage({
   params,
@@ -67,28 +60,17 @@ export default async function FamilyThreadPage({
     (r: { user_id: string }) => r.user_id
   );
 
-  const memberMap: Record<string, { name: string; avatar_url: string | null }> = {};
-  allMembers.forEach((m) => {
-    memberMap[m.id] = { name: m.name, avatar_url: m.avatar_url };
-  });
-
   // Load recent messages
   const { data: rawMessages } = await adminSupabase
     .from("messages")
-    .select("id, role, content, created_at, sender_id")
+    .select("id, role, content, created_at, sender_id, image_url, attachment_type, attachment_filename, metadata")
     .eq("chat_id", id)
     .order("created_at", { ascending: true })
     .limit(100);
 
-  const messages = ((rawMessages ?? []) as RawMessage[]).map((m) => ({
-    id: m.id,
-    role: m.role as "user" | "assistant" | "system",
-    content: m.content,
-    created_at: m.created_at,
-    sender_id: m.sender_id,
-    sender_name: m.sender_id ? (memberMap[m.sender_id]?.name ?? null) : null,
-    sender_avatar: m.sender_id ? (memberMap[m.sender_id]?.avatar_url ?? null) : null,
-  }));
+  const messages = ((rawMessages ?? []) as Array<Record<string, unknown>>).map((row) =>
+    normalizeMessage(row)
+  );
 
   return (
     <FamilyChatWindow

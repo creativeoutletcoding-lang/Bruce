@@ -4,44 +4,25 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
-import type { ChatMessage } from "@/components/chat/MessageList";
+import type { ChatMessage, MessageAttachment, NormalizedMessage } from "@/lib/chat/types";
 import type { FileAttachment } from "@/components/chat/MessageInput";
-import type { MessageRole, UserSummary } from "@/lib/types";
+import type { UserSummary } from "@/lib/types";
 import {
   consumeStream,
   resolveAbandonedTaskSteps,
 } from "@/lib/chat/clientStream";
 import { useChatMemory } from "@/lib/chat/useChatMemory";
 import { getDisplayName } from "@/lib/chat/senderProfile";
+import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 import { extractLatestTaskProgress, stripTaskProgressTags } from "@/lib/chat/taskProgress";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-export interface FamilyMessageAttachment {
-  url: string;
-  type: string;
-  filename?: string;
-}
-
-export interface FamilyMessage {
-  id: string;
-  role: MessageRole;
-  content: string;
-  sender_id: string | null;
-  sender_name: string | null;
-  sender_avatar: string | null;
-  created_at: string;
-  isStreaming?: boolean;
-  attachments?: FamilyMessageAttachment[];
-  imageUrl?: string;
-  metadata?: Record<string, unknown> | null;
-}
 
 interface FamilyChatWindowProps {
   chatId: string;
   currentUserId: string;
   members: UserSummary[];
-  initialMessages: FamilyMessage[];
+  initialMessages: NormalizedMessage[];
   topbar: React.ReactNode;
   placeholder?: string;
 }
@@ -49,22 +30,22 @@ interface FamilyChatWindowProps {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function toChatMessage(
-  m: FamilyMessage,
+  n: NormalizedMessage,
   memberMap: Record<string, { name: string; color_hex: string }>
 ): ChatMessage {
-  const senderInfo = m.sender_id ? memberMap[m.sender_id] : null;
-  const attachments = m.attachments?.length
-    ? m.attachments
-    : (m.imageUrl ? [{ url: m.imageUrl, type: "image", filename: undefined }] : undefined);
+  const senderInfo = n.sender_id ? memberMap[n.sender_id] : null;
+  const metaAttachments = n.metadata?.attachments as MessageAttachment[] | undefined;
+  const attachments = metaAttachments?.length
+    ? metaAttachments
+    : (n.image_url ? [{ url: n.image_url, type: n.attachment_type ?? "image", filename: n.attachment_filename ?? undefined }] : undefined);
   return {
-    id: m.id,
-    role: m.role,
-    content: m.content,
-    created_at: m.created_at,
-    isStreaming: m.isStreaming,
-    metadata: m.metadata ?? undefined,
+    id: n.id,
+    role: n.role,
+    content: n.content,
+    created_at: n.created_at,
+    metadata: n.metadata ?? undefined,
     attachments,
-    sender_id: m.sender_id ?? undefined,
+    sender_id: n.sender_id ?? undefined,
     senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
     senderColorHex: senderInfo?.color_hex,
   };
@@ -168,34 +149,9 @@ export default function FamilyChatWindow({
 
     if (!data) return;
     setMessages(
-      (data as Array<{
-        id: string;
-        role: string;
-        content: string;
-        created_at: string;
-        sender_id: string | null;
-        image_url?: string | null;
-        attachment_type?: string | null;
-        attachment_filename?: string | null;
-        metadata?: Record<string, unknown> | null;
-      }>).map((m) => {
-        const metaAttachments = m.metadata?.attachments as FamilyMessageAttachment[] | undefined;
-        const attachments = metaAttachments?.length
-          ? metaAttachments
-          : (m.image_url ? [{ url: m.image_url, type: m.attachment_type ?? "image", filename: m.attachment_filename ?? undefined }] : undefined);
-        const senderInfo = m.sender_id ? memberMapRef.current[m.sender_id] : null;
-        return {
-          id: m.id,
-          role: m.role as MessageRole,
-          content: m.content,
-          created_at: m.created_at,
-          metadata: m.metadata ?? undefined,
-          attachments,
-          sender_id: m.sender_id ?? undefined,
-          senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
-          senderColorHex: senderInfo?.color_hex,
-        };
-      })
+      (data as Array<Record<string, unknown>>).map((row) =>
+        toChatMessage(normalizeMessage(row), memberMapRef.current)
+      )
     );
   }, [chatId]);
 
@@ -212,41 +168,13 @@ export default function FamilyChatWindow({
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` },
         (payload) => {
-          const msg = payload.new as {
-            id: string;
-            role: string;
-            content: string;
-            created_at: string;
-            sender_id: string | null;
-            image_url?: string | null;
-            attachment_type?: string | null;
-            attachment_filename?: string | null;
-            metadata?: Record<string, unknown> | null;
-          };
-          if (msg.sender_id === currentUserId) return;
-          if (msg.sender_id === null && isStreamingRef.current) return;
-          const senderInfo = msg.sender_id ? memberMapRef.current[msg.sender_id] : null;
-          const metaAttachments = msg.metadata?.attachments as FamilyMessageAttachment[] | undefined;
-          const attachments = metaAttachments?.length
-            ? metaAttachments
-            : (msg.image_url ? [{ url: msg.image_url, type: msg.attachment_type ?? "image", filename: msg.attachment_filename ?? undefined }] : undefined);
+          const n = normalizeMessage(payload.new as Record<string, unknown>);
+          if (n.sender_id === currentUserId) return;
+          if (n.sender_id === null && isStreamingRef.current) return;
 
           setMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            return [
-              ...prev,
-              {
-                id: msg.id,
-                role: msg.role as MessageRole,
-                content: msg.content,
-                created_at: msg.created_at,
-                metadata: msg.metadata ?? undefined,
-                attachments,
-                sender_id: msg.sender_id ?? undefined,
-                senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
-                senderColorHex: senderInfo?.color_hex,
-              },
-            ];
+            if (prev.some((m) => m.id === n.id)) return prev;
+            return [...prev, toChatMessage(n, memberMapRef.current)];
           });
         }
       )

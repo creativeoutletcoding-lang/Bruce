@@ -1,8 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import ProjectChatView from "@/components/project/ProjectChatView";
+import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 import type {
-  Message,
   ProjectMemberDetail,
   ProjectMemberRole,
 } from "@/lib/types";
@@ -40,9 +40,13 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
 
   const { data: messages } = await supabase
     .from("messages")
-    .select("id, chat_id, sender_id, role, content, metadata, created_at, image_url, attachment_type, attachment_filename")
+    .select("id, sender_id, role, content, metadata, created_at, image_url, attachment_type, attachment_filename")
     .eq("chat_id", chatId)
     .order("created_at", { ascending: true });
+
+  const normalizedMessages = ((messages ?? []) as Array<Record<string, unknown>>).map((row) =>
+    normalizeMessage(row)
+  );
 
   const { data: userProfile } = await supabase
     .from("users")
@@ -73,7 +77,7 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
       projectId={projectId}
       projectName={project.name as string}
       projectIcon={project.icon as string}
-      initialMessages={(messages as Message[]) ?? []}
+      initialMessages={normalizedMessages}
       initialInput={initialInput}
       userColorHex={userColorHex}
       currentUserId={user.id}

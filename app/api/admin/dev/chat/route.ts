@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { assembleMemoryBlock, LAYER_IDENTITY, LAYER_HOUSEHOLD, buildMemberLayer } from "@/lib/anthropic";
+import { assembleMemoryBlock } from "@/lib/anthropic";
+import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import { NextRequest } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -62,13 +63,7 @@ function getGitState(): { gitLog: string; gitDiff: string } {
   return { gitLog, gitDiff };
 }
 
-function buildDevSystemPrompt(
-  userName: string,
-  memoryBlock: string,
-  userTimestamp: string
-): string {
-  const memberLayer = buildMemberLayer(userName, userTimestamp, memoryBlock);
-
+function buildDevExtraSections(): string[] {
   const devSituational = `## Bruce Dev workspace
 
 You are currently in the Bruce Dev admin workspace. This is Jake's technical workspace for building, debugging, and improving Bruce. Respond as a technical peer with full knowledge of your own architecture. Be direct and precise.`;
@@ -119,9 +114,6 @@ ${gitDiff || "(no diff available)"}`;
   const schemaSummary = loadSchemaSummary();
 
   const sections = [
-    LAYER_IDENTITY,
-    LAYER_HOUSEHOLD,
-    memberLayer,
     devSituational,
     `## Environment Variable Status (values masked)\n\n${envStatus}`,
     gitBlock,
@@ -140,7 +132,7 @@ ${gitDiff || "(no diff available)"}`;
     sections.push(`## Live Database Schema\n\n${schemaSummary}`);
   }
 
-  return sections.join("\n\n");
+  return sections;
 }
 
 export async function POST(request: NextRequest) {
@@ -187,7 +179,13 @@ export async function POST(request: NextRequest) {
     timeStyle: "short",
   });
 
-  const systemPrompt = buildDevSystemPrompt(userName, memoryBlock, userTimestamp);
+  const systemPrompt = buildSystemPrompt({
+    mode: "dev",
+    userName,
+    userTimestamp,
+    memoryBlock,
+    extraSections: buildDevExtraSections(),
+  });
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const messages: Anthropic.Messages.MessageParam[] = [

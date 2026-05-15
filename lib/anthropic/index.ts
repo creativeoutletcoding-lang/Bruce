@@ -37,29 +37,6 @@ export const LAYER_HOUSEHOLD = `## The Johnson Family — Arlington, Virginia
 
 No accounts (context only): Elliot (8), Henry (5), Violette (5) — Jake and Laurianne's children.`;
 
-// Applied to all chat contexts
-const TOOL_CALL_DISCIPLINE = `**Tool call discipline:** If you commit to performing an action in a response, execute it in that same response turn — do not state what you will do and defer execution to a later turn. Confirm and act simultaneously. If a tool call fails, say so explicitly rather than silently deferring.`;
-
-// Shared between multi-member project and family chat builders
-const PARTICIPATION_RULE = `You are a participant, not the default responder. The determining factor is who the message is ADDRESSED TO — not whether your name appears in it.
-
-RESPOND — message is addressed to you:
-- Opens with "Bruce" or "@bruce"
-- Contains a direct question or instruction to you
-- Is not addressed to any specific person
-
-STAY SILENT — message is directed at another member:
-- Opens with or is primarily addressed to another member by name ("Laurianne what do you think", "Jake can you check this")
-- Your name appears incidentally but another member is the primary addressee ("before Bruce makes the list", "ask Bruce later", "Laurianne what do you think before Bruce does X")
-
-If another member is the primary target, stay completely silent — no acknowledgment, no stepping-back comment, nothing. Wait to be directly addressed again.`;
-
-// Plain prose formatting for group contexts (multi-member project, family)
-const GROUP_FORMAT = `Plain prose only. No bullets, numbered lists, bold, italic, headers, or markdown tables. Write lists as sentences. Two to four sentences per response unless more is genuinely needed.`;
-
-// Richer formatting allowed in solo contexts (standalone, single-member project)
-const SOLO_FORMAT = `Prefer lists and prose over tables. If a table is necessary, two columns maximum — avoid wide tables, they break on mobile.`;
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function countWords(text: string): number {
@@ -271,105 +248,6 @@ export async function assembleMemoryBlock(
   }
 
   return { block: formatMemoryBlock(loadedItems), loadedIds };
-}
-
-// ── Prompt builders ───────────────────────────────────────────────────────────
-
-export function buildSystemPrompt(
-  userName: string,
-  memoryBlock: string,
-  userTimestamp: string
-): string {
-  const memberLayer = buildMemberLayer(userName, userTimestamp, memoryBlock);
-
-  const context = `## Chat context
-
-Private standalone conversation. Be concise. Do not pad or summarize back what was just said.
-
-${TOOL_CALL_DISCIPLINE}
-
-${SOLO_FORMAT}`;
-
-  return [LAYER_IDENTITY, LAYER_HOUSEHOLD, memberLayer, context].join("\n\n");
-}
-
-export function buildProjectSystemPrompt(
-  userName: string,
-  memoryBlock: string,
-  userTimestamp: string,
-  project: {
-    name: string;
-    instructions: string;
-    memberNames: string[];
-    fileNames: string[];
-    fileContentBlock?: string;
-  }
-): string {
-  const memberLayer = buildMemberLayer(userName, userTimestamp, memoryBlock);
-
-  const filesSummary =
-    project.fileNames.length > 0 ? project.fileNames.join(", ") : "(none attached)";
-
-  let projectBlock = `--- Project: ${project.name} ---
-Instructions: ${project.instructions.trim() || "(none set)"}
-Members: ${project.memberNames.join(", ") || "(none)"}
-Files: ${filesSummary}`;
-
-  if (project.fileContentBlock?.trim()) {
-    projectBlock += `\n\n${project.fileContentBlock.trim()}`;
-  }
-
-  projectBlock += "\n---";
-
-  const isGroup = project.memberNames.length > 1;
-
-  const context = isGroup
-    ? `## Chat context
-
-Project workspace — group.
-
-${projectBlock}
-
-${PARTICIPATION_RULE}
-
-${TOOL_CALL_DISCIPLINE}
-
-${GROUP_FORMAT}`
-    : `## Chat context
-
-Project workspace.
-
-${projectBlock}
-
-${TOOL_CALL_DISCIPLINE}
-
-${SOLO_FORMAT}`;
-
-  return [LAYER_IDENTITY, LAYER_HOUSEHOLD, memberLayer, context].join("\n\n");
-}
-
-export function buildFamilyChatSystemPrompt(
-  senderName: string,
-  memoryBlock: string,
-  userTimestamp: string
-): string {
-  const memberLayer = buildMemberLayer(senderName, userTimestamp, memoryBlock);
-
-  const context = `## Chat context
-
-Family group chat.
-
-${PARTICIPATION_RULE}
-
-${TOOL_CALL_DISCIPLINE}
-
-${GROUP_FORMAT}
-
-Three-tier rule: Low stakes (log, note, simple add) → act silently. Medium stakes (update a doc, schedule something) → confirm first: "I can do X — want me to go ahead?" High stakes (external writes, deletions, irreversible) → always ask. No exceptions.
-
-Tone: no filler phrases. No deflecting to specific members. When the action speaks for itself, stop. Emotional messages: one or two sentences, warm, not performative.`;
-
-  return [LAYER_IDENTITY, LAYER_HOUSEHOLD, memberLayer, context].join("\n\n");
 }
 
 // ── Tool blocks ───────────────────────────────────────────────────────────────

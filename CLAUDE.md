@@ -131,6 +131,10 @@ All three chat contexts (standalone, project, family) share the same code paths.
 
 **CHAT UI RULE:** Visual changes (bubble styling, list layout, input bar, top bar layout, dots, indicators) must always be made in the shared components above, never in the context wrappers. Context variations are handled via props — never by forking a component.
 
+**MESSAGE MAPPING RULE:** All message field mapping from raw Supabase rows or realtime payloads goes through `normalizeMessage()` in `lib/chat/normalizeMessage.ts`. Never build a `Message` / `NormalizedMessage` object from raw DB data inline in a component, subscription handler, or page loader — call `normalizeMessage(row)` and consume the typed result. Shared chat types (`NormalizedMessage`, `ChatMessage`, `MessageAttachment`) live in `lib/chat/types.ts`.
+
+**SYSTEM PROMPT RULE:** All system prompt construction goes through `buildSystemPrompt()` in `lib/chat/buildSystemPrompt.ts`. Routes pass a `SystemPromptContext` (mode, user, memory, location, project metadata, dev extras) — they do not concatenate prompt strings, append tool blocks, or assemble identity/household/member layers themselves. Bruce's core identity, household context, formatting rules, participation rule, and three-tier rule are written once inside `buildSystemPrompt`.
+
 **Streaming model:** the server emits one consolidated assistant message per turn even when tools interleave (no per-turn DB rows). The client consumes the stream through `consumeStream()` with a 24ms flush tick so partial markdown renders progressively. An `AbortController` from `ChatWindow`/`ProjectChatView`/`FamilyChatWindow` is passed both to `fetch` and `consumeStream` — pressing Stop in `MessageInput` cancels both, preserves whatever text has been emitted, and marks any in-flight task steps as cancelled.
 
 **Unread indicators:** `chat_members.last_read_at` (migration 024) is updated to `now()` whenever a chat is opened via `POST /api/chats/mark-read`. The sidebar queries `chat_members` on mount and renders an 8px `#0F6E56` dot when `chats.last_message_at > last_read_at` and the latest message wasn't sent by the current user.

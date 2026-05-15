@@ -6,12 +6,8 @@ import ProjectTopBar from "./ProjectTopBar";
 import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
 import type { FileAttachment } from "@/components/chat/MessageInput";
-import type { ChatMessage } from "@/components/chat/MessageList";
-import type {
-  Message,
-  MessageRole,
-  ProjectMemberDetail,
-} from "@/lib/types";
+import type { ChatMessage, MessageAttachment, NormalizedMessage } from "@/lib/chat/types";
+import type { ProjectMemberDetail } from "@/lib/types";
 import {
   consumeStream,
   extractImageRequest,
@@ -19,17 +15,43 @@ import {
 } from "@/lib/chat/clientStream";
 import { useChatMemory } from "@/lib/chat/useChatMemory";
 import { getDisplayName } from "@/lib/chat/senderProfile";
+import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 
 interface ProjectChatViewProps {
   chatId: string;
   projectId: string;
   projectName: string;
   projectIcon: string;
-  initialMessages: Message[];
+  initialMessages: NormalizedMessage[];
   initialInput?: string;
   userColorHex?: string;
   currentUserId: string;
   members: ProjectMemberDetail[];
+}
+
+function toChatMessage(
+  n: NormalizedMessage,
+  memberMap: Record<string, { name: string; color_hex: string }>
+): ChatMessage {
+  const senderInfo = n.sender_id ? memberMap[n.sender_id] : null;
+  const metaAttachments = n.metadata?.attachments as MessageAttachment[] | undefined;
+  const attachments = metaAttachments?.length
+    ? metaAttachments
+    : (n.image_url ? [{ url: n.image_url, type: n.attachment_type ?? "image", filename: n.attachment_filename ?? undefined }] : undefined);
+  return {
+    id: n.id,
+    role: n.role,
+    content: n.content,
+    created_at: n.created_at,
+    metadata: n.metadata ?? undefined,
+    attachments,
+    imageUrl: n.image_url ?? undefined,
+    attachmentType: n.attachment_type ?? undefined,
+    attachmentFilename: n.attachment_filename ?? undefined,
+    sender_id: n.sender_id ?? undefined,
+    senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
+    senderColorHex: senderInfo?.color_hex,
+  };
 }
 
 export default function ProjectChatView({
@@ -49,22 +71,7 @@ export default function ProjectChatView({
   const isStreamingRef = useRef(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>(
-    initialMessages.map((m) => {
-      const senderInfo = m.sender_id ? memberMapRef.current[m.sender_id] : null;
-      return {
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        created_at: m.created_at,
-        metadata: (m.metadata as Record<string, unknown>) ?? undefined,
-        imageUrl: (m.image_url as string | undefined) ?? undefined,
-        attachmentType: (m.attachment_type as string | undefined) ?? undefined,
-        attachmentFilename: (m.attachment_filename as string | undefined) ?? undefined,
-        sender_id: m.sender_id,
-        senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
-        senderColorHex: senderInfo?.color_hex,
-      };
-    })
+    initialMessages.map((n) => toChatMessage(n, memberMapRef.current))
   );
 
   const [isClient, setIsClient] = useState(() => typeof window !== "undefined");
@@ -156,41 +163,15 @@ export default function ProjectChatView({
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` },
         (payload) => {
-          const msg = payload.new as {
-            id: string;
-            sender_id: string | null;
-            role: string;
-            content: string;
-            created_at: string;
-            metadata: Record<string, unknown> | null;
-            image_url: string | null;
-            attachment_type: string | null;
-            attachment_filename: string | null;
-          };
-          if (msg.sender_id === currentUserId) return;
-          if (msg.sender_id === null && isStreamingRef.current) return;
-          const senderInfo = msg.sender_id ? memberMapRef.current[msg.sender_id] : null;
+          const n = normalizeMessage(payload.new as Record<string, unknown>);
+          if (n.sender_id === currentUserId) return;
+          if (n.sender_id === null && isStreamingRef.current) return;
           setMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            const base = msg.sender_id === null
+            if (prev.some((m) => m.id === n.id)) return prev;
+            const base = n.sender_id === null
               ? prev.filter((m) => !m.id.startsWith("tmp-stream-"))
               : prev;
-            return [
-              ...base,
-              {
-                id: msg.id,
-                role: msg.role as MessageRole,
-                content: msg.content,
-                created_at: msg.created_at,
-                metadata: msg.metadata ?? undefined,
-                imageUrl: msg.image_url ?? undefined,
-                attachmentType: msg.attachment_type ?? undefined,
-                attachmentFilename: msg.attachment_filename ?? undefined,
-                sender_id: msg.sender_id,
-                senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
-                senderColorHex: senderInfo?.color_hex,
-              },
-            ];
+            return [...base, toChatMessage(n, memberMapRef.current)];
           });
         }
       )
@@ -218,32 +199,9 @@ export default function ProjectChatView({
       .limit(100);
     if (!data) return;
     setMessages(
-      (data as Array<{
-        id: string;
-        sender_id: string | null;
-        role: string;
-        content: string;
-        created_at: string;
-        metadata: Record<string, unknown> | null;
-        image_url?: string | null;
-        attachment_type?: string | null;
-        attachment_filename?: string | null;
-      }>).map((m) => {
-        const senderInfo = m.sender_id ? memberMapRef.current[m.sender_id] : null;
-        return {
-          id: m.id,
-          role: m.role as MessageRole,
-          content: m.content,
-          created_at: m.created_at,
-          metadata: m.metadata ?? undefined,
-          imageUrl: m.image_url ?? undefined,
-          attachmentType: m.attachment_type ?? undefined,
-          attachmentFilename: m.attachment_filename ?? undefined,
-          sender_id: m.sender_id,
-          senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
-          senderColorHex: senderInfo?.color_hex,
-        };
-      })
+      (data as Array<Record<string, unknown>>).map((row) =>
+        toChatMessage(normalizeMessage(row), memberMapRef.current)
+      )
     );
   }, [chatId]);
 

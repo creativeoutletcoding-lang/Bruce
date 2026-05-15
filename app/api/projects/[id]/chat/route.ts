@@ -4,14 +4,13 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import {
   assembleMemoryBlock,
   buildMemberCombination,
-  buildProjectSystemPrompt,
   generateChatTitle,
 } from "@/lib/anthropic";
+import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import {
   runChatStream,
   sanitizeAlternatingMessages,
   TOOLS_FULL,
-  buildToolSystemBlocks,
 } from "@/lib/chat/streamHandler";
 import { getFileContent } from "@/lib/google/drive";
 import { NextRequest } from "next/server";
@@ -162,16 +161,21 @@ export async function POST(request: NextRequest, { params }: Props) {
     ? `${userName}'s current location right now is ${currentLocation}.`
     : `${userName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;
 
-  const systemPrompt =
-    buildProjectSystemPrompt(userName, memoryBlock, userTimestamp, {
+  const systemPrompt = buildSystemPrompt({
+    mode: "project",
+    userName,
+    userTimestamp,
+    memoryBlock,
+    locationContext,
+    includeImageGen: true,
+    project: {
       name: project.name as string,
       instructions: project.instructions as string,
       memberNames,
       fileNames,
       fileContentBlock: fileContentBlock || undefined,
-    }) +
-    `\n\n${locationContext}` +
-    buildToolSystemBlocks({ includeImageGen: true });
+    },
+  });
 
   let currentChatId = chatId;
   const isFirstMessage = history.length === 0;

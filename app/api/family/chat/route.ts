@@ -3,14 +3,13 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import {
   assembleMemoryBlock,
-  buildFamilyChatSystemPrompt,
   buildMemberCombination,
 } from "@/lib/anthropic";
+import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import {
   runChatStream,
   sanitizeAlternatingMessages,
   TOOLS_FULL,
-  buildToolSystemBlocks,
 } from "@/lib/chat/streamHandler";
 import { notifyUser } from "@/lib/notifications";
 import { NextRequest } from "next/server";
@@ -196,10 +195,14 @@ export async function POST(request: NextRequest) {
     ? `${senderName}'s current location right now is ${currentLocation}.`
     : `${senderName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;
 
-  const systemPrompt =
-    buildFamilyChatSystemPrompt(senderName, memoryBlock, userTimestamp) +
-    `\n\n${locationContext}` +
-    buildToolSystemBlocks({ includeImageGen: false });
+  const systemPrompt = buildSystemPrompt({
+    mode: "family",
+    userName: senderName,
+    userTimestamp,
+    memoryBlock,
+    locationContext,
+    includeImageGen: false,
+  });
 
   let userContent: Anthropic.Messages.MessageParam["content"];
   try {

@@ -6,12 +6,9 @@ import { marked } from "marked";
 import { lightHaptic } from "@/lib/utils/haptics";
 import { getDisplayName, getProfileColor } from "@/lib/chat/senderProfile";
 import type { MessageRole } from "@/lib/types";
+import type { MessageAttachment } from "@/lib/chat/types";
 
-export interface MessageAttachment {
-  url: string;
-  type: string;
-  filename?: string;
-}
+export type { MessageAttachment };
 
 interface MessageBubbleProps {
   role: MessageRole;

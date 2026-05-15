@@ -3,14 +3,13 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import {
   assembleMemoryBlock,
-  buildSystemPrompt,
   generateChatTitle,
 } from "@/lib/anthropic";
+import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import {
   runChatStream,
   sanitizeAlternatingMessages,
   TOOLS_FULL,
-  buildToolSystemBlocks,
 } from "@/lib/chat/streamHandler";
 import { NextRequest } from "next/server";
 
@@ -108,10 +107,14 @@ export async function POST(request: NextRequest) {
     ? `${userName}'s current location right now is ${currentLocation}.`
     : `${userName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;
 
-  const systemPrompt =
-    buildSystemPrompt(userName, memoryBlock, userTimestamp) +
-    `\n\n${locationContext}` +
-    buildToolSystemBlocks({ includeImageGen: true });
+  const systemPrompt = buildSystemPrompt({
+    mode: "standalone",
+    userName,
+    userTimestamp,
+    memoryBlock,
+    locationContext,
+    includeImageGen: true,
+  });
 
   const adminSupabase = createServiceRoleClient();
   let currentChatId = chatId;

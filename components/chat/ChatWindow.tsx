@@ -7,8 +7,9 @@ import TopBar from "./TopBar";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import type { FileAttachment } from "./MessageInput";
-import type { ChatMessage } from "./MessageList";
-import type { Message, MessageRole } from "@/lib/types";
+import type { ChatMessage, NormalizedMessage } from "@/lib/chat/types";
+import type { MessageRole } from "@/lib/types";
+import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 import { modelLabel } from "@/lib/models";
 import {
   consumeStream,
@@ -19,11 +20,25 @@ import { useChatMemory } from "@/lib/chat/useChatMemory";
 
 interface ChatWindowProps {
   chatId: string;
-  initialMessages: Message[];
+  initialMessages: NormalizedMessage[];
   initialTitle: string;
   userColorHex?: string;
   initialModel?: string;
   currentUserId?: string;
+}
+
+function toChatMessage(n: NormalizedMessage): ChatMessage {
+  return {
+    id: n.id,
+    role: n.role,
+    content: n.content,
+    created_at: n.created_at,
+    metadata: n.metadata ?? undefined,
+    imageUrl: n.image_url ?? undefined,
+    attachmentType: n.attachment_type ?? undefined,
+    attachmentFilename: n.attachment_filename ?? undefined,
+    sender_id: n.sender_id ?? undefined,
+  };
 }
 
 export default function ChatWindow({
@@ -37,17 +52,7 @@ export default function ChatWindow({
   const { incognito } = useChatContext();
   const [isClient, setIsClient] = useState(() => typeof window !== "undefined");
   const [messages, setMessages] = useState<ChatMessage[]>(
-    initialMessages.map((m) => ({
-      id: m.id,
-      role: m.role,
-      content: m.content,
-      created_at: m.created_at,
-      metadata: (m.metadata as Record<string, unknown>) ?? undefined,
-      imageUrl: (m.image_url as string | undefined) ?? undefined,
-      attachmentType: (m.attachment_type as string | undefined) ?? undefined,
-      attachmentFilename: (m.attachment_filename as string | undefined) ?? undefined,
-      sender_id: m.sender_id ?? undefined,
-    }))
+    initialMessages.map((n) => toChatMessage(n))
   );
   const [title, setTitle] = useState(initialTitle);
   const [input, setInput] = useState("");
@@ -71,19 +76,7 @@ export default function ChatWindow({
       .limit(100);
     if (!data) return;
     setMessages(
-      (data as Array<{ id: string; sender_id: string | null; role: string; content: string; created_at: string; metadata: Record<string, unknown> | null; image_url?: string | null; attachment_type?: string | null; attachment_filename?: string | null }>).map(
-        (m) => ({
-          id: m.id,
-          sender_id: m.sender_id ?? undefined,
-          role: m.role as MessageRole,
-          content: m.content,
-          created_at: m.created_at,
-          metadata: m.metadata ?? undefined,
-          imageUrl: m.image_url ?? undefined,
-          attachmentType: m.attachment_type ?? undefined,
-          attachmentFilename: m.attachment_filename ?? undefined,
-        })
-      )
+      (data as Array<Record<string, unknown>>).map((row) => toChatMessage(normalizeMessage(row)))
     );
   }, [chatId]);
 

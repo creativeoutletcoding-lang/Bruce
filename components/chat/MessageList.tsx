@@ -3,10 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import MessageBubble from "./MessageBubble";
-import type { MessageAttachment } from "./MessageBubble";
 import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
-import type { MessageRole } from "@/lib/types";
+import type { ChatMessage, MessageAttachment } from "@/lib/chat/types";
 import type { TaskProgressData } from "@/lib/chat/taskProgress";
 
 const ImageMessage = dynamic(() => import("./ImageMessage"), { ssr: false });
@@ -16,25 +15,7 @@ const ImageMessageSkeleton = dynamic(
 );
 const TaskCard = dynamic(() => import("./TaskCard"), { ssr: false });
 
-export interface ChatMessage {
-  id: string;
-  role: MessageRole;
-  content: string;
-  created_at?: string;
-  isStreaming?: boolean;
-  /** Set when the user pressed Stop while this message was streaming. */
-  interrupted?: boolean;
-  metadata?: Record<string, unknown>;
-  attachments?: MessageAttachment[];
-  // Legacy single-attachment fields (kept for backward compat with old DB rows)
-  imageUrl?: string;
-  attachmentType?: string;
-  attachmentFilename?: string;
-  sender_id?: string | null;
-  senderName?: string;
-  senderColorHex?: string;
-  taskData?: TaskProgressData | null;
-}
+export type { ChatMessage, MessageAttachment };
 
 interface MessageListProps {
   messages: ChatMessage[];
