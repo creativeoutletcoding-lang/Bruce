@@ -15,7 +15,16 @@ export interface FileAttachment {
 // Legacy alias kept so callers that import ImageAttachment still compile
 export type ImageAttachment = FileAttachment;
 
+interface PastedAttachment {
+  id: string;
+  filename: string;
+  content: string;
+  wordCount: number;
+  lineCount: number;
+}
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const PASTE_THRESHOLD = 1500;
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -139,13 +148,27 @@ export default function MessageInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachmentErrors, setAttachmentErrors] = useState<string[]>([]);
   const [isFocused, setIsFocused] = useState(false);
+  const [pastedAttachments, setPastedAttachments] = useState<PastedAttachment[]>([]);
+  const pendingSendRef = useRef(false);
+  const pendingContentRef = useRef("");
 
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 400)}px`;
   }, [value]);
+
+  // After parent re-renders with the prepended content, fire the real onSend.
+  // This is needed because onSend closes over the parent's input state — we must
+  // wait for the parent to have the updated value before calling it.
+  useEffect(() => {
+    if (pendingSendRef.current && value === pendingContentRef.current) {
+      pendingSendRef.current = false;
+      pendingContentRef.current = "";
+      onSend();
+    }
+  }, [value, onSend]);
 
   useEffect(() => {
     const vv = window.visualViewport;
@@ -158,15 +181,50 @@ export default function MessageInput({
     return () => vv.removeEventListener("resize", onResize);
   }, []);
 
+  const canSend = !disabled && !isStreaming && (
+    value.trim().length > 0 || attachedFiles.length > 0 || pastedAttachments.length > 0
+  );
+  const canStop = isStreaming && Boolean(onStop);
+
+  function triggerSend() {
+    if (!canSend) return;
+    lightHaptic();
+
+    if (pastedAttachments.length > 0) {
+      const blocks = pastedAttachments
+        .map(a => `<attached_text filename="${a.filename}">\n${a.content}\n</attached_text>`)
+        .join("\n\n");
+      const separator = value.trim() ? "\n\n" : "";
+      const fullContent = blocks + separator + value;
+      pendingContentRef.current = fullContent;
+      pendingSendRef.current = true;
+      setPastedAttachments([]);
+      onChange(fullContent);
+      // onSend fires via useEffect once parent re-renders with fullContent
+    } else {
+      onSend();
+    }
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     const isMobile = window.matchMedia("(pointer: coarse)").matches;
     if (e.key === "Enter" && !e.shiftKey && !isMobile) {
       e.preventDefault();
-      if (!isStreaming && !disabled && (value.trim() || attachedFiles.length > 0)) {
-        lightHaptic();
-        onSend();
-      }
+      triggerSend();
     }
+  }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const text = e.clipboardData.getData("text/plain");
+    if (text.length <= PASTE_THRESHOLD) return;
+
+    e.preventDefault();
+    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+    const lineCount = text.split("\n").length;
+    setPastedAttachments(prev => [
+      ...prev,
+      { id: `paste-${Date.now()}`, filename: "pasted-text.txt", content: text, wordCount, lineCount },
+    ]);
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -198,9 +256,6 @@ export default function MessageInput({
     const attachments = results.filter((r): r is FileAttachment => r !== null);
     if (attachments.length > 0) onFilesAttach(attachments);
   }
-
-  const canSend = !disabled && !isStreaming && (value.trim().length > 0 || attachedFiles.length > 0);
-  const canStop = isStreaming && Boolean(onStop);
 
   return (
     <div className="msg-input-container" style={{ ...styles.container, ...containerStyle }}>
@@ -238,6 +293,29 @@ export default function MessageInput({
         </div>
       )}
 
+      {pastedAttachments.length > 0 && (
+        <div style={styles.attachmentsRow}>
+          {pastedAttachments.map((att) => (
+            <div key={att.id} style={styles.pastedChip}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: "var(--text-secondary)" }}>
+                <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+              <div style={styles.pastedChipText}>
+                <span style={styles.pastedChipName}>Pasted text</span>
+                <span style={styles.pastedChipMeta}>{att.wordCount} words · {att.lineCount} lines</span>
+              </div>
+              <button
+                onClick={() => setPastedAttachments(prev => prev.filter(a => a.id !== att.id))}
+                style={styles.pastedChipClose}
+                aria-label="Remove pasted text"
+                type="button"
+              >×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="msg-input-row" style={{ ...styles.inputRow, ...(isFocused ? styles.inputRowFocused : {}) }}>
         {onFilesAttach && (
           <>
@@ -267,6 +345,7 @@ export default function MessageInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           placeholder={placeholder}
@@ -288,7 +367,7 @@ export default function MessageInput({
           </button>
         ) : (
           <button
-            onClick={() => { if (canSend) { lightHaptic(); onSend(); } }}
+            onClick={() => triggerSend()}
             disabled={!canSend}
             style={{ ...styles.sendButton, ...(!canSend ? styles.sendButtonDisabled : {}) }}
             aria-label="Send message"
@@ -384,6 +463,55 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-tertiary)",
     flexShrink: 0,
   },
+  pastedChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "7px 32px 7px 10px",
+    borderRadius: "var(--radius-md)",
+    border: "1px solid var(--border)",
+    backgroundColor: "var(--bg-secondary)",
+    position: "relative",
+    flexShrink: 0,
+    maxWidth: "240px",
+  },
+  pastedChipText: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "1px",
+    overflow: "hidden",
+  },
+  pastedChipName: {
+    fontSize: "0.8125rem",
+    color: "var(--text-primary)",
+    fontWeight: "500",
+    whiteSpace: "nowrap",
+  },
+  pastedChipMeta: {
+    fontSize: "0.75rem",
+    color: "var(--text-tertiary)",
+    whiteSpace: "nowrap",
+  },
+  pastedChipClose: {
+    position: "absolute",
+    top: "50%",
+    right: "8px",
+    transform: "translateY(-50%)",
+    width: "18px",
+    height: "18px",
+    borderRadius: "var(--radius-full)",
+    backgroundColor: "var(--border-strong)",
+    color: "var(--text-secondary)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "0.875rem",
+    cursor: "pointer",
+    lineHeight: "1",
+    fontWeight: "600",
+    border: "none",
+    padding: 0,
+  },
   inputRow: {
     display: "flex",
     alignItems: "flex-end",
@@ -422,7 +550,7 @@ const styles: Record<string, React.CSSProperties> = {
     resize: "none",
     outline: "none",
     minHeight: "44px",
-    maxHeight: "160px",
+    maxHeight: "400px",
     overflowY: "auto",
     padding: "6px 0",
     caretColor: "var(--accent)",
