@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import NewChatOrchestrator from "@/components/chat/NewChatOrchestrator";
+import { getUserProfile } from "@/lib/user/getUserProfile";
 
 export default async function ChatPage() {
   const supabase = await createClient();
@@ -10,18 +11,12 @@ export default async function ChatPage() {
 
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("name, color_hex")
-    .eq("id", user.id)
-    .single();
-
-  const p = profile as { name: string; color_hex: string } | null;
+  const profile = await getUserProfile(supabase, user.id);
 
   return (
     <NewChatOrchestrator
-      userName={p?.name ?? "there"}
-      userColorHex={p?.color_hex ?? undefined}
+      userName={profile?.name ?? "there"}
+      userColorHex={profile?.color_hex ?? undefined}
     />
   );
 }

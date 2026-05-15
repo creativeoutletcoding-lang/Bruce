@@ -155,6 +155,8 @@ All three chat contexts (standalone, project, family) share the same code paths.
 - **Migrations are manual:** apply in the Supabase SQL editor immediately after push. App will 500 until applied. Log completion in `docs/migration-log.md`.
 - **Working tree must be clean before ending a session.** Run `git status` to confirm.
 
+**USER PROFILE RULE:** All fetches from the `users` table that supply data to the chat UI must go through `getUserProfile()` in `lib/user/getUserProfile.ts`. Never add a new inline `.select()` from `users` in a page or component — add the column to `getUserProfile()` and it propagates everywhere.
+
 **Supabase client pattern:**
 ```typescript
 // Client component

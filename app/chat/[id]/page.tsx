@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ChatWindow from "@/components/chat/ChatWindow";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
+import { getUserProfile } from "@/lib/user/getUserProfile";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -42,13 +43,9 @@ export default async function ChatIdPage({ params }: Props) {
     normalizeMessage(row)
   );
 
-  const { data: userProfile } = await supabase
-    .from("users")
-    .select("color_hex, preferred_model")
-    .eq("id", user.id)
-    .single();
-  const userColorHex = (userProfile as { color_hex: string; preferred_model: string | null } | null)?.color_hex;
-  const preferredModel = (userProfile as { color_hex: string; preferred_model: string | null } | null)?.preferred_model ?? "claude-sonnet-4-6";
+  const profile = await getUserProfile(supabase, user.id);
+  const userColorHex = profile?.color_hex;
+  const preferredModel = profile?.preferred_model ?? "claude-sonnet-4-6";
 
   return (
     <ChatWindow

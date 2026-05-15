@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import ProjectChatView from "@/components/project/ProjectChatView";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
+import { getUserProfile } from "@/lib/user/getUserProfile";
 import type {
   ProjectMemberDetail,
   ProjectMemberRole,
@@ -48,12 +49,8 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
     normalizeMessage(row)
   );
 
-  const { data: userProfile } = await supabase
-    .from("users")
-    .select("color_hex")
-    .eq("id", user.id)
-    .single();
-  const userColorHex = (userProfile as { color_hex: string } | null)?.color_hex;
+  const profile = await getUserProfile(supabase, user.id);
+  const userColorHex = profile?.color_hex;
 
   const { data: memberRows } = await adminSupabase
     .from("project_members")

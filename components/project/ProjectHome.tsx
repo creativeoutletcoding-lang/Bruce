@@ -139,6 +139,12 @@ export default function ProjectHome({
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressActiveRef = useRef(false);
 
+  // ── Rename ────────────────────────────────────────────────────
+  const [renameTarget, setRenameTarget] = useState<{ id: string; currentTitle: string } | null>(null);
+  const [renameInput, setRenameInput] = useState("");
+  const [isRenameSaving, setIsRenameSaving] = useState(false);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
   // ── Memory isolation ──────────────────────────────────────────
 
   const handleIsolateMemoryChange = useCallback(
@@ -418,6 +424,36 @@ export default function ProjectHome({
     }
   }
 
+  function openRename(id: string) {
+    const chat = chats.find((c) => c.id === id);
+    const currentTitle = chat?.title ?? "New conversation";
+    setRenameTarget({ id, currentTitle });
+    setRenameInput(currentTitle);
+    setTimeout(() => renameInputRef.current?.select(), 50);
+  }
+
+  async function handleRenameSave() {
+    if (!renameTarget || isRenameSaving) return;
+    const newTitle = renameInput.trim();
+    if (!newTitle || newTitle === renameTarget.currentTitle) {
+      setRenameTarget(null);
+      return;
+    }
+    setIsRenameSaving(true);
+    // Optimistic update
+    setChats((prev) => prev.map((c) => c.id === renameTarget.id ? { ...c, title: newTitle } : c));
+    const { error } = await supabase
+      .from("chats")
+      .update({ title: newTitle })
+      .eq("id", renameTarget.id);
+    if (error) {
+      // Roll back on failure
+      setChats((prev) => prev.map((c) => c.id === renameTarget.id ? { ...c, title: renameTarget.currentTitle } : c));
+    }
+    setIsRenameSaving(false);
+    setRenameTarget(null);
+  }
+
   // ── Computed ──────────────────────────────────────────────────
 
   const visibleMemberAvatars = memberList.slice(0, 4);
@@ -621,6 +657,15 @@ export default function ProjectHome({
           onClick={(e) => e.stopPropagation()}
         >
           <button
+            style={{ ...styles.contextMenuItem, color: "var(--text-primary)", borderBottom: "0.5px solid var(--border)" }}
+            onClick={() => {
+              openRename(contextMenu.id);
+              setContextMenu(null);
+            }}
+          >
+            Rename
+          </button>
+          <button
             style={styles.contextMenuItem}
             onClick={() => {
               setDeleteTargetId(contextMenu.id);
@@ -629,6 +674,48 @@ export default function ProjectHome({
           >
             Delete
           </button>
+        </div>
+      )}
+
+      {/* Rename chat modal */}
+      {renameTarget && (
+        <div style={styles.modalOverlay} onClick={() => setRenameTarget(null)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <span style={styles.modalTitle}>Rename chat</span>
+              <button style={styles.modalClose} onClick={() => setRenameTarget(null)}>×</button>
+            </div>
+            <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <input
+                ref={renameInputRef}
+                style={styles.renameInput}
+                value={renameInput}
+                onChange={(e) => setRenameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleRenameSave();
+                  if (e.key === "Escape") setRenameTarget(null);
+                }}
+                placeholder="Chat name"
+                autoFocus
+              />
+              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                <button
+                  style={styles.cancelButton}
+                  onClick={() => setRenameTarget(null)}
+                  disabled={isRenameSaving}
+                >
+                  Cancel
+                </button>
+                <button
+                  style={{ ...styles.deleteConfirmButton, backgroundColor: "var(--accent)", ...(isRenameSaving || !renameInput.trim() ? { opacity: 0.5, cursor: "not-allowed" } : {}) }}
+                  onClick={handleRenameSave}
+                  disabled={isRenameSaving || !renameInput.trim()}
+                >
+                  {isRenameSaving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1308,6 +1395,18 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#dc2626",
     cursor: "pointer",
     backgroundColor: "transparent",
+  },
+  renameInput: {
+    width: "100%",
+    padding: "9px 12px",
+    fontSize: "0.875rem",
+    color: "var(--text-primary)",
+    backgroundColor: "var(--bg-secondary)",
+    border: "0.5px solid var(--border)",
+    borderRadius: "var(--radius-md)",
+    outline: "none",
+    fontFamily: "inherit",
+    boxSizing: "border-box" as const,
   },
   cancelButton: {
     padding: "8px 16px",
