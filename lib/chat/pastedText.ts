@@ -14,5 +14,6 @@ export function buildDisplayMessage(message: string): string {
       return "";
     })
     .trim();
+  if (summaries.length > 0 && stripped) return `${summaries.join("\n")}\n\n${stripped}`;
   return stripped || summaries.join("\n") || message;
 }
