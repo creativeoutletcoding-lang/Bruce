@@ -45,7 +45,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: "10px",
-    padding: "9px 12px",
+    padding: "12px 16px",
     borderRadius: "var(--radius-md)",
     border: "1px solid var(--border-strong)",
     backgroundColor: "var(--bg-secondary)",

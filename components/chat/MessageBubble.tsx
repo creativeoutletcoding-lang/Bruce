@@ -452,7 +452,7 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 0,
     letterSpacing: "0.01em",
   },
-  messageGroup: { display: "flex", flexDirection: "column", gap: "3px" },
+  messageGroup: { display: "flex", flexDirection: "column", gap: "8px" },
   bubble: {
     padding: "10px 14px",
     borderRadius: "var(--radius-lg)",

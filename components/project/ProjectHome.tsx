@@ -145,6 +145,12 @@ export default function ProjectHome({
   const [isRenameSaving, setIsRenameSaving] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Chat select mode ──────────────────────────────────────────
+  const [chatsSelectMode, setChatsSelectMode] = useState(false);
+  const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
+
   // ── Memory isolation ──────────────────────────────────────────
 
   const handleIsolateMemoryChange = useCallback(
@@ -454,6 +460,48 @@ export default function ProjectHome({
     setRenameTarget(null);
   }
 
+  // ── Chat select mode ──────────────────────────────────────────
+
+  function enterChatsSelectMode() {
+    setContextMenu(null);
+    setSelectedChatIds(new Set());
+    setChatsSelectMode(true);
+  }
+
+  function exitChatsSelectMode() {
+    setChatsSelectMode(false);
+    setSelectedChatIds(new Set());
+  }
+
+  function toggleChatSelection(id: string) {
+    setSelectedChatIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleBulkDelete() {
+    if (isDeletingBulk || selectedChatIds.size === 0) return;
+    setIsDeletingBulk(true);
+    try {
+      const ids = Array.from(selectedChatIds);
+      const res = await fetch("/api/chats", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (res.ok) {
+        setShowBulkDeleteConfirm(false);
+        exitChatsSelectMode();
+        setChats((prev) => prev.filter((c) => !ids.includes(c.id)));
+      }
+    } finally {
+      setIsDeletingBulk(false);
+    }
+  }
+
   // ── Computed ──────────────────────────────────────────────────
 
   const visibleMemberAvatars = memberList.slice(0, 4);
@@ -594,35 +642,103 @@ export default function ProjectHome({
 
             {/* Chats list */}
             <div style={styles.chatsSection}>
-              <span style={styles.sectionLabel}>Chats</span>
+              <div style={styles.sectionHeader}>
+                <span style={styles.sectionLabel}>Chats</span>
+                {chats.length > 0 && (
+                  chatsSelectMode ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      {chats.length > 1 && (
+                        <button
+                          style={styles.sectionEditButton}
+                          onClick={() => {
+                            if (selectedChatIds.size === chats.length) {
+                              setSelectedChatIds(new Set());
+                            } else {
+                              setSelectedChatIds(new Set(chats.map((c) => c.id)));
+                            }
+                          }}
+                        >
+                          {selectedChatIds.size === chats.length ? "Deselect All" : "Select All"}
+                        </button>
+                      )}
+                      <button style={styles.sectionEditButton} onClick={exitChatsSelectMode}>Done</button>
+                    </div>
+                  ) : (
+                    <button style={styles.sectionEditButton} onClick={enterChatsSelectMode}>Edit</button>
+                  )
+                )}
+              </div>
               {chats.length === 0 ? (
                 <p style={styles.emptyState}>No conversations yet.</p>
               ) : (
+                <>
                 <div style={styles.chatList}>
-                  {chats.map((chat) => (
-                    <button
-                      key={chat.id}
-                      style={styles.chatRow}
-                      onClick={() => {
-                        if (longPressActiveRef.current) { longPressActiveRef.current = false; return; }
-                        router.push(`/projects/${projectId}/chat/${chat.id}`);
-                      }}
-                      onContextMenu={(e) => handleChatRightClick(e, chat.id, chat.owner_id)}
-                      onTouchStart={(e) => handleChatLongPressStart(e, chat.id, chat.owner_id)}
-                      onTouchEnd={handleChatLongPressEnd}
-                      onTouchMove={handleChatLongPressMove}
-                    >
-                      <div style={styles.chatRowTop}>
-                        <span style={styles.chatTitle}>
-                          {chat.title ?? "New conversation"}
-                        </span>
-                        <span style={styles.chatTime}>
-                          {formatRelativeTime(chat.last_message_at)}
-                        </span>
-                      </div>
-                    </button>
-                  ))}
+                  {chats.map((chat) => {
+                    const isSelected = selectedChatIds.has(chat.id);
+                    if (chatsSelectMode) {
+                      return (
+                        <button
+                          key={chat.id}
+                          style={{ ...styles.chatRow, flexDirection: "row", alignItems: "center", gap: "10px" }}
+                          onClick={() => toggleChatSelection(chat.id)}
+                        >
+                          <div style={{
+                            ...styles.chatSelectCircle,
+                            ...(isSelected ? { backgroundColor: "var(--accent)", borderColor: "var(--accent)" } : {}),
+                          }}>
+                            {isSelected && (
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                                <path d="M1.5 5l2.5 2.5 4.5-5" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                          </div>
+                          <div style={{ ...styles.chatRowTop, flex: 1, minWidth: 0 }}>
+                            <span style={styles.chatTitle}>{chat.title ?? "New conversation"}</span>
+                            <span style={styles.chatTime}>{formatRelativeTime(chat.last_message_at)}</span>
+                          </div>
+                        </button>
+                      );
+                    }
+                    return (
+                      <button
+                        key={chat.id}
+                        style={styles.chatRow}
+                        onClick={() => {
+                          if (longPressActiveRef.current) { longPressActiveRef.current = false; return; }
+                          router.push(`/projects/${projectId}/chat/${chat.id}`);
+                        }}
+                        onContextMenu={(e) => handleChatRightClick(e, chat.id, chat.owner_id)}
+                        onTouchStart={(e) => handleChatLongPressStart(e, chat.id, chat.owner_id)}
+                        onTouchEnd={handleChatLongPressEnd}
+                        onTouchMove={handleChatLongPressMove}
+                      >
+                        <div style={styles.chatRowTop}>
+                          <span style={styles.chatTitle}>
+                            {chat.title ?? "New conversation"}
+                          </span>
+                          <span style={styles.chatTime}>
+                            {formatRelativeTime(chat.last_message_at)}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
+                {chatsSelectMode && (
+                  <button
+                    onClick={() => { if (selectedChatIds.size > 0) setShowBulkDeleteConfirm(true); }}
+                    disabled={selectedChatIds.size === 0}
+                    style={{
+                      ...styles.deleteSelectedButton,
+                      ...(selectedChatIds.size === 0 ? styles.deleteSelectedButtonDisabled : {}),
+                    }}
+                  >
+                    {selectedChatIds.size === 0
+                      ? "Select chats to delete"
+                      : `Delete ${selectedChatIds.size} ${selectedChatIds.size === 1 ? "chat" : "chats"}`}
+                  </button>
+                )}
+                </>
               )}
             </div>
           </div>
@@ -745,6 +861,41 @@ export default function ProjectHome({
                   disabled={isDeletingChat}
                 >
                   {isDeletingChat ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk delete confirmation */}
+      {showBulkDeleteConfirm && (
+        <div style={styles.modalOverlay} onClick={() => setShowBulkDeleteConfirm(false)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <span style={styles.modalTitle}>
+                Delete {selectedChatIds.size} {selectedChatIds.size === 1 ? "chat" : "chats"}?
+              </span>
+              <button style={styles.modalClose} onClick={() => setShowBulkDeleteConfirm(false)}>×</button>
+            </div>
+            <div style={{ padding: "16px 20px" }}>
+              <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", marginBottom: "20px" }}>
+                This cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                <button
+                  style={styles.cancelButton}
+                  onClick={() => setShowBulkDeleteConfirm(false)}
+                  disabled={isDeletingBulk}
+                >
+                  Cancel
+                </button>
+                <button
+                  style={{ ...styles.deleteConfirmButton, ...(isDeletingBulk ? { opacity: 0.6 } : {}) }}
+                  onClick={handleBulkDelete}
+                  disabled={isDeletingBulk}
+                >
+                  {isDeletingBulk ? "Deleting…" : "Delete"}
                 </button>
               </div>
             </div>
@@ -1132,12 +1283,57 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     gap: "8px",
   },
+  sectionHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   sectionLabel: {
     fontSize: "0.6875rem",
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: "0.07em",
     color: "var(--text-tertiary)",
+  },
+  sectionEditButton: {
+    fontSize: "0.75rem",
+    fontWeight: "500",
+    color: "var(--accent)",
+    backgroundColor: "transparent",
+    border: "none",
+    cursor: "pointer",
+    padding: "2px 4px",
+    borderRadius: "var(--radius-sm)",
+  },
+  chatSelectCircle: {
+    width: "18px",
+    height: "18px",
+    borderRadius: "var(--radius-full)",
+    border: "1.5px solid var(--border-strong)",
+    backgroundColor: "var(--bg-secondary)",
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deleteSelectedButton: {
+    width: "100%",
+    marginTop: "4px",
+    padding: "10px 12px",
+    fontSize: "0.875rem",
+    fontWeight: "500",
+    color: "#dc2626",
+    backgroundColor: "rgba(220, 38, 38, 0.07)",
+    borderRadius: "var(--radius-md)",
+    cursor: "pointer",
+    textAlign: "left" as const,
+    border: "none",
+    transition: "background-color var(--transition)",
+  },
+  deleteSelectedButtonDisabled: {
+    color: "var(--text-tertiary)",
+    backgroundColor: "transparent",
+    cursor: "default",
   },
   emptyState: {
     fontSize: "0.875rem",
