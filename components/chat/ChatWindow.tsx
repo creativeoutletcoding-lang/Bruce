@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { buildDisplayMessage } from "@/lib/chat/pastedText";
+import { parsePastedAttachments } from "@/lib/chat/pastedText";
+import type { PastedAttachmentData } from "@/lib/chat/types";
 import { createClient } from "@/lib/supabase/client";
 import { useChatContext } from "@/components/layout/ChatShell";
 import TopBar from "./TopBar";
@@ -40,6 +41,7 @@ function toChatMessage(n: NormalizedMessage): ChatMessage {
     attachmentType: n.attachment_type ?? undefined,
     attachmentFilename: n.attachment_filename ?? undefined,
     sender_id: n.sender_id ?? undefined,
+    pastedAttachments: (n.metadata?.pastedAttachments as PastedAttachmentData[] | undefined),
   };
 }
 
@@ -152,15 +154,17 @@ export default function ChatWindow({
     const userMsgId = `tmp-user-${Date.now()}`;
     const streamMsgId = `tmp-stream-${Date.now()}`;
 
+    const { displayMessage: displayText, pastedAttachments: msgPastedAttachments } = parsePastedAttachments(text);
     const userMsg: ChatMessage = {
       id: userMsgId,
       role: "user",
-      content: buildDisplayMessage(text),
+      content: displayText,
       created_at: new Date().toISOString(),
       sender_id: currentUserId,
       attachments: filesToSend.length > 0
         ? filesToSend.map((f) => ({ url: f.previewUrl ?? "", type: f.type, filename: f.filename }))
         : undefined,
+      pastedAttachments: msgPastedAttachments.length > 0 ? msgPastedAttachments : undefined,
     };
     const streamMsg: ChatMessage = {
       id: streamMsgId,

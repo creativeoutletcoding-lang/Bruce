@@ -5,7 +5,7 @@ import {
   assembleMemoryBlock,
   buildMemberCombination,
 } from "@/lib/anthropic";
-import { buildDisplayMessage } from "@/lib/chat/pastedText";
+import { parsePastedAttachments } from "@/lib/chat/pastedText";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import {
   runChatStream,
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
   if (!message?.trim() && attachments.length === 0) return new Response("Message required", { status: 400 });
   if (!chatId) return new Response("chatId required", { status: 400 });
 
-  const displayMessage = buildDisplayMessage(message);
+  const { displayMessage, pastedAttachments } = parsePastedAttachments(message);
 
   const adminSupabase = createServiceRoleClient();
 
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
     image_url: attachmentMeta[0]?.url ?? null,
     attachment_type: firstAtt?.type ?? null,
     attachment_filename: firstDocFilename,
-    ...(attachmentMeta.length > 0 ? { metadata: { attachments: attachmentMeta } } : {}),
+    ...(() => { const m: Record<string, unknown> = {}; if (attachmentMeta.length > 0) m.attachments = attachmentMeta; if (pastedAttachments.length > 0) m.pastedAttachments = pastedAttachments; return Object.keys(m).length > 0 ? { metadata: m } : {}; })(),
   });
   if (msgErr) console.error("[api/family/chat] Failed to insert user message:", msgErr);
 

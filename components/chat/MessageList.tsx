@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import MessageBubble from "./MessageBubble";
 import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
-import type { ChatMessage, MessageAttachment } from "@/lib/chat/types";
+import type { ChatMessage, MessageAttachment, PastedAttachmentData } from "@/lib/chat/types";
 import type { TaskProgressData } from "@/lib/chat/taskProgress";
 
 const ImageMessage = dynamic(() => import("./ImageMessage"), { ssr: false });
@@ -139,6 +139,10 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                   ? [{ url: msg.imageUrl, type: msg.attachmentType ?? "image", filename: msg.attachmentFilename }]
                   : undefined);
 
+              const pastedAttachments =
+                msg.pastedAttachments ??
+                (msg.metadata?.pastedAttachments as PastedAttachmentData[] | undefined);
+
               return (
               <MessageBubble
                 key={msg.id}
@@ -158,6 +162,7 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 senderColorHex={msg.senderColorHex}
                 senderId={msg.sender_id ?? null}
                 attachments={resolvedAttachments}
+                pastedAttachments={pastedAttachments}
                 canDelete={
                   !msg.isStreaming &&
                   !msg.id.startsWith("tmp-") &&

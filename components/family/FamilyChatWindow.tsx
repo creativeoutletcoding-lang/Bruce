@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { buildDisplayMessage } from "@/lib/chat/pastedText";
+import { parsePastedAttachments } from "@/lib/chat/pastedText";
+import type { PastedAttachmentData } from "@/lib/chat/types";
 import { createClient } from "@/lib/supabase/client";
 import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
@@ -50,6 +51,7 @@ function toChatMessage(
     sender_id: n.sender_id ?? undefined,
     senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
     senderColorHex: senderInfo?.color_hex,
+    pastedAttachments: (n.metadata?.pastedAttachments as PastedAttachmentData[] | undefined),
   };
 }
 
@@ -203,6 +205,7 @@ export default function FamilyChatWindow({
     const userMsgId = `tmp-user-${Date.now()}`;
     const streamMsgId = `tmp-stream-${Date.now()}`;
     const senderInfo = memberMapRef.current[currentUserId];
+    const { displayMessage: displayText, pastedAttachments: msgPastedAttachments } = parsePastedAttachments(text);
 
     // Show user message + typing dots immediately, before the fetch resolves.
     // If Bruce won't respond (X-Bruce-Responded: false), the dots are removed below.
@@ -211,7 +214,7 @@ export default function FamilyChatWindow({
       {
         id: userMsgId,
         role: "user" as const,
-        content: buildDisplayMessage(text),
+        content: displayText,
         sender_id: currentUserId,
         senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
         senderColorHex: senderInfo?.color_hex,
@@ -219,6 +222,7 @@ export default function FamilyChatWindow({
         attachments: filesToSend.length > 0
           ? filesToSend.map((f) => ({ url: f.previewUrl ?? "", type: f.type, filename: f.filename }))
           : undefined,
+        pastedAttachments: msgPastedAttachments.length > 0 ? msgPastedAttachments : undefined,
       },
       {
         id: streamMsgId,

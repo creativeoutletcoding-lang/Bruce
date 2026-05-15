@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { buildDisplayMessage } from "@/lib/chat/pastedText";
+import { parsePastedAttachments } from "@/lib/chat/pastedText";
+import type { PastedAttachmentData } from "@/lib/chat/types";
 import { createClient } from "@/lib/supabase/client";
 import ProjectTopBar from "./ProjectTopBar";
 import MessageList from "@/components/chat/MessageList";
@@ -53,6 +54,7 @@ function toChatMessage(
     sender_id: n.sender_id ?? undefined,
     senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
     senderColorHex: senderInfo?.color_hex,
+    pastedAttachments: (n.metadata?.pastedAttachments as PastedAttachmentData[] | undefined),
   };
 }
 
@@ -224,18 +226,20 @@ export default function ProjectChatView({
 
     const userMsgId = `tmp-user-${Date.now()}`;
     const streamMsgId = `tmp-stream-${Date.now()}`;
+    const { displayMessage: displayText, pastedAttachments: msgPastedAttachments } = parsePastedAttachments(text);
 
     setMessages((prev) => [
       ...prev,
       {
         id: userMsgId,
         role: "user",
-        content: buildDisplayMessage(text),
+        content: displayText,
         created_at: new Date().toISOString(),
         attachments: filesToSend.length > 0
           ? filesToSend.map((f) => ({ url: f.previewUrl ?? "", type: f.type, filename: f.filename }))
           : undefined,
         sender_id: currentUserId,
+        pastedAttachments: msgPastedAttachments.length > 0 ? msgPastedAttachments : undefined,
       },
       { id: streamMsgId, role: "assistant", content: "", isStreaming: true },
     ]);

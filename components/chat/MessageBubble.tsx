@@ -7,6 +7,10 @@ import { lightHaptic } from "@/lib/utils/haptics";
 import { getDisplayName, getProfileColor } from "@/lib/chat/senderProfile";
 import type { MessageRole } from "@/lib/types";
 import type { MessageAttachment } from "@/lib/chat/types";
+import type { PastedAttachmentData } from "@/lib/chat/pastedText";
+import { stripPastedSummaries } from "@/lib/chat/pastedText";
+import AttachmentBlock from "./AttachmentBlock";
+import AttachmentViewer, { type ViewerContent } from "./AttachmentViewer";
 
 export type { MessageAttachment };
 
@@ -25,6 +29,7 @@ interface MessageBubbleProps {
   /** Sender's user id — used to derive a deterministic fallback color when senderColorHex is null. */
   senderId?: string | null;
   attachments?: MessageAttachment[];
+  pastedAttachments?: PastedAttachmentData[];
   // Legacy single-attachment fallback
   imageUrl?: string;
   attachmentType?: string;
@@ -63,6 +68,7 @@ export default function MessageBubble({
   senderColorHex,
   senderId,
   attachments,
+  pastedAttachments,
   imageUrl,
   attachmentType,
   attachmentFilename,
@@ -74,6 +80,7 @@ export default function MessageBubble({
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [viewer, setViewer] = useState<ViewerContent | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
 
   // ── Swipe state ──────────────────────────────────────────────────────────────
@@ -213,13 +220,18 @@ export default function MessageBubble({
   const resolvedSenderColor = getProfileColor(senderId ?? null, senderColorHex ?? null);
   const resolvedOwnColor = getProfileColor(null, bubbleColorHex ?? null);
 
-  // Resolve attachment list: prefer explicit array, fall back to single legacy fields
+  // Resolve file attachment list: prefer explicit array, fall back to single legacy fields
   const resolvedAttachments: MessageAttachment[] =
     attachments ??
     (imageUrl ? [{ url: imageUrl, type: attachmentType ?? "image", filename: attachmentFilename }] : []);
 
   const imageAttachments = resolvedAttachments.filter((a) => a.type === "image");
   const docAttachments = resolvedAttachments.filter((a) => a.type === "document");
+  const hasPasted = Boolean(pastedAttachments && pastedAttachments.length > 0);
+
+  // When structured pasted attachments are present, strip the summary prefix
+  // that buildDisplayMessage baked into content so we don't show it twice.
+  const displayContent = hasPasted ? stripPastedSummaries(content) : content;
 
   return (
     <div style={{ position: "relative", overflow: "hidden" }}>
@@ -264,7 +276,19 @@ export default function MessageBubble({
             {getDisplayName(senderName)}
           </div>
         )}
-        {/* Images rendered directly in thread — no bubble wrapper */}
+
+        {/* Pasted text attachment blocks */}
+        {hasPasted && pastedAttachments!.map((att, i) => (
+          <AttachmentBlock
+            key={i}
+            type="pasted_text"
+            label="Pasted text"
+            meta={`${att.wordCount} words · ${att.lineCount} lines`}
+            onClick={() => setViewer({ type: "pasted_text", content: att.content, wordCount: att.wordCount, lineCount: att.lineCount, title: "Pasted text" })}
+          />
+        ))}
+
+        {/* Image attachments — tappable thumbnail */}
         {imageAttachments.length > 0 && (
           <div style={{
             display: "flex",
@@ -273,46 +297,52 @@ export default function MessageBubble({
             justifyContent: isUser ? "flex-end" : "flex-start",
           }}>
             {imageAttachments.map((img, i) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <button
                 key={i}
-                src={img.url}
-                alt=""
-                style={{
-                  maxWidth: "260px",
-                  width: imageAttachments.length > 1 ? "128px" : undefined,
-                  height: imageAttachments.length > 1 ? "128px" : "auto",
-                  borderRadius: "var(--radius-lg)",
-                  objectFit: "cover",
-                  display: "block",
-                }}
+                onClick={() => setViewer({ type: "image", url: img.url, title: img.filename ?? "Image" })}
+                style={styles.imageBtnWrapper}
+                type="button"
+                aria-label="View image"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={img.url}
+                  alt=""
+                  style={{
+                    maxWidth: "260px",
+                    width: imageAttachments.length > 1 ? "128px" : undefined,
+                    height: imageAttachments.length > 1 ? "128px" : "auto",
+                    borderRadius: "var(--radius-lg)",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Document attachment blocks */}
+        {docAttachments.length > 0 && (
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px",
+            alignItems: isUser ? "flex-end" : "flex-start",
+          }}>
+            {docAttachments.map((doc, i) => (
+              <AttachmentBlock
+                key={i}
+                type="document"
+                label={doc.filename ?? "Document"}
+                onClick={() => doc.url ? setViewer({ type: "document", url: doc.url, title: doc.filename ?? "Document" }) : undefined}
               />
             ))}
           </div>
         )}
 
-        {/* Doc chips rendered directly in thread — no bubble wrapper */}
-        {docAttachments.length > 0 && (
-          <div style={{
-            display: "flex",
-            gap: "4px",
-            flexWrap: "wrap",
-            justifyContent: isUser ? "flex-end" : "flex-start",
-          }}>
-            {docAttachments.map((doc, i) => (
-              <div key={i} style={styles.docChip}>
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: "var(--text-secondary)" }}>
-                  <rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-                  <path d="M6 5h4M6 8h4M6 11h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                </svg>
-                <span style={styles.docChipName}>{doc.filename ?? "Document"}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* Bubble only when there is text content or streaming dots */}
-        {(showDots || content) && (
+        {(showDots || displayContent) && (
           <div
             className={isHumanMessage ? "bubble-tint" : undefined}
             style={
@@ -347,10 +377,10 @@ export default function MessageBubble({
                 // instead of snapping in at the end.
                 <div
                   className="bruce-md"
-                  dangerouslySetInnerHTML={{ __html: marked(content) as string }}
+                  dangerouslySetInnerHTML={{ __html: marked(displayContent) as string }}
                 />
               ) : (
-                <span style={styles.content}>{content}</span>
+                <span style={styles.content}>{displayContent}</span>
               )
             )}
             {interrupted && (
@@ -399,6 +429,8 @@ export default function MessageBubble({
         </div>,
         document.body
       )}
+
+      <AttachmentViewer content={viewer} onClose={() => setViewer(null)} />
     </div>
   );
 }
@@ -499,22 +531,12 @@ const styles: Record<string, React.CSSProperties> = {
     display: "block",
     border: "none",
   },
-  docChip: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "6px 10px",
-    borderRadius: "var(--radius-sm)",
-    border: "0.5px solid var(--border-strong)",
-    backgroundColor: "var(--bg-secondary)",
-    color: "var(--text-secondary)",
-  },
-  docChipName: {
-    fontSize: "0.8125rem",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    maxWidth: "180px",
-    color: "var(--text-primary)",
+  imageBtnWrapper: {
+    display: "block",
+    padding: 0,
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    borderRadius: "var(--radius-lg)",
   },
 };

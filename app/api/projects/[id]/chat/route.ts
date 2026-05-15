@@ -6,7 +6,7 @@ import {
   buildMemberCombination,
   generateChatTitle,
 } from "@/lib/anthropic";
-import { buildDisplayMessage } from "@/lib/chat/pastedText";
+import { parsePastedAttachments } from "@/lib/chat/pastedText";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import {
   runChatStream,
@@ -200,7 +200,7 @@ export async function POST(request: NextRequest, { params }: Props) {
     currentChatId = newChat.id;
   }
 
-  const displayMessage = buildDisplayMessage(message);
+  const { displayMessage, pastedAttachments } = parsePastedAttachments(message);
 
   let chatTitle: string | undefined;
   if (isFirstMessage) {
@@ -230,7 +230,7 @@ export async function POST(request: NextRequest, { params }: Props) {
     image_url: attachmentMeta[0]?.url ?? null,
     attachment_type: firstAtt?.type ?? null,
     attachment_filename: firstDocFilename,
-    ...(attachmentMeta.length > 0 ? { metadata: { attachments: attachmentMeta } } : {}),
+    ...(() => { const m: Record<string, unknown> = {}; if (attachmentMeta.length > 0) m.attachments = attachmentMeta; if (pastedAttachments.length > 0) m.pastedAttachments = pastedAttachments; return Object.keys(m).length > 0 ? { metadata: m } : {}; })(),
     ...(hasFileIds ? { file_ids: fileIds } : {}),
   });
 

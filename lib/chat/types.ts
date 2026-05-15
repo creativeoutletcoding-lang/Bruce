@@ -6,6 +6,9 @@
 
 import type { MessageRole } from "@/lib/types";
 import type { TaskProgressData } from "@/lib/chat/taskProgress";
+import type { PastedAttachmentData } from "@/lib/chat/pastedText";
+
+export type { PastedAttachmentData };
 
 export interface NormalizedMessage {
   id: string;
@@ -43,4 +46,5 @@ export interface ChatMessage {
   senderName?: string;
   senderColorHex?: string;
   taskData?: TaskProgressData | null;
+  pastedAttachments?: PastedAttachmentData[];
 }
