@@ -218,10 +218,18 @@ export default function FamilyChatWindow({
             content: string;
             created_at: string;
             sender_id: string | null;
+            image_url?: string | null;
+            attachment_type?: string | null;
+            attachment_filename?: string | null;
+            metadata?: Record<string, unknown> | null;
           };
           if (msg.sender_id === currentUserId) return;
           if (msg.sender_id === null && isStreamingRef.current) return;
           const senderInfo = msg.sender_id ? memberMapRef.current[msg.sender_id] : null;
+          const metaAttachments = msg.metadata?.attachments as FamilyMessageAttachment[] | undefined;
+          const attachments = metaAttachments?.length
+            ? metaAttachments
+            : (msg.image_url ? [{ url: msg.image_url, type: msg.attachment_type ?? "image", filename: msg.attachment_filename ?? undefined }] : undefined);
 
           setMessages((prev) => {
             if (prev.some((m) => m.id === msg.id)) return prev;
@@ -232,6 +240,8 @@ export default function FamilyChatWindow({
                 role: msg.role as MessageRole,
                 content: msg.content,
                 created_at: msg.created_at,
+                metadata: msg.metadata ?? undefined,
+                attachments,
                 sender_id: msg.sender_id ?? undefined,
                 senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
                 senderColorHex: senderInfo?.color_hex,
