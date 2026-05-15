@@ -6,15 +6,17 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
-### Group Chat Awareness — Tightened Participation Rules — 2026-05-15
+### Group Chat Awareness — Universal Multi-Member Participation Rules — 2026-05-15
 
-**Decision:** The family group chat participation rules in `buildSystemPrompt.ts` were replaced with a stricter set (`FAMILY_PARTICIPATION_RULE`) that explicitly prohibits: responding to incidental mentions, reacting when a member says Bruce shouldn't respond, and sending any emoji/reaction/acknowledgment token. Silence is the explicit correct default when intent is ambiguous. The multi-member project chat retains the older, simpler `PARTICIPATION_RULE`.
+**Decision:** A single `MULTI_MEMBER_PARTICIPATION_RULE` constant in `buildSystemPrompt.ts` now governs participation for every multi-member context: family group chats (`mode: "family"`) and group project chats (`mode: "project"` with more than one member). The rule explicitly prohibits: responding to incidental mentions, reacting when a member says Bruce shouldn't respond, and sending any emoji/reaction/acknowledgment token. Silence is the explicit correct default when intent is ambiguous. The previous `PARTICIPATION_RULE` (simpler, project-only) and `FAMILY_PARTICIPATION_RULE` (stricter, family-only) are replaced by this single unified constant.
 
-**Reason:** Bruce was sending emoji reactions and brief acknowledgments when members talked to each other and mentioned him incidentally. This is worse than silence — it reads as surveillance and intrudes on private family exchanges. A more prescriptive ruleset with explicit categories (respond / stay silent / reaction rule) is more robust than a principle-based rule that still leaves edge cases open to interpretation.
+**Reason:** Bruce was sending emoji reactions and brief acknowledgments when members talked to each other and mentioned him incidentally. This is worse than silence — it reads as surveillance and intrudes. The same behavioral failure is possible in group project chats, not just family chats. A single prescriptive ruleset with explicit categories (respond / stay silent / reaction rule) closes that gap across all multi-member contexts without requiring two separate rules that could drift out of sync.
 
-**Alternatives considered:** Adding a new trigger condition to the server-side `shouldBruceRespond` function. Rejected — the API-level trigger already gates most spurious calls; the issue is model-level judgment within the calls that do fire. Per-message sentiment analysis to detect member-to-member conversation. Rejected — overengineering; explicit rules are clearer and cheaper.
+The distinction between family and project contexts is retained only where it matters: tone (family: relaxed and personal; project: focused and practical), and context loaded (family memory never enters project context and vice versa — enforced at the data layer, not the prompt layer). Project mode also includes project instructions and file/member roster. These differences remain in the context block that wraps the shared rule; the participation logic itself is identical.
 
-**Notes:** `FAMILY_PARTICIPATION_RULE` is used exclusively by mode `"family"` in `buildSystemPrompt`. Mode `"project"` with multiple members continues to use `PARTICIPATION_RULE`. The "Reaction and emoji rule" section is the explicit addition — it closes the gap where Bruce would send a single emoji instead of full text.
+**Alternatives considered:** Adding a new trigger condition to the server-side `shouldBruceRespond` function. Rejected — the API-level trigger already gates most spurious calls; the issue is model-level judgment within the calls that do fire. Per-message sentiment analysis to detect member-to-member conversation. Rejected — overengineering; explicit rules are clearer and cheaper. Keeping separate rules per context. Rejected — the rules were already functionally identical and divergence between them was itself a bug surface.
+
+**Notes:** `MULTI_MEMBER_PARTICIPATION_RULE` is used by mode `"family"` and by mode `"project"` when `memberNames.length > 1` in `buildSystemPrompt.ts`. The "Reaction and emoji rule" section explicitly closes the gap where Bruce would send a single emoji instead of full text.
 
 ---
 
