@@ -45,9 +45,9 @@ export default function LandingPage() {
       </main>
 
       <footer style={styles.footer}>
-        <a href="/privacy" style={styles.footerLink}>
-          Privacy Policy
-        </a>
+        <a href="/privacy" style={styles.footerLink}>Privacy Policy</a>
+        <span style={styles.footerSep}>·</span>
+        <a href="/terms" style={styles.footerLink}>Terms</a>
         <span style={styles.footerSep}>·</span>
         <span>{currentYear}</span>
       </footer>
