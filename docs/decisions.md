@@ -6,6 +6,92 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Group Chat Awareness — Tightened Participation Rules — 2026-05-15
+
+**Decision:** The family group chat participation rules in `buildSystemPrompt.ts` were replaced with a stricter set (`FAMILY_PARTICIPATION_RULE`) that explicitly prohibits: responding to incidental mentions, reacting when a member says Bruce shouldn't respond, and sending any emoji/reaction/acknowledgment token. Silence is the explicit correct default when intent is ambiguous. The multi-member project chat retains the older, simpler `PARTICIPATION_RULE`.
+
+**Reason:** Bruce was sending emoji reactions and brief acknowledgments when members talked to each other and mentioned him incidentally. This is worse than silence — it reads as surveillance and intrudes on private family exchanges. A more prescriptive ruleset with explicit categories (respond / stay silent / reaction rule) is more robust than a principle-based rule that still leaves edge cases open to interpretation.
+
+**Alternatives considered:** Adding a new trigger condition to the server-side `shouldBruceRespond` function. Rejected — the API-level trigger already gates most spurious calls; the issue is model-level judgment within the calls that do fire. Per-message sentiment analysis to detect member-to-member conversation. Rejected — overengineering; explicit rules are clearer and cheaper.
+
+**Notes:** `FAMILY_PARTICIPATION_RULE` is used exclusively by mode `"family"` in `buildSystemPrompt`. Mode `"project"` with multiple members continues to use `PARTICIPATION_RULE`. The "Reaction and emoji rule" section is the explicit addition — it closes the gap where Bruce would send a single emoji instead of full text.
+
+---
+
+### normalizeMessage + buildSystemPrompt — Extracted May 2026
+
+**Decision:** Two long-standing inline duplication patterns were extracted into single shared utilities:
+- `normalizeMessage()` in `lib/chat/normalizeMessage.ts` — the only place that converts a raw Supabase `messages` row or realtime payload into a typed `NormalizedMessage`. All three components (ChatWindow, FamilyChatWindow, ProjectChatView) and their server-side page loaders call it instead of repeating the same nine-field cast-and-coerce inline.
+- `buildSystemPrompt()` in `lib/chat/buildSystemPrompt.ts` — the only place that assembles a Bruce system prompt. Accepts a discriminated `SystemPromptContext` with mode `"standalone" | "project" | "family" | "dev"`. All four API routes call it; none concatenate prompt strings directly anymore.
+
+**Reason:** Before extraction, the message field-mapping pattern (with its unsafe `as` casts and nullable coercions) was duplicated across three components, each slightly different. The system prompt was assembled in three separate builder functions plus an inline dev builder, with shared constants copy-pasted between them. Both patterns were single-point-of-failure sites — a field added to the DB schema would need to be updated in 7+ places. Extraction makes the surface area for bugs one function instead of N.
+
+**Alternatives considered:** Keeping the three separate prompt builders and adding a shared wrapper. Rejected — shared constants already existed; the problem was that routes assembled the final string (appending tool blocks, location context) themselves. The new function owns the full assembly. Per-component `normalizeRow` helpers. Rejected — same logic repeated per component; the point is a single authoritative function.
+
+**Notes:** `NormalizedMessage`, `ChatMessage`, and `MessageAttachment` types all live in `lib/chat/types.ts`. The old per-component `FamilyMessage` interface was removed. CLAUDE.md has two enforcement rules: MESSAGE MAPPING RULE and SYSTEM PROMPT RULE.
+
+---
+
+### Chat UI Universal Component Rule — 2026-05-09
+
+**Decision:** All visual rendering (bubble styling, list layout, input bar, top bar shell, dots indicators) lives in shared components under `components/chat/`. Context wrappers (ChatWindow, FamilyChatWindow, ProjectChatView) own data assembly and callbacks only — they never fork or duplicate visual logic. Context variations are handled via props, never by duplicating a component.
+
+**Reason:** Before this rule was made explicit, visual tweaks were sometimes applied in the context wrapper (e.g., different bubble styles for family vs. project) rather than in the shared component. This led to the same visual bug existing in some contexts but not others — exactly what happened with the image-in-group-chat bug (image_url missing from the realtime payload cast). A single rendering path means a visual fix propagates everywhere automatically.
+
+**Alternatives considered:** Per-context visual variants with shared base components. Rejected — the variants always drift. The rule is simpler and more robust: one rendering component, props decide appearance.
+
+**Notes:** Shared components: `MessageBubble.tsx`, `MessageList.tsx`, `MessageInput.tsx`, `ChatTopBar.tsx`. The rule is in CLAUDE.md under Chat Architecture.
+
+---
+
+### Gmail Scope — Switched to Non-Restricted Alternatives — 2026-05-05 (approx)
+
+**Decision:** The Gmail integration uses `gmail.readonly` (read) + `gmail.send` (send) instead of `gmail.modify`. Both are non-restricted OAuth scopes.
+
+**Reason:** `gmail.modify` is a restricted scope requiring Google app verification (a months-long review process for production apps). `gmail.readonly` + `gmail.send` together cover the full use case (read inbox, send new messages, reply) without requiring verification. Verification is not feasible for a private household application.
+
+**Alternatives considered:** Applying for Google workspace verification to use `gmail.modify`. Rejected — the review process requires a privacy policy, a public-facing app, and significant review time. Not appropriate for private household software. `gmail.modify` without verification (dev-only). Rejected — works only for test users added to the OAuth consent screen; does not scale to all family members without verification.
+
+**Notes:** The scope set is defined in `lib/google/calendarTools.ts` and `lib/google/gmailTools.ts`. Archive and delete operations (which `gmail.modify` would enable) are not available; the tool set covers read, send, and label-based filtering only.
+
+---
+
+### Profile Color Mapping — EMAIL_COLOR_MAP with Hash Fallback — 2026-04-27 (approx)
+
+**Decision:** Member profile colors are assigned at first login in `app/auth/callback/route.ts`. Known members are matched by Google account email via `EMAIL_COLOR_MAP` (keyed by `MEMBER_EMAIL_*` env vars). Unknown emails get a deterministic color derived by hashing the email address.
+
+**Reason:** Each member needs a consistent color across all chat contexts for sender identification in group chats. Hardcoding colors in the source would require a code push to add a new member. Env-var-based assignment keeps the mapping configurable without a code change. The hash fallback means any unanticipated account (e.g., a guest login) gets a stable color rather than a random one.
+
+**Alternatives considered:** Admin UI for assigning colors. Rejected — adds a UI surface for a one-time setup that env vars already handle. User self-selection. Considered — deferred; the family accepted assigned colors and the feature wasn't needed.
+
+**Notes:** `color_hex` is stored on the `users` row and read from there at runtime. The hash function maps the email string to one of a fixed palette of accessible colors. The mapping is set once at account creation and not automatically re-evaluated on subsequent logins.
+
+---
+
+### Supabase Anon Key Format — @supabase/ssr Requires JWT Format — 2026-04-27 (approx)
+
+**Decision:** The `NEXT_PUBLIC_SUPABASE_ANON_KEY` must be the JWT-format key (beginning with `eyJ...`), not the newer `sb_publishable_*` format that Supabase now generates for new projects.
+
+**Reason:** `@supabase/ssr` (the server-side Supabase client used for cookie-based auth) validates that the anon key is a valid JWT when creating clients on the server. The `sb_publishable_*` format is not a JWT and causes a runtime error at client construction. New Supabase projects generate `sb_publishable_*` keys by default; the JWT-format key is available separately in the Supabase dashboard under "API keys."
+
+**Alternatives considered:** Migrating to the newer `@supabase/supabase-js` v3 client that accepts both key formats. Not yet viable — `@supabase/ssr` had not updated to support the new format at build time. Self-hosting Supabase. Rejected — operational overhead for household infrastructure.
+
+**Notes:** This is a configuration gotcha. The env var check in the admin health route (when implemented) should validate the key format. If a future Supabase client version accepts both formats, this restriction can be relaxed.
+
+---
+
+### Sidebar Realtime Updates — Set-of-Callbacks Pattern in ChatShell — 2026-04-27 (approx)
+
+**Decision:** `ChatShell.tsx` maintains a `Set<() => void>` of registered refresh callbacks. When a Supabase Realtime event fires (new message, chat update), it calls every registered callback. Individual sidebar consumers (desktop Sidebar and mobile bottom nav) register their refresh function on mount and deregister on unmount.
+
+**Reason:** The app renders two sidebar instances simultaneously: the desktop fixed sidebar and the mobile bottom navigation bar. Both need to update their unread counts when new messages arrive. A single shared subscription that called one component's `refresh` would leave the other stale. The callback-set pattern lets any number of concurrent instances subscribe to the same event without coupling them to each other.
+
+**Alternatives considered:** A shared global Zustand store or React context holding sidebar state. Considered — would work but adds state management overhead for what is a simple "trigger a refresh" signal. Prop drilling the refresh callback from a shared parent. Rejected — ChatShell doesn't directly control both sidebar instances; they're in separate layout subtrees. Each subscribing directly via Supabase Realtime. Rejected — double subscription for the same data, double API calls.
+
+**Notes:** The callback set lives in a `useRef` so registration and deregistration don't trigger re-renders of ChatShell. The Realtime subscription fires `callbacks.current.forEach(fn => fn())`, where each `fn` is the component's own state-setting refresh function.
+
+---
+
 ### Universal Tinted Bubble Style — 2026-05-12
 
 **Decision:** All human messages (own and other members') use a consistent tinted bubble style across every chat context: private, group, project, and family. Own messages align right with a right-side accent border; other members' messages align left with a left-side accent border. Bruce's responses render as plain text with no bubble.

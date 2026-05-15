@@ -172,6 +172,10 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 
 ## Decisions Log
 
+Full decisions log: `docs/decisions.md` (injected into the Bruce Dev workspace prompt automatically via `loadDecisionsLog()`). Add entries there for any significant architectural or product decision. Entries are in reverse-chronological order.
+
+Summary of key decisions recorded:
+
 **Memory architecture (2026-05-09):** Two types — private (owner_id) and shared (member_combination). Shared is scoped to sorted UUID pairs, not containers. Project isolation toggle keeps new memories inside a project. Admin has no content access — metrics only via SECURITY DEFINER function.
 
 **RLS admin overrides removed (2026-05-06, migration 016):** Stripped `is_admin()` from projects, project_members, chats, messages, files. Admin bypass retained only for household, users, invite_tokens, pending_memory.

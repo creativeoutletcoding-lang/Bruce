@@ -6,10 +6,16 @@ import {
 } from "@/lib/chat/taskProgress";
 import type { TaskProgressData, TaskStepStatus } from "@/lib/chat/taskProgress";
 
-// 24ms ≈ 42 fps — fluid enough that streamed text reads as continuous flow
-// without flooding React's reconciler. Lower than the original 40ms (25 fps)
-// to feel smoother across all three chat contexts.
-export const STREAM_FLUSH_INTERVAL_MS = 24;
+// RAF ≈ 16ms at 60 fps — the primary flush mechanism, synchronized to the
+// browser's paint cycle. The constant is kept as a fallback for non-browser
+// environments (SSR edge cases).
+export const STREAM_FLUSH_INTERVAL_MS = 16;
+
+// 60ms pause inserted before rendering content that follows a paragraph break
+// (double newline). Gives structural separation physical weight — paragraphs
+// feel considered rather than continuous. Only applies mid-stream; the final
+// render at stream end always flushes immediately.
+export const PARAGRAPH_PAUSE_MS = 60;
 
 const STATUS_RE = /\x1eSTATUS:[^\x1e]*\x1e/g;
 const TASK_PROGRESS_RE = /\x1eTASK_PROGRESS:([^\x1e]+)\x1e/g;
@@ -136,21 +142,45 @@ export async function consumeStream({
   response,
   signal,
   onTick,
-  flushIntervalMs = STREAM_FLUSH_INTERVAL_MS,
 }: ConsumeStreamOptions): Promise<ConsumeStreamResult> {
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let accumulated = "";
+  let lastRenderedLength = 0;
   let pendingFlush = false;
   let aborted = false;
+
+  // RAF handle for the 1-frame render buffer; null when no frame is queued.
+  let rafHandle: number | null = null;
+  // Timeout handle for the 60ms paragraph-breathing pause; null when no pause is pending.
+  let pauseHandle: ReturnType<typeof setTimeout> | null = null;
 
   const flush = () => {
     if (!pendingFlush) return;
     pendingFlush = false;
+    lastRenderedLength = accumulated.length;
     onTick(parseStreamFrame(accumulated));
   };
 
-  const timer = setInterval(flush, flushIntervalMs);
+  // Schedule a flush at the next animation frame, or after a 60ms paragraph
+  // pause if new content crosses a double-newline boundary.
+  //
+  // Rules:
+  // - Paragraph break detected → cancel any pending RAF, (re)set the 60ms pause
+  // - No paragraph break and nothing is scheduled → queue a RAF
+  // - No paragraph break but a pause is already running → leave it alone
+  const scheduleFlush = (hasParagraphBreak: boolean) => {
+    if (hasParagraphBreak) {
+      if (rafHandle !== null) { cancelAnimationFrame(rafHandle); rafHandle = null; }
+      if (pauseHandle !== null) clearTimeout(pauseHandle);
+      pauseHandle = setTimeout(() => {
+        pauseHandle = null;
+        rafHandle = requestAnimationFrame(() => { rafHandle = null; flush(); });
+      }, PARAGRAPH_PAUSE_MS);
+    } else if (pauseHandle === null && rafHandle === null) {
+      rafHandle = requestAnimationFrame(() => { rafHandle = null; flush(); });
+    }
+  };
 
   const onAbort = () => {
     aborted = true;
@@ -167,11 +197,16 @@ export async function consumeStream({
       if (done) break;
       accumulated += decoder.decode(value, { stream: true });
       pendingFlush = true;
+      // 1-char lookback so a \n split across chunk boundaries is still caught.
+      const windowStart = Math.max(0, lastRenderedLength - 1);
+      scheduleFlush(accumulated.slice(windowStart).includes("\n\n"));
     }
   } catch (err) {
     if (!aborted) throw err;
   } finally {
-    clearInterval(timer);
+    // Cancel any in-flight scheduled flush — the final render below is immediate.
+    if (rafHandle !== null) { cancelAnimationFrame(rafHandle); rafHandle = null; }
+    if (pauseHandle !== null) { clearTimeout(pauseHandle); pauseHandle = null; }
     if (signal) signal.removeEventListener("abort", onAbort);
     // Final synchronous flush so the caller sees the last bytes.
     onTick(parseStreamFrame(accumulated));

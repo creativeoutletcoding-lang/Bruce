@@ -196,13 +196,16 @@ export default function FamilyChatWindow({
     setError(null);
 
     const userMsgId = `tmp-user-${Date.now()}`;
+    const streamMsgId = `tmp-stream-${Date.now()}`;
     const senderInfo = memberMapRef.current[currentUserId];
 
+    // Show user message + typing dots immediately, before the fetch resolves.
+    // If Bruce won't respond (X-Bruce-Responded: false), the dots are removed below.
     setMessages((prev) => [
       ...prev,
       {
         id: userMsgId,
-        role: "user",
+        role: "user" as const,
         content: text,
         sender_id: currentUserId,
         senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
@@ -212,7 +215,15 @@ export default function FamilyChatWindow({
           ? filesToSend.map((f) => ({ url: f.previewUrl ?? "", type: f.type, filename: f.filename }))
           : undefined,
       },
+      {
+        id: streamMsgId,
+        role: "assistant" as const,
+        content: "",
+        created_at: new Date().toISOString(),
+        isStreaming: true,
+      },
     ]);
+    setIsStreaming(true);
 
     const abort = new AbortController();
     abortRef.current = abort;
@@ -237,23 +248,10 @@ export default function FamilyChatWindow({
 
       const bruceWillRespond = res.headers.get("X-Bruce-Responded") === "true";
       if (!bruceWillRespond) {
-        await loadMessages();
-        return;
+        // Remove typing dots — Bruce won't respond to this message.
+        setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
+        return; // finally handles setIsStreaming(false) + loadMessages
       }
-
-      const streamMsgId = `tmp-stream-${Date.now()}`;
-      setIsStreaming(true);
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: streamMsgId,
-          role: "assistant",
-          content: "",
-          created_at: new Date().toISOString(),
-          isStreaming: true,
-        },
-      ]);
 
       const { accumulated, aborted } = await consumeStream({
         response: res,
