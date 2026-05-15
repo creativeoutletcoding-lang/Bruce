@@ -159,7 +159,7 @@ async function executeOneTool(
   if (DOCUMENT_TOOL_NAMES.has(name)) {
     return executeDocumentTool(name, input, userId);
   }
-  return executeCalendarTool(name, input);
+  return executeCalendarTool(name, input, userId);
 }
 
 // ── Stream runner ────────────────────────────────────────────────────────────

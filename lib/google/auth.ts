@@ -32,6 +32,14 @@ export async function getValidToken(userId: string): Promise<string> {
     return user.google_access_token;
   }
 
+  // Diagnostic log before the refresh attempt — confirms which token is in use.
+  console.log("[auth:token-refresh] attempt", {
+    userId,
+    refreshTokenInDb: !!user.google_refresh_token,
+    refreshTokenPrefix: user.google_refresh_token?.slice(0, 20) ?? "(missing)",
+    clientIdPrefix: process.env.GOOGLE_CLIENT_ID?.slice(0, 20) ?? "(missing)",
+  });
+
   const res = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -44,6 +52,14 @@ export async function getValidToken(userId: string): Promise<string> {
   });
 
   if (!res.ok) {
+    const rawBody = await res.text();
+    let errDetail: unknown = rawBody;
+    try { errDetail = JSON.parse(rawBody); } catch { /* keep raw text */ }
+    console.error("[auth:token-refresh] FAILED", {
+      userId,
+      status: res.status,
+      body: errDetail,
+    });
     throw new Error(
       "Google authorization expired. Please sign out and sign back in."
     );

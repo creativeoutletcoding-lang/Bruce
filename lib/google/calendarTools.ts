@@ -155,14 +155,15 @@ You have access to the Johnson family calendar (johnson2016family@gmail.com) via
 // ── Tool executor ─────────────────────────────────────────────────────────────
 
 export async function executeCalendarTool(
-  name:  string,
-  input: Record<string, unknown>
+  name:   string,
+  input:  Record<string, unknown>,
+  userId: string
 ): Promise<string> {
   switch (name) {
     case "get_upcoming_events": {
       const maxResults = typeof input.max_results === "number" ? input.max_results : 10;
       const daysAhead  = typeof input.days_ahead  === "number" ? input.days_ahead  : 30;
-      const events = await getUpcomingEvents(maxResults, daysAhead);
+      const events = await getUpcomingEvents(maxResults, daysAhead, userId);
       if (events.length === 0) return `No events in the next ${daysAhead} days.`;
       return JSON.stringify(events, null, 2);
     }
@@ -175,7 +176,7 @@ export async function executeCalendarTool(
         duration_minutes: input.duration_minutes as number | undefined,
         description:      input.description      as string | undefined,
         guest_names:      input.guest_names      as string[] | undefined,
-      });
+      }, userId);
       return JSON.stringify(event, null, 2);
     }
 
@@ -188,14 +189,15 @@ export async function executeCalendarTool(
         duration_minutes: input.duration_minutes as number | undefined,
         description:      input.description      as string | undefined,
         guest_names:      input.guest_names      as string[] | undefined,
-      });
+      }, userId);
       return JSON.stringify(event, null, 2);
     }
 
     case "delete_event": {
       await deleteCalendarEvent(
         input.event_id    as string,
-        input.calendar_id as string
+        input.calendar_id as string,
+        userId
       );
       return "Event deleted successfully.";
     }

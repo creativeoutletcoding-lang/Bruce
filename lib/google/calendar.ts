@@ -28,8 +28,21 @@ const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 // Token management
 // ============================================================
 
-async function getCalendarAccessToken(): Promise<string> {
+async function getCalendarAccessToken(callerUserId?: string): Promise<string> {
   const refreshToken = process.env.FAMILY_CALENDAR_REFRESH_TOKEN;
+
+  // ── Diagnostic log ────────────────────────────────────────────────────────
+  // NOTE: calendar uses a SHARED service-account token (env var), not a per-
+  // member DB token. "DB refresh token" is not applicable here; token source
+  // is always FAMILY_CALENDAR_REFRESH_TOKEN.
+  console.log("[calendar:token-refresh] attempt", {
+    callerUserId: callerUserId ?? "(not provided)",
+    tokenEnvSet: !!refreshToken,
+    tokenPrefix: refreshToken ? refreshToken.slice(0, 20) : "(missing)",
+    clientIdPrefix: process.env.GOOGLE_CLIENT_ID?.slice(0, 20) ?? "(missing)",
+  });
+  // ─────────────────────────────────────────────────────────────────────────
+
   if (!refreshToken) {
     throw new Error("FAMILY_CALENDAR_REFRESH_TOKEN is not configured.");
   }
@@ -46,8 +59,20 @@ async function getCalendarAccessToken(): Promise<string> {
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Calendar token refresh failed: ${res.status} — ${err}`);
+    // Parse full error body — Google includes an error_description field that
+    // is far more diagnostic than the HTTP status code alone.
+    const rawBody = await res.text();
+    let errDetail: unknown = rawBody;
+    try { errDetail = JSON.parse(rawBody); } catch { /* keep raw text */ }
+    console.error("[calendar:token-refresh] FAILED", {
+      status: res.status,
+      body: errDetail,
+    });
+    const description =
+      typeof errDetail === "object" && errDetail !== null
+        ? (errDetail as Record<string, unknown>).error_description ?? (errDetail as Record<string, unknown>).error
+        : rawBody;
+    throw new Error(`Calendar token refresh failed (${res.status}): ${description}`);
   }
 
   const data = (await res.json()) as { access_token: string };
@@ -102,9 +127,10 @@ async function fetchCalendarEvents(
 
 export async function getUpcomingEvents(
   maxResults = 10,
-  daysAhead  = 30
+  daysAhead  = 30,
+  callerUserId?: string
 ): Promise<CalendarEvent[]> {
-  const token = await getCalendarAccessToken();
+  const token = await getCalendarAccessToken(callerUserId);
 
   // Query all per-person sub-calendars plus the primary/family calendar.
   const primary = process.env.FAMILY_CALENDAR_ID ?? "primary";
@@ -151,8 +177,8 @@ export interface CreateEventParams {
   guest_names?:     string[];         // household member names resolved to sub-calendar IDs
 }
 
-export async function createCalendarEvent(params: CreateEventParams): Promise<CalendarEvent> {
-  const token = await getCalendarAccessToken();
+export async function createCalendarEvent(params: CreateEventParams, callerUserId?: string): Promise<CalendarEvent> {
+  const token = await getCalendarAccessToken(callerUserId);
 
   const memberIds = params.guest_names?.length
     ? resolveCalendarIds(params.guest_names)
@@ -221,9 +247,10 @@ export interface UpdateEventParams {
 
 export async function updateCalendarEvent(
   eventId: string,
-  params:  UpdateEventParams
+  params:  UpdateEventParams,
+  callerUserId?: string
 ): Promise<CalendarEvent> {
-  const token = await getCalendarAccessToken();
+  const token = await getCalendarAccessToken(callerUserId);
   const cid   = params.calendar_id;
 
   // Fetch current event so we can compute defaults for unchanged fields.
@@ -298,9 +325,10 @@ export async function updateCalendarEvent(
 
 export async function deleteCalendarEvent(
   eventId: string,
-  calId:   string
+  calId:   string,
+  callerUserId?: string
 ): Promise<void> {
-  const token = await getCalendarAccessToken();
+  const token = await getCalendarAccessToken(callerUserId);
 
   const res = await fetch(
     `${CALENDAR_API}/calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(eventId)}`,
