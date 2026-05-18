@@ -4,11 +4,4 @@
     "app/api/chat/route.ts": { "maxDuration": 60 },
     "app/api/projects/[id]/chat/route.ts": { "maxDuration": 60 },
     "app/api/images/generate/route.ts": { "maxDuration": 120 }
-  },
-  "crons": [
-    {
-      "path": "/api/cron/reminders",
-      "schedule": "* * * * *"
-    }
-  ]
-}
+  }}
