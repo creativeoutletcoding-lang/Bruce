@@ -190,7 +190,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   // are both keys; project ids resolve to the latest last_message_at across
   // their chats. See computeUnread() below.
   const [lastReadByChat, setLastReadByChat] = useState<Record<string, string | null>>({});
-  const [projectUnread, setProjectUnread] = useState<Record<string, boolean>>({});
 
   // ── new project modal ────────────────────────────────────────────────────
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
@@ -241,14 +240,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [isRenameSaving, setIsRenameSaving] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  // ── project last-viewed tracking (for activity dots) ────────────────────
-  const [projectLastViewed, setProjectLastViewed] = useState<Record<string, string>>(() => {
-    if (typeof window === "undefined") return {};
-    try {
-      return JSON.parse(localStorage.getItem("bruce_project_last_viewed") ?? "{}") as Record<string, string>;
-    } catch { return {}; }
-  });
-
   // ── pull-to-refresh ──────────────────────────────────────────────────────
   const supabase = createClient();
   const contentRef = useRef<HTMLDivElement>(null);
@@ -286,17 +277,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const activeThreadId = pathname.startsWith("/family/threads/")
     ? pathname.split("/family/threads/")[1]?.split("/")[0]
     : null;
-
-  // Mark a project as viewed when the user navigates into it
-  useEffect(() => {
-    if (!activeProjectId) return;
-    const now = new Date().toISOString();
-    setProjectLastViewed((prev) => {
-      const updated = { ...prev, [activeProjectId]: now };
-      localStorage.setItem("bruce_project_last_viewed", JSON.stringify(updated));
-      return updated;
-    });
-  }, [activeProjectId]);
 
   // ── data loaders ─────────────────────────────────────────────────────────
   const loadChats = useCallback(async () => {
@@ -358,35 +338,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       map[row.chat_id] = row.last_read_at;
     }
     setLastReadByChat(map);
-
-    // Compute project-level rollup: project shows a dot if any chat in it has
-    // a last_message_at newer than the user's last_read_at AND a sender_id
-    // that's a human ≠ this user. We approximate "human ≠ self" by excluding
-    // chats whose latest message is from Bruce (sender_id NULL) or self.
-    const { data: latestPerChat } = await supabase
-      .from("chats")
-      .select("id, project_id, last_message_at, messages(sender_id, role, created_at)")
-      .not("project_id", "is", null)
-      .order("last_message_at", { ascending: false });
-
-    const projUnread: Record<string, boolean> = {};
-    for (const row of (latestPerChat ?? []) as Array<{
-      id: string;
-      project_id: string;
-      last_message_at: string;
-      messages: Array<{ sender_id: string | null; role: string; created_at: string }>;
-    }>) {
-      const lastRead = map[row.id];
-      const sorted = [...(row.messages ?? [])].sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      const latest = sorted[0];
-      if (!latest) continue;
-      const senderIsHumanOther = latest.sender_id !== null && latest.sender_id !== user.id;
-      const isNewer = !lastRead || new Date(row.last_message_at).getTime() > new Date(lastRead).getTime();
-      if (senderIsHumanOther && isNewer) projUnread[row.project_id] = true;
-    }
-    setProjectUnread(projUnread);
   }, [user.id]);
 
   const loadFamilyThreads = useCallback(async () => {
@@ -1172,10 +1123,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               ) : (
                 projects.map((project) => {
                   const isActive = project.id === activeProjectId;
-                  const showUnreadDot = !isActive && (
-                    projectUnread[project.id] ||
-                    (project.last_chat_date != null && (!projectLastViewed[project.id] || project.last_chat_date > projectLastViewed[project.id]))
-                  );
                   return (
                     <button
                       key={project.id}
@@ -1183,7 +1130,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                       style={{ ...styles.projectItem, ...(isActive ? styles.projectItemActive : {}) }}
                     >
                       <span style={styles.projectItemName}>{project.name}</span>
-                      {showUnreadDot && <GreenUnreadDot />}
                     </button>
                   );
                 })
