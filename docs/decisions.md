@@ -6,6 +6,12 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### PWA icons — adaptive icon set with maskable support — 2026-05-18
+
+**Decision:** Replaced the single combined `"any maskable"` icon entry in `manifest.json` with four explicit entries — separate `any` and `maskable` variants at both 192×192 and 512×512 — following the PWA adaptive icon spec. The 192px files were generated from the 512px sources using `sips`. Source files: `bruce-icon-512.png` (any), `bruce-icon-maskable-512.png` (maskable), `bruce-icon-any-512.png` (any, alternate). Removed old `/icons/icon-*.png` references from the manifest. `app/layout.tsx` already references `/apple-touch-icon.png` via `metadata.icons.apple` — no change needed.
+
+---
+
 ### iOS PWA notification permission banner — 2026-05-18
 
 **Decision:** On iOS PWA, `Notification.requestPermission()` requires a user gesture — calling it on mount from a `useEffect` silently fails and the iOS permission dialog never appears. Fixed by splitting the FCM registration flow in `ChatShell.tsx`: on mount, check `Notification.permission` rather than immediately calling `requestAndGetToken()`. If already "granted", refresh the token silently as before. If "default" and the user hasn't been prompted yet (`notifications_prompted` localStorage flag), show a one-time banner reading "Enable notifications to get reminders from Bruce." with an Enable button and a dismiss X. The Enable button calls `requestAndGetToken()` from within the click handler (a user gesture), satisfying iOS's requirement. On grant, the FCM token is saved to Supabase via `POST /api/notifications/register` and logged to the console for verification. Dismissing or enabling both set `localStorage.notifications_prompted = "true"` so the banner never reappears. The banner renders at the top of `<main>` (before page children) using design tokens — no Tailwind.
