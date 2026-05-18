@@ -6,6 +6,12 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### PWA icon cleanup — final 4-entry manifest + remove legacy files — 2026-05-18
+
+**Decision:** Finalized the manifest icons array to exactly four entries: `bruce-icon-192.png` (any 192), `bruce-icon-512.png` (any 512), `bruce-icon-maskable-192.png` (maskable 192), `bruce-icon-maskable-512.png` (maskable 512). Removed all unreferenced legacy icon files: `bruce-icon-any-192.png`, `bruce-icon-any-512.png`, `icon-192.png`, `icon-512.png`, and the entire `public/icons/` directory (`icon-120.png`, `icon-192.png`, `icon-512.png`). Removed the `icons` exclusion from the middleware matcher since the directory no longer exists. `app/layout.tsx` already uses `metadata.icons.apple: "/apple-touch-icon.png"` — no change needed.
+
+---
+
 ### PWA icons — adaptive icon set with maskable support — 2026-05-18
 
 **Decision:** Replaced the single combined `"any maskable"` icon entry in `manifest.json` with four explicit entries — separate `any` and `maskable` variants at both 192×192 and 512×512 — following the PWA adaptive icon spec. The 192px files were generated from the 512px sources using `sips`. Source files: `bruce-icon-512.png` (any), `bruce-icon-maskable-512.png` (maskable), `bruce-icon-any-512.png` (any, alternate). Removed old `/icons/icon-*.png` references from the manifest. `app/layout.tsx` already references `/apple-touch-icon.png` via `metadata.icons.apple` — no change needed.
