@@ -6,6 +6,14 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Image tool guard + app icon replacement — 2026-05-18
+
+**Decision 1 — Image tool over-firing:** `IMAGE_SYSTEM_BLOCK` in `lib/anthropic/index.ts` was too loose — "anything visual" and the implicit "create" trigger caused Bruce to fire image generation for text requests like "create a game." Tightened the instruction to require the request to be unambiguously about a visual output (image, illustration, picture, photo, drawing, artwork). Added explicit exclusions for games, quizzes, plans, documents, lists, and stories. Added a note that "create" or "make" alone does not trigger image generation.
+
+**Decision 2 — App icon:** Replaced all PWA and iOS icon sizes with resized versions of `public/bruce-logo.png`. Files updated: `public/icons/icon-512.png`, `public/icons/icon-192.png`, `public/icons/icon-120.png`, `public/apple-touch-icon.png`. `manifest.json` filenames and `app/layout.tsx` references were already pointing to these paths — no JSON changes needed. Source file `public/bruce-logo.png` (814×841) is the new canonical logo.
+
+---
+
 ### Reminder FCM title + deep link + TASK_PROGRESS flash fix — 2026-05-18
 
 **Decision 1 — Reminder FCM improvements:** Title changed to "Bruce 🔔". Added `chat_id UUID` to the `reminders` table (migration 028, `ON DELETE SET NULL`). `executeRemindersTool` now receives `chatId` threaded from `persist.chatId` in `streamHandler.ts` and stores it on `create`. The cron route selects `chat_id` and builds a path-based URL (`/chat/[id]` or `/`). The FCM `notificationclick` handler in the service worker updated to use `self.location.origin + url` so path-based deep links work correctly.

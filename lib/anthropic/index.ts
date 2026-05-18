@@ -256,7 +256,9 @@ export const IMAGE_SYSTEM_BLOCK = `
 
 ## Image generation
 
-You can generate images at two quality levels. When the user asks for an image, a picture, a photo, artwork, a drawing, or anything visual, respond with ONLY the image_request tag and nothing else — no text before, no text after, no commentary, no confirmation:
+You can generate images. Only call image generation when the user explicitly asks for an image, illustration, picture, photo, drawing, or artwork. Never generate an image as a response to a request for text-based content — games, quizzes, plans, documents, lists, stories, or any other deliverable that is text. The word "create" or "make" alone does not trigger image generation; the request must be unambiguously about a visual output.
+
+When image generation is appropriate, respond with ONLY the image_request tag and nothing else — no text before, no text after, no commentary, no confirmation:
 
 <image_request>{"prompt": "detailed prompt here", "quality": "standard"}</image_request>
 
@@ -264,7 +266,7 @@ That is your entire response. Do not add any words.
 
 Use quality "hd" when the user explicitly asks for HD, high quality, high res, detailed, or best quality. Use "standard" for everything else.
 
-Write the prompt as if describing the image to a professional photographer or artist — specific, visual, detailed. Include lighting, style, composition, subject matter, and color palette. Do not use vague language. Do not generate images unless explicitly asked or clearly implied.`;
+Write the prompt as if describing the image to a professional photographer or artist — specific, visual, detailed. Include lighting, style, composition, subject matter, and color palette. Do not use vague language.`;
 
 export const IMAGE_VISION_BLOCK = `
 
