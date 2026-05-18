@@ -6,6 +6,12 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Reminders Cron — Exclude /api/cron from Auth Middleware — 2026-05-18
+
+**Decision:** Added `/api/cron` to the `isPublic` bypass list in `middleware.ts`. Without this, the middleware redirected unauthenticated cron requests to `/login` before the `CRON_SECRET` check in the route could run. The route's own `Authorization: Bearer` check is sufficient — no session cookie is needed or appropriate for a machine caller.
+
+---
+
 ### Reminders Cron — Switch to Vercel Native Cron — 2026-05-18
 
 **Decision:** Replaced the DigitalOcean/x-cron-secret cron trigger with Vercel's native cron job system. `vercel.json` now includes a `crons` block pointing `/api/cron/reminders` at `* * * * *`. The route method changed from POST to GET (Vercel cron sends GET requests) and auth changed from the `x-cron-secret` custom header to `Authorization: Bearer <CRON_SECRET>`, which Vercel injects automatically on production invocations. `CRON_SECRET` env var is unchanged. The cron logic (find due reminders, fire FCM, set notified_at) is untouched.

@@ -42,7 +42,9 @@ export async function middleware(request: NextRequest) {
     // Invite token validation — new users have no session when they hit /join
     pathname.startsWith("/api/admin/invites/") ||
     // Calendar reauth callback — Google redirects here without a session cookie
-    pathname === "/api/admin/calendar-reauth/callback";
+    pathname === "/api/admin/calendar-reauth/callback" ||
+    // Cron jobs — authenticated by CRON_SECRET header inside the route, not session
+    pathname.startsWith("/api/cron");
 
   if (!user && !isPublic) {
     return NextResponse.redirect(new URL("/login", request.url));
