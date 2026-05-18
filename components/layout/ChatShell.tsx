@@ -88,9 +88,15 @@ export default function ChatShell({ user, children }: ChatShellProps) {
     }
   }, []);
 
-  // On app open: clear badge immediately and mark all notifications as read.
+  // On app open: clear badge, close lingering SW notifications, mark all read.
+  // Closing SW notifications is required on iOS — clearAppBadge() alone does not
+  // clear the OS-level badge if there are still unread notifications in the tray.
   useEffect(() => {
     if ("clearAppBadge" in navigator) navigator.clearAppBadge().catch(() => {});
+    navigator.serviceWorker?.ready
+      .then((reg) => reg.getNotifications())
+      .then((notifs) => notifs.forEach((n) => n.close()))
+      .catch(() => {});
     fetch("/api/notifications/mark-read", { method: "POST" }).catch(() => {});
   }, []);
 

@@ -49,18 +49,29 @@ messaging.onBackgroundMessage(async (payload) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = event.notification.data?.url || "/";
+
   event.waitUntil(
-    clients.matchAll({ type: "window" }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url.includes(self.location.origin) && "focus" in client) {
-          client.focus();
-          client.navigate(self.location.origin + url);
-          return;
+    Promise.all([
+      // Close all lingering notifications and clear the badge so iOS sees zero.
+      self.registration.getNotifications().then((notifs) => {
+        notifs.forEach((n) => n.close());
+      }),
+      "setAppBadge" in self.navigator
+        ? self.navigator.setAppBadge(0)
+        : Promise.resolve(),
+      // Navigate to the deep-link URL.
+      clients.matchAll({ type: "window" }).then((clientList) => {
+        for (const client of clientList) {
+          if (client.url.includes(self.location.origin) && "focus" in client) {
+            client.focus();
+            client.navigate(self.location.origin + url);
+            return;
+          }
         }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow(self.location.origin + url);
-      }
-    })
+        if (clients.openWindow) {
+          return clients.openWindow(self.location.origin + url);
+        }
+      }),
+    ])
   );
 });
