@@ -33,6 +33,11 @@ import {
 } from "@/lib/documents/documentTools";
 import { IMAGE_VISION_BLOCK, IMAGE_SYSTEM_BLOCK, TASK_PROGRESS_SYSTEM_BLOCK } from "@/lib/anthropic";
 import { type ImageQuality } from "@/lib/images/generate";
+import {
+  REMINDERS_TOOLS,
+  REMINDERS_SYSTEM_BLOCK,
+  executeRemindersTool,
+} from "@/lib/remindersTools";
 
 // ── Tool sets ────────────────────────────────────────────────────────────────
 // Standalone + project chats get the full tool set including image generation.
@@ -42,6 +47,7 @@ import { type ImageQuality } from "@/lib/images/generate";
 export const TOOLS_FULL = [
   ...CALENDAR_TOOLS,
   ...GMAIL_TOOLS,
+  ...REMINDERS_TOOLS,
   SEARCH_TOOL,
   BROWSE_TOOL,
   ...DOCUMENT_TOOLS,
@@ -51,6 +57,7 @@ export function buildToolSystemBlocks(opts: { includeImageGen: boolean }): strin
   return (
     CALENDAR_SYSTEM_BLOCK +
     GMAIL_SYSTEM_BLOCK +
+    REMINDERS_SYSTEM_BLOCK +
     (opts.includeImageGen ? IMAGE_SYSTEM_BLOCK : "") +
     IMAGE_VISION_BLOCK +
     SEARCH_SYSTEM_BLOCK +
@@ -127,6 +134,7 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   list_emails: "List emails",
   archive_email: "Archive email",
   delete_email: "Delete email",
+  manage_reminders: "Manage reminders",
 };
 
 function extractStepDetail(toolName: string, result: string): string | undefined {
@@ -154,6 +162,9 @@ async function executeOneTool(
 ): Promise<string> {
   if (name === "web_search" || name === "browse_url") {
     return executeSearchTool(name, input);
+  }
+  if (name === "manage_reminders") {
+    return executeRemindersTool(input, userId);
   }
   if (GMAIL_TOOL_NAMES.has(name)) {
     return executeGmailTool(name, input, userId);

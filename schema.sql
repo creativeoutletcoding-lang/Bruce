@@ -912,6 +912,36 @@ CREATE POLICY "system_config_admin_read"
 
 
 -- ============================================================
+-- REMINDERS
+-- Personal reminders managed via the manage_reminders tool.
+-- notified_at is set by the cron job after FCM fires.
+-- Snooze resets notified_at and updates remind_at.
+-- ============================================================
+
+CREATE TABLE reminders (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  content      TEXT        NOT NULL,
+  remind_at    TIMESTAMPTZ NOT NULL,
+  completed_at TIMESTAMPTZ,
+  notified_at  TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_reminders_user_pending
+  ON reminders (user_id, remind_at)
+  WHERE completed_at IS NULL;
+
+ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "users_manage_own_reminders"
+  ON reminders FOR ALL
+  TO authenticated
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
+
+-- ============================================================
 -- SERVICE ROLE NOTE
 -- The invite claim flow and background memory jobs run as service
 -- role and bypass RLS. This is intentional. Service role key

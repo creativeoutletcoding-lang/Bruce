@@ -37,6 +37,8 @@ export interface SystemPromptContext {
   memoryBlock: string;
   /** Per-route location sentence appended after the chat-context block. */
   locationContext?: string;
+  /** Upcoming reminders block injected for passive awareness. Pre-formatted by the route. */
+  remindersContext?: string;
   /** When true, IMAGE_SYSTEM_BLOCK is included in tool blocks. Ignored in dev mode. */
   includeImageGen?: boolean;
   /** Project metadata. Required when mode === "project". */
@@ -159,6 +161,10 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
 
   if (ctx.locationContext) {
     prompt += `\n\n${ctx.locationContext}`;
+  }
+
+  if (ctx.remindersContext) {
+    prompt += `\n\n${ctx.remindersContext}`;
   }
 
   prompt += buildToolSystemBlocks({ includeImageGen: !!ctx.includeImageGen });

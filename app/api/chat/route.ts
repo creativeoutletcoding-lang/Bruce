@@ -108,16 +108,45 @@ export async function POST(request: NextRequest) {
     ? `${userName}'s current location right now is ${currentLocation}.`
     : `${userName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;
 
+  const adminSupabase = createServiceRoleClient();
+
+  // Load pending reminders for passive awareness. Show overdue + next 48 hours.
+  const remindersCutoff = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+  const { data: pendingReminders } = await adminSupabase
+    .from("reminders")
+    .select("content, remind_at")
+    .eq("user_id", user.id)
+    .is("completed_at", null)
+    .lte("remind_at", remindersCutoff)
+    .order("remind_at", { ascending: true })
+    .limit(10);
+
+  let remindersContext: string | undefined;
+  if (pendingReminders && pendingReminders.length > 0) {
+    const lines = (pendingReminders as { content: string; remind_at: string }[])
+      .map((r) => {
+        const formatted = new Date(r.remind_at).toLocaleString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+        return `- ${r.content} — ${formatted}`;
+      })
+      .join("\n");
+    remindersContext = `## ${userName}'s upcoming reminders\n${lines}`;
+  }
+
   const systemPrompt = buildSystemPrompt({
     mode: "standalone",
     userName,
     userTimestamp,
     memoryBlock,
     locationContext,
+    remindersContext,
     includeImageGen: true,
   });
-
-  const adminSupabase = createServiceRoleClient();
   let currentChatId = chatId;
   let chatTitle: string | undefined;
   const { displayMessage, pastedAttachments } = parsePastedAttachments(message);

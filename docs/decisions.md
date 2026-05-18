@@ -6,6 +6,18 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Reminders — manage_reminders Tool + Situational Context + Cron FCM — 2026-05-17
+
+**Decision:** Added a personal reminders system. Bruce manages reminders via a single `manage_reminders` tool (actions: create, list, complete, snooze). Migration 027 adds a `reminders` table with `user_id`, `content`, `remind_at`, `completed_at`, and `notified_at`. Upcoming reminders (overdue + next 48 hours, max 10) are loaded at request time in `app/api/chat/route.ts` and injected into the system prompt as a `remindersContext` block, giving Bruce passive awareness. A protected cron endpoint at `app/api/cron/reminders/route.ts` (authenticated via `x-cron-secret` header) finds due reminders, fires FCM via `notifyUser`, and sets `notified_at`. Snooze resets `remind_at` and clears `notified_at` so the cron re-fires at the new time.
+
+**Reason:** Jake wanted Bruce to handle "remind me to X at Y" without any extra UI or sidebar. The tool-based approach keeps everything inside the chat and aligns with how Bruce handles Calendar and Gmail. Passive awareness (reminders block in the system prompt) lets Bruce reference upcoming reminders naturally in conversation without the user having to ask.
+
+**Out of scope (for now):** No standalone reminders UI, no sidebar section, no location-based triggers, no recurring reminders. The cron runs on the existing DigitalOcean droplet via PM2 — call `POST /api/cron/reminders` with `x-cron-secret` header on a 1-minute schedule. `CRON_SECRET` must be set in Vercel environment variables and replicated on the droplet.
+
+**Implementation:** `lib/remindersTools.ts` (tool + executor), `lib/chat/streamHandler.ts` (TOOLS_FULL + dispatch), `lib/chat/buildSystemPrompt.ts` (remindersContext field), `app/api/chat/route.ts` (reminders query + context pass), `app/api/cron/reminders/route.ts` (cron handler), migration 027.
+
+---
+
 ### Group Chat Awareness — Universal Multi-Member Participation Rules — 2026-05-15
 
 **Decision:** A single `MULTI_MEMBER_PARTICIPATION_RULE` constant in `buildSystemPrompt.ts` now governs participation for every multi-member context: family group chats (`mode: "family"`) and group project chats (`mode: "project"` with more than one member). The rule explicitly prohibits: responding to incidental mentions, reacting when a member says Bruce shouldn't respond, and sending any emoji/reaction/acknowledgment token. Silence is the explicit correct default when intent is ambiguous. The previous `PARTICIPATION_RULE` (simpler, project-only) and `FAMILY_PARTICIPATION_RULE` (stricter, family-only) are replaced by this single unified constant.
