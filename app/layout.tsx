@@ -11,10 +11,6 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "Bruce",
   },
-  icons: {
-    icon: "/favicon.ico",
-    apple: "/apple-touch-icon.png",
-  },
 };
 
 export const viewport: Viewport = {
