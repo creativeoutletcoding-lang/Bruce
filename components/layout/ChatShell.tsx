@@ -46,6 +46,7 @@ export default function ChatShell({ user, children }: ChatShellProps) {
   // and the client fiber tree must match before any effects run.
   const [isMounted, setIsMounted] = useState(false);
   const [toast, setToast] = useState<ForegroundToast | null>(null);
+  const [showNotifBanner, setShowNotifBanner] = useState(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshCallbacks = useRef<Set<() => void>>(new Set());
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
@@ -60,17 +61,31 @@ export default function ChatShell({ user, children }: ChatShellProps) {
 
   useEffect(() => { setIsMounted(true); }, []);
 
-  // Request notification permission and register FCM token once on mount.
+  // FCM token registration on mount.
+  // - "granted": refresh token silently (no dialog needed, safe to call from effect).
+  // - "default": show one-time banner so iOS can trigger requestPermission from a gesture.
+  // - "denied": do nothing.
   useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+
+    const permission = Notification.permission;
     const deviceHint = getDeviceHint();
-    requestAndGetToken().then((token) => {
-      if (!token) return;
-      fetch("/api/notifications/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, deviceHint }),
-      }).catch(() => {});
-    });
+
+    if (permission === "granted") {
+      requestAndGetToken().then((token) => {
+        if (!token) return;
+        fetch("/api/notifications/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, deviceHint }),
+        }).catch(() => {});
+      });
+    } else if (
+      permission === "default" &&
+      localStorage.getItem("notifications_prompted") !== "true"
+    ) {
+      setShowNotifBanner(true);
+    }
   }, []);
 
   // On app open: clear badge immediately and mark all notifications as read.
@@ -107,6 +122,26 @@ export default function ChatShell({ user, children }: ChatShellProps) {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(null);
   }, []);
+
+  function dismissNotifBanner() {
+    setShowNotifBanner(false);
+    localStorage.setItem("notifications_prompted", "true");
+  }
+
+  async function handleEnableNotifications() {
+    setShowNotifBanner(false);
+    localStorage.setItem("notifications_prompted", "true");
+    const deviceHint = getDeviceHint();
+    const token = await requestAndGetToken();
+    if (!token) return;
+    // eslint-disable-next-line no-console
+    console.log("[FCM] Token registered:", token);
+    fetch("/api/notifications/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, deviceHint }),
+    }).catch(() => {});
+  }
 
   const handleToastClick = useCallback(() => {
     if (toast?.url) {
@@ -163,6 +198,19 @@ export default function ChatShell({ user, children }: ChatShellProps) {
 
         {/* Main content */}
         <main style={styles.main}>
+          {isMounted && showNotifBanner && (
+            <div style={styles.notifBanner}>
+              <span style={styles.notifBannerText}>
+                Enable notifications to get reminders from Bruce.
+              </span>
+              <button onClick={handleEnableNotifications} style={styles.notifBannerEnable}>
+                Enable
+              </button>
+              <button onClick={dismissNotifBanner} style={styles.notifBannerDismiss} aria-label="Dismiss">
+                ×
+              </button>
+            </div>
+          )}
           {children}
         </main>
       </div>
@@ -265,6 +313,40 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     minWidth: 0,
+  },
+  notifBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    padding: "9px 14px",
+    backgroundColor: "var(--bg-secondary)",
+    borderBottom: "1px solid var(--border)",
+    flexShrink: 0,
+  },
+  notifBannerText: {
+    flex: 1,
+    fontSize: "0.8125rem",
+    color: "var(--text-secondary)",
+  },
+  notifBannerEnable: {
+    fontSize: "0.8125rem",
+    fontWeight: 600,
+    color: "var(--accent)",
+    padding: "4px 10px",
+    borderRadius: "var(--radius-sm)",
+    border: "1px solid var(--accent)",
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+  notifBannerDismiss: {
+    flexShrink: 0,
+    background: "none",
+    border: "none",
+    color: "var(--text-tertiary)",
+    fontSize: "1.125rem",
+    lineHeight: 1,
+    cursor: "pointer",
+    padding: "0 2px",
   },
 };
 

@@ -6,6 +6,12 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### iOS PWA notification permission banner — 2026-05-18
+
+**Decision:** On iOS PWA, `Notification.requestPermission()` requires a user gesture — calling it on mount from a `useEffect` silently fails and the iOS permission dialog never appears. Fixed by splitting the FCM registration flow in `ChatShell.tsx`: on mount, check `Notification.permission` rather than immediately calling `requestAndGetToken()`. If already "granted", refresh the token silently as before. If "default" and the user hasn't been prompted yet (`notifications_prompted` localStorage flag), show a one-time banner reading "Enable notifications to get reminders from Bruce." with an Enable button and a dismiss X. The Enable button calls `requestAndGetToken()` from within the click handler (a user gesture), satisfying iOS's requirement. On grant, the FCM token is saved to Supabase via `POST /api/notifications/register` and logged to the console for verification. Dismissing or enabling both set `localStorage.notifications_prompted = "true"` so the banner never reappears. The banner renders at the top of `<main>` (before page children) using design tokens — no Tailwind.
+
+---
+
 ### Image tool guard + app icon replacement — 2026-05-18
 
 **Decision 1 — Image tool over-firing:** `IMAGE_SYSTEM_BLOCK` in `lib/anthropic/index.ts` was too loose — "anything visual" and the implicit "create" trigger caused Bruce to fire image generation for text requests like "create a game." Tightened the instruction to require the request to be unambiguously about a visual output (image, illustration, picture, photo, drawing, artwork). Added explicit exclusions for games, quizzes, plans, documents, lists, and stories. Added a note that "create" or "make" alone does not trigger image generation.
