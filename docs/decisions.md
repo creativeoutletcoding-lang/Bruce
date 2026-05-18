@@ -6,6 +6,14 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Reminders Cron — Switch to Vercel Native Cron — 2026-05-18
+
+**Decision:** Replaced the DigitalOcean/x-cron-secret cron trigger with Vercel's native cron job system. `vercel.json` now includes a `crons` block pointing `/api/cron/reminders` at `* * * * *`. The route method changed from POST to GET (Vercel cron sends GET requests) and auth changed from the `x-cron-secret` custom header to `Authorization: Bearer <CRON_SECRET>`, which Vercel injects automatically on production invocations. `CRON_SECRET` env var is unchanged. The cron logic (find due reminders, fire FCM, set notified_at) is untouched.
+
+**Reason:** The DO droplet is not set up and won't be at this stage. Vercel native cron is zero-infrastructure and visible in the dashboard under Settings > Crons, with manual trigger support for testing.
+
+---
+
 ### Reminders — manage_reminders Tool + Situational Context + Cron FCM — 2026-05-17
 
 **Decision:** Added a personal reminders system. Bruce manages reminders via a single `manage_reminders` tool (actions: create, list, complete, snooze). Migration 027 adds a `reminders` table with `user_id`, `content`, `remind_at`, `completed_at`, and `notified_at`. Upcoming reminders (overdue + next 48 hours, max 10) are loaded at request time in `app/api/chat/route.ts` and injected into the system prompt as a `remindersContext` block, giving Bruce passive awareness. A protected cron endpoint at `app/api/cron/reminders/route.ts` (authenticated via `x-cron-secret` header) finds due reminders, fires FCM via `notifyUser`, and sets `notified_at`. Snooze resets `remind_at` and clears `notified_at` so the cron re-fires at the new time.

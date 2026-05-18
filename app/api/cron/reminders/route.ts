@@ -4,18 +4,13 @@ import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
 
-// Called by the DigitalOcean droplet on a 1-minute PM2 cron schedule.
-// Secured with CRON_SECRET so only the droplet can trigger it.
-//
-// PM2 ecosystem.config.js example:
-//   { script: 'curl', args: ['-s', '-X', 'POST',
-//     '-H', 'x-cron-secret: <CRON_SECRET>',
-//     'https://heybruce.app/api/cron/reminders'],
-//     cron_restart: '* * * * *', autorestart: false }
+// Vercel native cron — fires a GET request every minute.
+// Auth: Vercel injects `Authorization: Bearer <CRON_SECRET>` on production invocations.
+// Can also be triggered manually from the Vercel dashboard (Settings > Crons).
 
-export async function POST(request: NextRequest) {
-  const secret = request.headers.get("x-cron-secret");
-  if (!secret || secret !== process.env.CRON_SECRET) {
+export async function GET(request: NextRequest) {
+  const authHeader = request.headers.get("authorization");
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new Response("Unauthorized", { status: 401 });
   }
 
