@@ -5,7 +5,7 @@ import { ACCENT_COLOR } from "@/lib/utils/constants";
 export const metadata: Metadata = {
   title: "Bruce",
   description: "Johnson Household AI",
-  manifest: "/manifest.json",
+  manifest: "/manifest.json?v=2",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
