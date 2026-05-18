@@ -158,13 +158,14 @@ function extractStepDetail(toolName: string, result: string): string | undefined
 async function executeOneTool(
   name: string,
   input: Record<string, unknown>,
-  userId: string
+  userId: string,
+  chatId: string | null,
 ): Promise<string> {
   if (name === "web_search" || name === "browse_url") {
     return executeSearchTool(name, input);
   }
   if (name === "manage_reminders") {
-    return executeRemindersTool(input, userId);
+    return executeRemindersTool(input, userId, chatId);
   }
   if (GMAIL_TOOL_NAMES.has(name)) {
     return executeGmailTool(name, input, userId);
@@ -343,7 +344,7 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
               let result: string;
               try {
                 result = await Promise.race([
-                  executeOneTool(tc.name, tc.input as Record<string, unknown>, userId),
+                  executeOneTool(tc.name, tc.input as Record<string, unknown>, userId, persist.chatId),
                   new Promise<never>((_, reject) =>
                     setTimeout(
                       () => reject(new Error(`"${tc.name}" did not complete within ${TOOL_TIMEOUT_MS / 1000}s`)),

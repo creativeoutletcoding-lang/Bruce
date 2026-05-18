@@ -65,7 +65,8 @@ interface ReminderRow {
 
 export async function executeRemindersTool(
   input: Record<string, unknown>,
-  userId: string
+  userId: string,
+  chatId: string | null = null,
 ): Promise<string> {
   const action = input.action as string;
   const adminSupabase = createServiceRoleClient();
@@ -80,7 +81,7 @@ export async function executeRemindersTool(
 
     const { data, error } = await adminSupabase
       .from("reminders")
-      .insert({ user_id: userId, content, remind_at: remindAt })
+      .insert({ user_id: userId, content, remind_at: remindAt, ...(chatId ? { chat_id: chatId } : {}) })
       .select("id, content, remind_at")
       .single();
 

@@ -360,15 +360,10 @@ export default function MessageBubble({
             }
           >
             {showDots ? (
-              <span style={{ display: "inline-flex", flexDirection: "column", gap: "4px" }}>
-                <span style={styles.dotsRow}>
-                  <span style={styles.dot1} />
-                  <span style={styles.dot2} />
-                  <span style={styles.dot3} />
-                </span>
-                {workingStatus && (
-                  <span style={styles.indicatorStatus}>{workingStatus}</span>
-                )}
+              <span style={styles.dotsRow}>
+                <span style={styles.dot1} />
+                <span style={styles.dot2} />
+                <span style={styles.dot3} />
               </span>
             ) : (
               role === "assistant" ? (

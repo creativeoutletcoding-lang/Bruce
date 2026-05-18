@@ -251,6 +251,7 @@ export default function ChatWindow({
         return {
           display: raw
             .replace(/\x1eSTATUS:[^\x1e]*\x1e/g, "")
+            .replace(/\x1eTASK_PROGRESS:[^\x1e]*\x1e/g, "")
             .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
             .replace(/<task_progress>[\s\S]*?<\/task_progress>/g, "")
             .replace(/<task_progress>[\s\S]*/g, "")
@@ -393,7 +394,7 @@ export default function ChatWindow({
         ...(incognito ? styles.incognitoFilter : {}),
       }}
     >
-      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} model={model} onModelChange={handleModelChange} />
+      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} model={model} onModelChange={handleModelChange} statusText={workingStatus} />
 
       {incognito && (
         <div style={styles.incognitoNotice}>

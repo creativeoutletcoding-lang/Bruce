@@ -6,6 +6,16 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Reminder FCM title + deep link + TASK_PROGRESS flash fix — 2026-05-18
+
+**Decision 1 — Reminder FCM improvements:** Title changed to "Bruce 🔔". Added `chat_id UUID` to the `reminders` table (migration 028, `ON DELETE SET NULL`). `executeRemindersTool` now receives `chatId` threaded from `persist.chatId` in `streamHandler.ts` and stores it on `create`. The cron route selects `chat_id` and builds a path-based URL (`/chat/[id]` or `/`). The FCM `notificationclick` handler in the service worker updated to use `self.location.origin + url` so path-based deep links work correctly.
+
+**Decision 2 — TASK_PROGRESS flash fix:** The post-stream `finalText` computation in both `ChatWindow.tsx` and `NewChatOrchestrator.tsx` was stripping STATUS sentinels but not TASK_PROGRESS sentinels (`\x1eTASK_PROGRESS:...\x1e`). This caused a brief flash of raw JSON in the bubble when the stream finished. Fixed by adding the strip regex to both post-stream `finalText` and the live `displayText` in `NewChatOrchestrator`.
+
+**Decision 3 — Status label moved below topbar:** `workingStatus` (the "Searching the web..." indicator from STATUS sentinels) was previously rendered inside the streaming bubble below the typing dots. Moved to a muted strip below the top bar — added `statusText` prop to `TopBar.tsx` which renders a small `var(--text-tertiary)` line below the bar. Removed from inside `MessageBubble`. Both `ChatWindow` and `NewChatOrchestrator` pass `workingStatus` as `statusText` to `TopBar`.
+
+---
+
 ### Reminders Cron — Exclude /api/cron from Auth Middleware — 2026-05-18
 
 **Decision:** Added `/api/cron` to the `isPublic` bypass list in `middleware.ts`. Without this, the middleware redirected unauthenticated cron requests to `/login` before the `CRON_SECRET` check in the route could run. The route's own `Authorization: Bearer` check is sufficient — no session cookie is needed or appropriate for a machine caller.

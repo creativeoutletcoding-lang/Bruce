@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
   const { data: dueReminders, error } = await adminSupabase
     .from("reminders")
-    .select("id, user_id, content, remind_at")
+    .select("id, user_id, content, remind_at, chat_id")
     .is("completed_at", null)
     .is("notified_at", null)
     .lte("remind_at", new Date().toISOString());
@@ -35,15 +35,17 @@ export async function GET(request: NextRequest) {
   let fired = 0;
 
   await Promise.all(
-    (dueReminders as { id: string; user_id: string; content: string; remind_at: string }[]).map(
+    (dueReminders as { id: string; user_id: string; content: string; remind_at: string; chat_id: string | null }[]).map(
       async (reminder) => {
         try {
+          const url = reminder.chat_id ? `/chat/${reminder.chat_id}` : "/";
+
           await notifyUser({
             userId: reminder.user_id,
-            title: "Reminder",
+            title: "Bruce 🔔",
             body: reminder.content,
             type: "reminder",
-            url: "/",
+            url,
             metadata: { reminderId: reminder.id },
           });
 

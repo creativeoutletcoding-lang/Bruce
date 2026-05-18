@@ -48,25 +48,19 @@ messaging.onBackgroundMessage(async (payload) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification.data?.url ?? "https://heybruce.app/family";
+  const url = event.notification.data?.url || "/";
   event.waitUntil(
-    clients
-      .matchAll({ type: "window", includeUncontrolled: true })
-      .then((windowClients) => {
-        // 1. A window already showing the exact target URL — just focus it.
-        for (const client of windowClients) {
-          if (client.url === url && "focus" in client) {
-            return client.focus();
-          }
+    clients.matchAll({ type: "window" }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && "focus" in client) {
+          client.focus();
+          client.navigate(self.location.origin + url);
+          return;
         }
-        // 2. App is open on a different page — navigate it to the target URL.
-        for (const client of windowClients) {
-          if ("navigate" in client) {
-            return client.navigate(url).then((c) => c && c.focus());
-          }
-        }
-        // 3. App is not open — launch it at the target URL.
-        if (clients.openWindow) return clients.openWindow(url);
-      })
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(self.location.origin + url);
+      }
+    })
   );
 });

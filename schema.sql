@@ -925,6 +925,7 @@ CREATE TABLE reminders (
   remind_at    TIMESTAMPTZ NOT NULL,
   completed_at TIMESTAMPTZ,
   notified_at  TIMESTAMPTZ,
+  chat_id      UUID REFERENCES chats(id) ON DELETE SET NULL,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

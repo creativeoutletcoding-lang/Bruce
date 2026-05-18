@@ -11,9 +11,10 @@ interface TopBarProps {
   onRefresh?: () => void | Promise<void>;
   model?: string;
   onModelChange?: (id: string) => void;
+  statusText?: string | null;
 }
 
-export default function TopBar({ title, hasMessages, onRefresh, model, onModelChange }: TopBarProps) {
+export default function TopBar({ title, hasMessages, onRefresh, model, onModelChange, statusText }: TopBarProps) {
   const router = useRouter();
   const { openDrawer, incognito, setIncognito } = useChatContext();
 
@@ -87,11 +88,16 @@ export default function TopBar({ title, hasMessages, onRefresh, model, onModelCh
   );
 
   return (
-    <ChatTopBar
-      left={leftButton}
-      title={title}
-      right={rightCluster}
-    />
+    <>
+      <ChatTopBar
+        left={leftButton}
+        title={title}
+        right={rightCluster}
+      />
+      {statusText && (
+        <div style={styles.statusStrip}>{statusText}</div>
+      )}
+    </>
   );
 }
 
@@ -136,6 +142,14 @@ function EyeSlashIcon() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  statusStrip: {
+    padding: "4px 16px",
+    fontSize: "0.75rem",
+    color: "var(--text-tertiary)",
+    borderBottom: "1px solid var(--border)",
+    backgroundColor: "var(--bg-primary)",
+    flexShrink: 0,
+  },
   iconButton: {
     display: "none", // shown via CSS in globals for mobile-only
     flexShrink: 0,

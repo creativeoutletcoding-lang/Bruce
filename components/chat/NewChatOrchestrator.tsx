@@ -111,6 +111,7 @@ export default function NewChatOrchestrator({
         const sentinelIdx = accumulated.indexOf("\x1f");
         const displayText = (sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated)
           .replace(STATUS_RE, "")
+          .replace(/\x1eTASK_PROGRESS:[^\x1e]*\x1e/g, "")
           .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
           .trimStart();
         if (displayText.trim()) setWorkingStatus(null);
@@ -128,6 +129,7 @@ export default function NewChatOrchestrator({
       const imageReqSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_REQ:"));
       const finalText = sentinelParts[0]
         .replace(STATUS_RE, "")
+        .replace(/\x1eTASK_PROGRESS:[^\x1e]*\x1e/g, "")
         .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
         .trim();
 
@@ -217,7 +219,7 @@ export default function NewChatOrchestrator({
         ...(incognito ? styles.incognitoFilter : {}),
       }}
     >
-      <TopBar title="New Chat" hasMessages={messages.length > 0} />
+      <TopBar title="New Chat" hasMessages={messages.length > 0} statusText={workingStatus} />
 
       {incognito && (
         <div style={styles.incognitoNotice}>
