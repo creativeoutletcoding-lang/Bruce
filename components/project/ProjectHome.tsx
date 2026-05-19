@@ -989,15 +989,25 @@ export default function ProjectHome({
                 )}
               </div>
             )}
+            <input
+              ref={uploadFileInputRef}
+              type="file"
+              style={{ display: "none" }}
+              onChange={handleNativeFileUpload}
+            />
             {filePickerTab === "upload" && (
               <div style={styles.tabContent}>
-                <input
-                  ref={uploadFileInputRef}
-                  type="file"
-                  style={{ display: "none" }}
-                  onChange={handleNativeFileUpload}
-                />
-                {isUploading && <p style={styles.tabEmpty}>Uploading…</p>}
+                {isUploading ? (
+                  <p style={styles.tabEmpty}>Uploading…</p>
+                ) : (
+                  <button
+                    style={styles.uploadDropZone}
+                    onClick={() => uploadFileInputRef.current?.click()}
+                  >
+                    <span style={styles.uploadDropIcon}>+</span>
+                    <span>Choose a file</span>
+                  </button>
+                )}
                 {uploadError && <p style={styles.errorText}>{uploadError}</p>}
               </div>
             )}
@@ -1492,6 +1502,26 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--accent)",
     cursor: "pointer",
     marginTop: "8px",
+  },
+  uploadDropZone: {
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    width: "100%",
+    padding: "32px 16px",
+    border: "1.5px dashed var(--border)",
+    borderRadius: "var(--radius-md)",
+    color: "var(--text-secondary)",
+    fontSize: "0.875rem",
+    cursor: "pointer",
+    backgroundColor: "var(--bg-secondary)",
+  },
+  uploadDropIcon: {
+    fontSize: "1.5rem",
+    lineHeight: 1,
+    color: "var(--text-tertiary)",
   },
   contextMenu: {
     position: "fixed" as const,
