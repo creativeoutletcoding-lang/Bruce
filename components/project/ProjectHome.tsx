@@ -114,11 +114,9 @@ export default function ProjectHome({
   const [browseError, setBrowseError] = useState<string | null>(null);
   const [attachingId, setAttachingId] = useState<string | null>(null);
   const [browsePath, setBrowsePath] = useState<Array<{ id: string; name: string }>>([]);
-  const [uploadName, setUploadName] = useState("");
-  const [uploadContent, setUploadContent] = useState("");
-  const [uploadType, setUploadType] = useState<"doc" | "sheet" | "note">("note");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const uploadFileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Members ───────────────────────────────────────────────────
   const [memberList, setMemberList] = useState<ProjectMemberDetail[]>(members);
@@ -252,15 +250,18 @@ export default function ProjectHome({
     }
   }
 
-  async function handleUploadAndAttach() {
-    if (!uploadName.trim() || isUploading) return;
+  async function handleNativeFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
     setIsUploading(true);
     setUploadError(null);
     try {
+      const formData = new FormData();
+      formData.append("file", file);
       const res = await fetch(`/api/projects/${projectId}/files/upload`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: uploadName.trim(), content: uploadContent, type: uploadType }),
+        body: formData,
       });
       if (!res.ok) {
         const data = await res.json() as { error?: string };
@@ -268,7 +269,6 @@ export default function ProjectHome({
         return;
       }
       await refreshFiles();
-      setUploadName(""); setUploadContent(""); setUploadType("note");
       setShowFilePicker(false);
     } catch {
       setUploadError("Upload failed. Check your Google Drive connection.");
@@ -919,6 +919,7 @@ export default function ProjectHome({
                   onClick={async () => {
                     setFilePickerTab(t);
                     if (t === "browse" && driveFiles.length === 0 && !isBrowseLoading) await loadDriveFiles(undefined);
+                    if (t === "upload") uploadFileInputRef.current?.click();
                   }}
                 >
                   {t === "browse" ? "Browse Drive" : "Upload new"}
@@ -990,41 +991,14 @@ export default function ProjectHome({
             )}
             {filePickerTab === "upload" && (
               <div style={styles.tabContent}>
-                <div style={styles.uploadForm}>
-                  <div style={styles.typeRow}>
-                    {(["note", "doc", "sheet"] as const).map((t) => (
-                      <button
-                        key={t}
-                        style={{ ...styles.typeOption, ...(uploadType === t ? styles.typeOptionSelected : {}) }}
-                        onClick={() => setUploadType(t)}
-                      >
-                        {t === "note" ? "📝 Note" : t === "doc" ? "📄 Doc" : "📊 Sheet"}
-                      </button>
-                    ))}
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="File name"
-                    value={uploadName}
-                    onChange={(e) => setUploadName(e.target.value)}
-                    style={styles.uploadInput}
-                  />
-                  <textarea
-                    placeholder={uploadType === "sheet" ? "CSV content" : "Content (optional)"}
-                    value={uploadContent}
-                    onChange={(e) => setUploadContent(e.target.value)}
-                    style={styles.uploadTextarea}
-                    rows={5}
-                  />
-                  {uploadError && <p style={styles.errorText}>{uploadError}</p>}
-                  <button
-                    style={{ ...styles.createButton, ...(!uploadName.trim() || isUploading ? styles.createButtonDisabled : {}) }}
-                    onClick={handleUploadAndAttach}
-                    disabled={!uploadName.trim() || isUploading}
-                  >
-                    {isUploading ? "Creating…" : "Create and attach"}
-                  </button>
-                </div>
+                <input
+                  ref={uploadFileInputRef}
+                  type="file"
+                  style={{ display: "none" }}
+                  onChange={handleNativeFileUpload}
+                />
+                {isUploading && <p style={styles.tabEmpty}>Uploading…</p>}
+                {uploadError && <p style={styles.errorText}>{uploadError}</p>}
               </div>
             )}
           </div>
@@ -1519,58 +1493,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     marginTop: "8px",
   },
-  uploadForm: { display: "flex", flexDirection: "column", gap: "12px" },
-  typeRow: { display: "flex", gap: "8px" },
-  typeOption: {
-    flex: 1,
-    padding: "8px 4px",
-    fontSize: "0.8125rem",
-    fontWeight: "500",
-    color: "var(--text-secondary)",
-    backgroundColor: "var(--bg-secondary)",
-    borderRadius: "var(--radius-md)",
-    border: "0.5px solid var(--border)",
-    cursor: "pointer",
-  },
-  typeOptionSelected: {
-    color: "var(--accent)",
-    borderColor: "var(--accent)",
-    backgroundColor: "rgba(15,110,86,0.06)",
-  },
-  uploadInput: {
-    width: "100%",
-    padding: "9px 12px",
-    fontSize: "0.875rem",
-    color: "var(--text-primary)",
-    backgroundColor: "var(--bg-secondary)",
-    border: "0.5px solid var(--border)",
-    borderRadius: "var(--radius-md)",
-    outline: "none",
-    fontFamily: "inherit",
-  },
-  uploadTextarea: {
-    width: "100%",
-    padding: "9px 12px",
-    fontSize: "0.875rem",
-    color: "var(--text-primary)",
-    backgroundColor: "var(--bg-secondary)",
-    border: "0.5px solid var(--border)",
-    borderRadius: "var(--radius-md)",
-    outline: "none",
-    fontFamily: "inherit",
-    resize: "vertical" as const,
-  },
-  createButton: {
-    width: "100%",
-    padding: "10px",
-    fontSize: "0.875rem",
-    fontWeight: "500",
-    color: "#fff",
-    backgroundColor: "var(--accent)",
-    borderRadius: "var(--radius-md)",
-    cursor: "pointer",
-  },
-  createButtonDisabled: { opacity: 0.5, cursor: "not-allowed" },
   contextMenu: {
     position: "fixed" as const,
     zIndex: 500,

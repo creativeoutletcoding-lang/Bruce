@@ -412,3 +412,46 @@ export async function uploadFile(
   const data = (await res.json()) as { id: string };
   return data.id;
 }
+
+export async function uploadRawFileToProject(
+  userId: string,
+  projectId: string,
+  fileBuffer: Buffer,
+  filename: string,
+  mimeType: string
+): Promise<string> {
+  const token = await getValidToken(userId);
+
+  const supabase = createServiceRoleClient();
+  const { data: project } = await supabase.from("projects").select("name").eq("id", projectId).single();
+  if (!project) throw new Error("Project not found");
+
+  const folderId = await ensureProjectFolder(userId, project.name as string);
+
+  const boundary = `bruce_upload_${Date.now()}`;
+  const metadata = JSON.stringify({ name: filename, mimeType, parents: [folderId] });
+
+  const headerPart = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+    "utf8"
+  );
+  const footerPart = Buffer.from(`\r\n--${boundary}--`, "utf8");
+  const body = Buffer.concat([headerPart, fileBuffer, footerPart]);
+
+  const res = await fetch(`${UPLOAD_API}/files?uploadType=multipart`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": `multipart/related; boundary=${boundary}`,
+    },
+    body,
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Drive upload failed: ${res.status} — ${err}`);
+  }
+
+  const data = (await res.json()) as { id: string };
+  return data.id;
+}
