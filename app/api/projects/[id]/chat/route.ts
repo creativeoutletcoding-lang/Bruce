@@ -330,6 +330,7 @@ export async function POST(request: NextRequest, { params }: Props) {
       adminSupabase,
       chatId: currentChatId,
     },
+    searchContext: { projectId },
     onComplete: bruceNotifRecipients.length > 0
       ? async (responseText) => {
           const body = responseText.length > 120 ? responseText.slice(0, 120) + "…" : responseText;

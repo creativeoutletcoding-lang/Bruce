@@ -271,6 +271,7 @@ export async function POST(request: NextRequest) {
       adminSupabase,
       chatId,
     },
+    searchContext: { projectId: null },
     onComplete: async (responseText) => {
       const body = responseText.length > 120 ? responseText.slice(0, 120) + "…" : responseText;
       await Promise.all(

@@ -253,6 +253,7 @@ export async function POST(request: NextRequest) {
       adminSupabase,
       chatId: currentChatId,
     },
+    searchContext: { projectId: null },
   });
 
   return new Response(stream, { headers: responseHeaders });

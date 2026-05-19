@@ -22,7 +22,11 @@ import {
   BROWSE_TOOL,
   BROWSE_SYSTEM_BLOCK,
   BROWSE_STATUS_SENTINEL,
+  HISTORY_SEARCH_TOOL,
+  HISTORY_SEARCH_SYSTEM_BLOCK,
+  HISTORY_SEARCH_STATUS_SENTINEL,
   executeSearchTool,
+  executeHistorySearchTool,
 } from "@/lib/searchTools";
 import {
   DOCUMENT_TOOLS,
@@ -50,6 +54,7 @@ export const TOOLS_FULL = [
   ...REMINDERS_TOOLS,
   SEARCH_TOOL,
   BROWSE_TOOL,
+  HISTORY_SEARCH_TOOL,
   ...DOCUMENT_TOOLS,
 ];
 
@@ -62,6 +67,7 @@ export function buildToolSystemBlocks(opts: { includeImageGen: boolean }): strin
     IMAGE_VISION_BLOCK +
     SEARCH_SYSTEM_BLOCK +
     BROWSE_SYSTEM_BLOCK +
+    HISTORY_SEARCH_SYSTEM_BLOCK +
     DOCUMENT_SYSTEM_BLOCK +
     TASK_PROGRESS_SYSTEM_BLOCK
   );
@@ -90,6 +96,8 @@ export interface StreamRunOptions {
   /** When true, intercept the <image_request> tag and emit IMAGE_REQ sentinel. */
   handleImageRequest: boolean;
   persist: PersistOptions;
+  /** Project id for scoping search_chat_history tool. Null for standalone/family. */
+  searchContext?: { projectId: string | null };
   /** Called after the assistant message is persisted, before the stream closes. */
   onComplete?: (responseText: string) => Promise<void>;
 }
@@ -122,6 +130,7 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   export_as_pdf: "Export PDF",
   web_search: "Search the web",
   browse_url: "Fetch URL",
+  search_chat_history: "Search history",
   create_event: "Create calendar event",
   update_event: "Update calendar event",
   delete_event: "Delete calendar event",
@@ -160,9 +169,13 @@ async function executeOneTool(
   input: Record<string, unknown>,
   userId: string,
   chatId: string | null,
+  projectId?: string | null,
 ): Promise<string> {
   if (name === "web_search" || name === "browse_url") {
     return executeSearchTool(name, input);
+  }
+  if (name === "search_chat_history") {
+    return executeHistorySearchTool(input, userId, chatId, projectId ?? null);
   }
   if (name === "manage_reminders") {
     return executeRemindersTool(input, userId, chatId);
@@ -186,7 +199,7 @@ async function executeOneTool(
 // reset at the start of each turn so we never double-write.
 
 export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array> {
-  const { anthropic, model, maxTokens, systemPrompt, initialMessages, tools, userId, handleImageRequest, persist, onComplete } = opts;
+  const { anthropic, model, maxTokens, systemPrompt, initialMessages, tools, userId, handleImageRequest, persist, searchContext, onComplete } = opts;
 
   // Aborted when the client disconnects (ReadableStream cancel callback below).
   const clientAbort = new AbortController();
@@ -335,6 +348,9 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
             browseUrlUsed = true;
             controller.enqueue(encoder.encode(BROWSE_STATUS_SENTINEL));
           }
+          if (toolCalls.some((tc) => tc.name === "search_chat_history")) {
+            controller.enqueue(encoder.encode(HISTORY_SEARCH_STATUS_SENTINEL));
+          }
           if (toolCalls.some((tc) => DOCUMENT_TOOL_NAMES.has(tc.name))) {
             controller.enqueue(encoder.encode(DOCUMENT_STATUS_SENTINEL));
           }
@@ -344,7 +360,7 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
               let result: string;
               try {
                 result = await Promise.race([
-                  executeOneTool(tc.name, tc.input as Record<string, unknown>, userId, persist.chatId),
+                  executeOneTool(tc.name, tc.input as Record<string, unknown>, userId, persist.chatId, searchContext?.projectId),
                   new Promise<never>((_, reject) =>
                     setTimeout(
                       () => reject(new Error(`"${tc.name}" did not complete within ${TOOL_TIMEOUT_MS / 1000}s`)),

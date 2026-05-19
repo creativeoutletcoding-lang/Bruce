@@ -63,6 +63,15 @@ interface SidebarProps {
   onNavigate: () => void;
 }
 
+interface SearchResult {
+  chat_id: string;
+  chat_title: string;
+  project_id: string | null;
+  excerpt: string;
+  matched_at: string;
+  role: "user" | "assistant";
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatRelativeTime(dateStr: string): string {
@@ -225,6 +234,29 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(new Set());
   const [showThreadBulkDeleteConfirm, setShowThreadBulkDeleteConfirm] = useState(false);
   const [isDeletingThreads, setIsDeletingThreads] = useState(false);
+
+  // ── sidebar search ───────────────────────────────────────────────────────
+  const [chatsSearchActive, setChatsSearchActive] = useState(false);
+  const [chatsSearchQuery, setChatsSearchQuery] = useState("");
+  const [chatsSearchResults, setChatsSearchResults] = useState<SearchResult[]>([]);
+  const [chatsSearchLoading, setChatsSearchLoading] = useState(false);
+
+  const [projectsSearchActive, setProjectsSearchActive] = useState(false);
+  const [projectsSearchQuery, setProjectsSearchQuery] = useState("");
+  const [projectsSearchResults, setProjectsSearchResults] = useState<SearchResult[]>([]);
+  const [projectsSearchLoading, setProjectsSearchLoading] = useState(false);
+
+  const [familySearchActive, setFamilySearchActive] = useState(false);
+  const [familySearchQuery, setFamilySearchQuery] = useState("");
+  const [familySearchResults, setFamilySearchResults] = useState<SearchResult[]>([]);
+  const [familySearchLoading, setFamilySearchLoading] = useState(false);
+
+  const chatsSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const projectsSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const familySearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chatsSearchInputRef = useRef<HTMLInputElement>(null);
+  const projectsSearchInputRef = useRef<HTMLInputElement>(null);
+  const familySearchInputRef = useRef<HTMLInputElement>(null);
 
   // ── shared context menu + single delete ──────────────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -498,6 +530,92 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   function exitChatsSelectMode() {
     setChatsSelectMode(false);
     setSelectedChatIds(new Set());
+  }
+
+  // ── search handlers ──────────────────────────────────────────────────────
+
+  function activateChatsSearch() {
+    setChatsSearchActive(true);
+    setChatsSearchQuery("");
+    setChatsSearchResults([]);
+    setChatsExpanded(true);
+    setTimeout(() => chatsSearchInputRef.current?.focus(), 40);
+  }
+  function dismissChatsSearch() {
+    if (chatsSearchTimerRef.current) clearTimeout(chatsSearchTimerRef.current);
+    setChatsSearchActive(false);
+    setChatsSearchQuery("");
+    setChatsSearchResults([]);
+  }
+  function handleChatsSearchChange(q: string) {
+    setChatsSearchQuery(q);
+    if (chatsSearchTimerRef.current) clearTimeout(chatsSearchTimerRef.current);
+    if (!q.trim()) { setChatsSearchResults([]); return; }
+    chatsSearchTimerRef.current = setTimeout(async () => {
+      setChatsSearchLoading(true);
+      try {
+        const res = await fetch(`/api/search/chats?q=${encodeURIComponent(q)}&scope=private`);
+        if (res.ok) setChatsSearchResults(await res.json() as SearchResult[]);
+      } catch { /* ignore */ } finally {
+        setChatsSearchLoading(false);
+      }
+    }, 300);
+  }
+
+  function activateProjectsSearch() {
+    setProjectsSearchActive(true);
+    setProjectsSearchQuery("");
+    setProjectsSearchResults([]);
+    setProjectsExpanded(true);
+    setTimeout(() => projectsSearchInputRef.current?.focus(), 40);
+  }
+  function dismissProjectsSearch() {
+    if (projectsSearchTimerRef.current) clearTimeout(projectsSearchTimerRef.current);
+    setProjectsSearchActive(false);
+    setProjectsSearchQuery("");
+    setProjectsSearchResults([]);
+  }
+  function handleProjectsSearchChange(q: string) {
+    setProjectsSearchQuery(q);
+    if (projectsSearchTimerRef.current) clearTimeout(projectsSearchTimerRef.current);
+    if (!q.trim()) { setProjectsSearchResults([]); return; }
+    projectsSearchTimerRef.current = setTimeout(async () => {
+      setProjectsSearchLoading(true);
+      try {
+        const res = await fetch(`/api/search/chats?q=${encodeURIComponent(q)}&scope=project`);
+        if (res.ok) setProjectsSearchResults(await res.json() as SearchResult[]);
+      } catch { /* ignore */ } finally {
+        setProjectsSearchLoading(false);
+      }
+    }, 300);
+  }
+
+  function activateFamilySearch() {
+    setFamilySearchActive(true);
+    setFamilySearchQuery("");
+    setFamilySearchResults([]);
+    setFamilyExpanded(true);
+    setTimeout(() => familySearchInputRef.current?.focus(), 40);
+  }
+  function dismissFamilySearch() {
+    if (familySearchTimerRef.current) clearTimeout(familySearchTimerRef.current);
+    setFamilySearchActive(false);
+    setFamilySearchQuery("");
+    setFamilySearchResults([]);
+  }
+  function handleFamilySearchChange(q: string) {
+    setFamilySearchQuery(q);
+    if (familySearchTimerRef.current) clearTimeout(familySearchTimerRef.current);
+    if (!q.trim()) { setFamilySearchResults([]); return; }
+    familySearchTimerRef.current = setTimeout(async () => {
+      setFamilySearchLoading(true);
+      try {
+        const res = await fetch(`/api/search/chats?q=${encodeURIComponent(q)}&scope=family`);
+        if (res.ok) setFamilySearchResults(await res.json() as SearchResult[]);
+      } catch { /* ignore */ } finally {
+        setFamilySearchLoading(false);
+      }
+    }, 300);
   }
 
   function toggleChatSelection(id: string) {
@@ -948,71 +1066,104 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           {/* ── Projects section ─────────────────────────────────────────── */}
           <div style={styles.section}>
             <div style={styles.sectionHeaderRow}>
-              <span
-                style={{ ...styles.sectionLabel, cursor: projectsSelectMode ? "default" : "pointer", flex: 1 }}
-                onClick={projectsSelectMode ? undefined : toggleProjects}
-                role={projectsSelectMode ? undefined : "button"}
-                aria-expanded={projectsSelectMode ? undefined : projectsExpanded}
-              >
-                Projects
-              </span>
-              {projectsSelectMode ? (
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  {(() => {
-                    const ownedProjectIds = projects.filter(p => p.owner_id === user.id).map(p => p.id);
-                    const ownedChatIds = allProjectChats.filter(c => c.owner_id === user.id).map(c => c.id);
-                    const allSelected = ownedProjectIds.length > 0 &&
-                      ownedProjectIds.every(id => selectedProjectIds.has(id)) &&
-                      ownedChatIds.every(id => selectedProjectChatIds.has(id));
-                    return (
-                      <button
-                        onClick={() => {
-                          if (allSelected) {
-                            setSelectedProjectIds(new Set());
-                            setSelectedProjectChatIds(new Set());
-                          } else {
-                            setSelectedProjectIds(new Set(ownedProjectIds));
-                            setSelectedProjectChatIds(new Set(ownedChatIds));
-                          }
-                        }}
-                        style={styles.sectionEditButton}
-                      >
-                        {allSelected ? "Deselect All" : "Select All"}
-                      </button>
-                    );
-                  })()}
-                  <button onClick={exitProjectsSelectMode} style={styles.sectionEditButton}>Done</button>
-                </div>
-              ) : (
-                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                  {projects.length > 0 && (
-                    <button
-                      onClick={enterProjectsSelectMode}
-                      style={styles.sectionEditButton}
-                      aria-label="Select project chats"
-                      title="Select project chats"
-                    >
-                      Edit
-                    </button>
-                  )}
-                  <svg
-                    width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
-                    onClick={toggleProjects}
-                    style={{ transform: projectsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0, cursor: "pointer" }}
-                  >
-                    <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShowNewProjectModal(true); }}
-                    style={styles.sectionAddButton}
-                    aria-label="New project"
-                    title="New project"
-                  >
+              {projectsSearchActive ? (
+                <>
+                  <input
+                    ref={projectsSearchInputRef}
+                    type="text"
+                    value={projectsSearchQuery}
+                    onChange={(e) => handleProjectsSearchChange(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Escape") dismissProjectsSearch(); }}
+                    placeholder="Search conversations…"
+                    style={styles.sectionSearchInput}
+                    aria-label="Search project conversations"
+                  />
+                  <button onClick={dismissProjectsSearch} style={styles.sectionSearchDismiss} aria-label="Clear search">
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                      <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                     </svg>
                   </button>
-                </div>
+                </>
+              ) : (
+                <>
+                  <span
+                    style={{ ...styles.sectionLabel, cursor: projectsSelectMode ? "default" : "pointer", flex: 1 }}
+                    onClick={projectsSelectMode ? undefined : toggleProjects}
+                    role={projectsSelectMode ? undefined : "button"}
+                    aria-expanded={projectsSelectMode ? undefined : projectsExpanded}
+                  >
+                    Projects
+                  </span>
+                  {projectsSelectMode ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      {(() => {
+                        const ownedProjectIds = projects.filter(p => p.owner_id === user.id).map(p => p.id);
+                        const ownedChatIds = allProjectChats.filter(c => c.owner_id === user.id).map(c => c.id);
+                        const allSelected = ownedProjectIds.length > 0 &&
+                          ownedProjectIds.every(id => selectedProjectIds.has(id)) &&
+                          ownedChatIds.every(id => selectedProjectChatIds.has(id));
+                        return (
+                          <button
+                            onClick={() => {
+                              if (allSelected) {
+                                setSelectedProjectIds(new Set());
+                                setSelectedProjectChatIds(new Set());
+                              } else {
+                                setSelectedProjectIds(new Set(ownedProjectIds));
+                                setSelectedProjectChatIds(new Set(ownedChatIds));
+                              }
+                            }}
+                            style={styles.sectionEditButton}
+                          >
+                            {allSelected ? "Deselect All" : "Select All"}
+                          </button>
+                        );
+                      })()}
+                      <button onClick={exitProjectsSelectMode} style={styles.sectionEditButton}>Done</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); activateProjectsSearch(); }}
+                        style={styles.sectionAddButton}
+                        aria-label="Search project conversations"
+                        title="Search project conversations"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                          <circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+                          <path d="M8 8l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                      {projects.length > 0 && (
+                        <button
+                          onClick={enterProjectsSelectMode}
+                          style={styles.sectionEditButton}
+                          aria-label="Select project chats"
+                          title="Select project chats"
+                        >
+                          Edit
+                        </button>
+                      )}
+                      <svg
+                        width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                        onClick={toggleProjects}
+                        style={{ transform: projectsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0, cursor: "pointer" }}
+                      >
+                        <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setShowNewProjectModal(true); }}
+                        style={styles.sectionAddButton}
+                        aria-label="New project"
+                        title="New project"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                          <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -1117,6 +1268,34 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                   );
                 })()}
               </>
+            ) : projectsSearchActive ? (
+              <div>
+                {projectsSearchLoading ? (
+                  <p style={styles.emptyState}>Searching…</p>
+                ) : projectsSearchQuery.trim() && projectsSearchResults.length === 0 ? (
+                  <p style={styles.emptyState}>No results for &ldquo;{projectsSearchQuery}&rdquo;</p>
+                ) : (
+                  projectsSearchResults.map((r, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        router.push(r.project_id ? `/projects/${r.project_id}/chat/${r.chat_id}` : `/chat/${r.chat_id}`);
+                        onNavigate();
+                        dismissProjectsSearch();
+                      }}
+                      style={styles.chatItem}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={styles.chatItemTitle}>{r.project_id ? r.chat_title : r.chat_title}</div>
+                        <div style={styles.chatItemMeta}>
+                          <span style={styles.chatItemPreview}>{r.excerpt}</span>
+                          <span style={styles.chatItemTime}>{formatRelativeTime(r.matched_at)}</span>
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
             ) : (
               projectsExpanded && (projects.length === 0 ? (
                 <p style={styles.emptyState}>No projects yet</p>
@@ -1140,42 +1319,73 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           {/* ── Chats section ────────────────────────────────────────────── */}
           <div style={styles.section}>
             <div style={styles.sectionHeaderRow}>
-              <span
-                style={{ ...styles.sectionLabel, cursor: "pointer", flex: 1 }}
-                onClick={toggleChats}
-                role="button"
-                aria-expanded={chatsExpanded}
-              >
-                Chats
-              </span>
-              {chatsSelectMode ? (
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <button
-                    onClick={() => {
-                      if (selectedChatIds.size === chats.length && chats.length > 0) {
-                        setSelectedChatIds(new Set());
-                      } else {
-                        setSelectedChatIds(new Set(chats.map(c => c.id)));
-                      }
-                    }}
-                    style={styles.sectionEditButton}
-                  >
-                    {selectedChatIds.size === chats.length && chats.length > 0 ? "Deselect All" : "Select All"}
+              {chatsSearchActive ? (
+                <>
+                  <input
+                    ref={chatsSearchInputRef}
+                    type="text"
+                    value={chatsSearchQuery}
+                    onChange={(e) => handleChatsSearchChange(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Escape") dismissChatsSearch(); }}
+                    placeholder="Search conversations…"
+                    style={styles.sectionSearchInput}
+                    aria-label="Search chats"
+                  />
+                  <button onClick={dismissChatsSearch} style={styles.sectionSearchDismiss} aria-label="Clear search">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
                   </button>
-                  <button onClick={exitChatsSelectMode} style={styles.sectionEditButton}>Done</button>
-                </div>
+                </>
               ) : (
-                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                  {chats.length > 0 && (
-                    <button
-                      onClick={enterChatsSelectMode}
-                      style={styles.sectionEditButton}
-                      aria-label="Select chats"
-                      title="Select chats"
-                    >
-                      Edit
-                    </button>
-                  )}
+                <>
+                  <span
+                    style={{ ...styles.sectionLabel, cursor: "pointer", flex: 1 }}
+                    onClick={toggleChats}
+                    role="button"
+                    aria-expanded={chatsExpanded}
+                  >
+                    Chats
+                  </span>
+                  {chatsSelectMode ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <button
+                        onClick={() => {
+                          if (selectedChatIds.size === chats.length && chats.length > 0) {
+                            setSelectedChatIds(new Set());
+                          } else {
+                            setSelectedChatIds(new Set(chats.map(c => c.id)));
+                          }
+                        }}
+                        style={styles.sectionEditButton}
+                      >
+                        {selectedChatIds.size === chats.length && chats.length > 0 ? "Deselect All" : "Select All"}
+                      </button>
+                      <button onClick={exitChatsSelectMode} style={styles.sectionEditButton}>Done</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); activateChatsSearch(); }}
+                        style={styles.sectionAddButton}
+                        aria-label="Search chats"
+                        title="Search chats"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                          <circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+                          <path d="M8 8l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                      {chats.length > 0 && (
+                        <button
+                          onClick={enterChatsSelectMode}
+                          style={styles.sectionEditButton}
+                          aria-label="Select chats"
+                          title="Select chats"
+                        >
+                          Edit
+                        </button>
+                      )}
                   <svg
                     width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
                     onClick={toggleChats}
@@ -1194,10 +1404,40 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     </svg>
                   </button>
                 </div>
+                  )}
+                </>
               )}
             </div>
 
-            {chatsExpanded && (chats.length === 0 ? (
+            {chatsSearchActive && chatsSearchQuery.trim() ? (
+              <div>
+                {chatsSearchLoading ? (
+                  <p style={styles.emptyState}>Searching…</p>
+                ) : chatsSearchResults.length === 0 ? (
+                  <p style={styles.emptyState}>No results for &ldquo;{chatsSearchQuery}&rdquo;</p>
+                ) : (
+                  chatsSearchResults.map((r, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        router.push(`/chat/${r.chat_id}`);
+                        onNavigate();
+                        dismissChatsSearch();
+                      }}
+                      style={styles.chatItem}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={styles.chatItemTitle}>{r.chat_title}</div>
+                        <div style={styles.chatItemMeta}>
+                          <span style={styles.chatItemPreview}>{r.excerpt}</span>
+                          <span style={styles.chatItemTime}>{formatRelativeTime(r.matched_at)}</span>
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : chatsExpanded && (chats.length === 0 ? (
               <p style={styles.emptyState}>No conversations yet</p>
             ) : (
               <>
@@ -1290,42 +1530,73 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           {/* ── Family section ───────────────────────────────────────────── */}
           <div style={styles.section}>
             <div style={styles.sectionHeaderRow}>
-              <span
-                style={{ ...styles.sectionLabel, cursor: threadsSelectMode ? "default" : "pointer", flex: 1 }}
-                onClick={threadsSelectMode ? undefined : toggleFamily}
-                role={threadsSelectMode ? undefined : "button"}
-                aria-expanded={threadsSelectMode ? undefined : familyExpanded}
-              >
-                Family
-              </span>
-              {threadsSelectMode ? (
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <button
-                    onClick={() => {
-                      if (selectedThreadIds.size === familyThreads.length && familyThreads.length > 0) {
-                        setSelectedThreadIds(new Set());
-                      } else {
-                        setSelectedThreadIds(new Set(familyThreads.map(t => t.id)));
-                      }
-                    }}
-                    style={styles.sectionEditButton}
-                  >
-                    {selectedThreadIds.size === familyThreads.length && familyThreads.length > 0 ? "Deselect All" : "Select All"}
+              {familySearchActive ? (
+                <>
+                  <input
+                    ref={familySearchInputRef}
+                    type="text"
+                    value={familySearchQuery}
+                    onChange={(e) => handleFamilySearchChange(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Escape") dismissFamilySearch(); }}
+                    placeholder="Search conversations…"
+                    style={styles.sectionSearchInput}
+                    aria-label="Search family conversations"
+                  />
+                  <button onClick={dismissFamilySearch} style={styles.sectionSearchDismiss} aria-label="Clear search">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
                   </button>
-                  <button onClick={exitThreadsSelectMode} style={styles.sectionEditButton}>Done</button>
-                </div>
+                </>
               ) : (
-                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                  {familyThreads.length > 0 && (
-                    <button
-                      onClick={enterThreadsSelectMode}
-                      style={styles.sectionEditButton}
-                      aria-label="Select threads"
-                      title="Select threads"
-                    >
-                      Edit
-                    </button>
-                  )}
+                <>
+                  <span
+                    style={{ ...styles.sectionLabel, cursor: threadsSelectMode ? "default" : "pointer", flex: 1 }}
+                    onClick={threadsSelectMode ? undefined : toggleFamily}
+                    role={threadsSelectMode ? undefined : "button"}
+                    aria-expanded={threadsSelectMode ? undefined : familyExpanded}
+                  >
+                    Family
+                  </span>
+                  {threadsSelectMode ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <button
+                        onClick={() => {
+                          if (selectedThreadIds.size === familyThreads.length && familyThreads.length > 0) {
+                            setSelectedThreadIds(new Set());
+                          } else {
+                            setSelectedThreadIds(new Set(familyThreads.map(t => t.id)));
+                          }
+                        }}
+                        style={styles.sectionEditButton}
+                      >
+                        {selectedThreadIds.size === familyThreads.length && familyThreads.length > 0 ? "Deselect All" : "Select All"}
+                      </button>
+                      <button onClick={exitThreadsSelectMode} style={styles.sectionEditButton}>Done</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); activateFamilySearch(); }}
+                        style={styles.sectionAddButton}
+                        aria-label="Search family conversations"
+                        title="Search family conversations"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                          <circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+                          <path d="M8 8l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                      {familyThreads.length > 0 && (
+                        <button
+                          onClick={enterThreadsSelectMode}
+                          style={styles.sectionEditButton}
+                          aria-label="Select threads"
+                          title="Select threads"
+                        >
+                          Edit
+                        </button>
+                      )}
                   <svg
                     width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
                     onClick={toggleFamily}
@@ -1344,9 +1615,39 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     </svg>
                   </button>
                 </div>
+                  )}
+                </>
               )}
             </div>
-            {familyExpanded && (
+            {familySearchActive && familySearchQuery.trim() ? (
+              <div>
+                {familySearchLoading ? (
+                  <p style={styles.emptyState}>Searching…</p>
+                ) : familySearchResults.length === 0 ? (
+                  <p style={styles.emptyState}>No results for &ldquo;{familySearchQuery}&rdquo;</p>
+                ) : (
+                  familySearchResults.map((r, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        router.push("/family");
+                        onNavigate();
+                        dismissFamilySearch();
+                      }}
+                      style={styles.chatItem}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={styles.chatItemTitle}>{r.chat_title}</div>
+                        <div style={styles.chatItemMeta}>
+                          <span style={styles.chatItemPreview}>{r.excerpt}</span>
+                          <span style={styles.chatItemTime}>{formatRelativeTime(r.matched_at)}</span>
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : familyExpanded && (
               <>
                 {/* Family group chat — only rendered when a family_group chat exists */}
                 {familyGroup && (
@@ -1927,6 +2228,26 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "2px 4px",
     borderRadius: "var(--radius-sm)",
     transition: "opacity var(--transition)",
+    flexShrink: 0,
+  },
+  sectionSearchInput: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: "0.75rem",
+    color: "var(--text-primary)",
+    background: "transparent",
+    border: "none",
+    outline: "none",
+    padding: "0",
+  } as React.CSSProperties,
+  sectionSearchDismiss: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "20px",
+    height: "20px",
+    color: "var(--text-tertiary)",
+    cursor: "pointer",
     flexShrink: 0,
   },
   emptyState: {
