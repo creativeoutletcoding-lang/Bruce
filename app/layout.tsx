@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   title: "Bruce",
   description: "Johnson Household AI",
   manifest: "/manifest.json?v=3",
+  icons: {
+    apple: [{ url: "/apple-touch-icon.png?v=3", sizes: "180x180" }],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
