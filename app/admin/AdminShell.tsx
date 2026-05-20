@@ -14,6 +14,22 @@ const NAV_ITEMS = [
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
+  // Dev workspace: full-width layout, no sidebar, thinner header
+  if (pathname.startsWith("/admin/dev")) {
+    return (
+      <div className="admin-layout">
+        <header className="admin-header admin-header--thin">
+          <Link href="/chat" className="admin-back-link">← Bruce</Link>
+          <span className="admin-header-sep">/</span>
+          <span className="admin-header-title">Admin</span>
+        </header>
+        <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+          {children}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="admin-layout">
       <header className="admin-header">

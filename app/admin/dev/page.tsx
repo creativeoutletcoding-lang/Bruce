@@ -3,40 +3,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { AdminDevMessage, AdminDevSessionWithMeta } from "@/lib/types";
 
-interface PhaseEntry {
-  number: string;
-  name: string;
-  status: "complete" | "active" | "queued";
-}
-
-interface StackEntry {
-  layer: string;
-  technology: string;
-}
-
-interface DevContext {
-  phases: PhaseEntry[];
-  stack: StackEntry[];
-}
-
-function PhaseIndicator({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    complete: "#10b981",
-    active: "#f59e0b",
-    queued: "var(--text-tertiary)",
-  };
-  const labels: Record<string, string> = {
-    complete: "✓ Complete",
-    active: "⟳ In progress",
-    queued: "○ Queued",
-  };
-  return (
-    <span style={{ fontSize: "0.75rem", color: colors[status] ?? "var(--text-tertiary)", fontWeight: 500 }}>
-      {labels[status] ?? status}
-    </span>
-  );
-}
-
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "short",
@@ -53,24 +19,25 @@ export default function DevPage() {
   const [sending, setSending] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [contextOpen, setContextOpen] = useState(false);
-  const [devContext, setDevContext] = useState<DevContext | null>(null);
-  const [contextError, setContextError] = useState(false);
-  const [contextLoading, setContextLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [newSessionModalOpen, setNewSessionModalOpen] = useState(false);
-  const [newSessionName, setNewSessionName] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [inlineNewSession, setInlineNewSession] = useState(false);
+  const [inlineNewName, setInlineNewName] = useState("");
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const newSessionInputRef = useRef<HTMLInputElement>(null);
+  const inlineNewRef = useRef<HTMLInputElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
 
-  // Load sessions list — auto-create one if none exist so the input is never stuck disabled
+  // Load sessions — auto-create one if none exist
   useEffect(() => {
     async function initSessions() {
       try {
@@ -81,7 +48,6 @@ export default function DevPage() {
           setSessions(rows);
           setActiveSessionId(rows[0].id);
         } else {
-          // No sessions yet — create the first one automatically
           const r2 = await fetch("/api/admin/dev/sessions", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -98,7 +64,7 @@ export default function DevPage() {
           }
         }
       } catch {
-        // Sessions unavailable — leave activeSessionId null; UI shows disabled state with reason
+        // Sessions unavailable — leave activeSessionId null
       } finally {
         setLoadingSessions(false);
       }
@@ -118,33 +84,22 @@ export default function DevPage() {
       .finally(() => setLoadingMessages(false));
   }, [activeSessionId]);
 
-  // Load context panel
-  useEffect(() => {
-    if (!contextOpen || devContext || contextError) return;
-    setContextLoading(true);
-    fetch("/api/admin/dev/context")
-      .then((r) => {
-        if (!r.ok) throw new Error();
-        return r.json();
-      })
-      .then((data: DevContext) => setDevContext(data))
-      .catch(() => setContextError(true))
-      .finally(() => setContextLoading(false));
-  }, [contextOpen, devContext, contextError]);
-
   // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Focus new session input when modal opens
+  // Focus inline new session input
   useEffect(() => {
-    if (newSessionModalOpen) {
-      setTimeout(() => newSessionInputRef.current?.focus(), 50);
-    }
-  }, [newSessionModalOpen]);
+    if (inlineNewSession) setTimeout(() => inlineNewRef.current?.focus(), 30);
+  }, [inlineNewSession]);
 
-  // Focus title input when editing
+  // Focus rename input in sessions list
+  useEffect(() => {
+    if (renamingSessionId) setTimeout(() => renameInputRef.current?.focus(), 30);
+  }, [renamingSessionId]);
+
+  // Focus title input when editing inline in the header
   useEffect(() => {
     if (editingTitle) {
       setTimeout(() => {
@@ -154,15 +109,28 @@ export default function DevPage() {
     }
   }, [editingTitle]);
 
+  // Close ··· menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
+
   const switchSession = useCallback((id: string) => {
     setActiveSessionId(id);
     setDrawerOpen(false);
+    setRenamingSessionId(null);
   }, []);
 
-  async function createSession() {
-    const name = newSessionName.trim();
-    setNewSessionModalOpen(false);
-    setNewSessionName("");
+  async function createSessionInline() {
+    const name = inlineNewName.trim();
+    setInlineNewSession(false);
+    setInlineNewName("");
     const r = await fetch("/api/admin/dev/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -181,6 +149,8 @@ export default function DevPage() {
 
   async function renameSession(id: string, name: string) {
     const trimmed = name.trim();
+    setRenamingSessionId(null);
+    setEditingTitle(false);
     if (!trimmed) return;
     const r = await fetch(`/api/admin/dev/sessions/${id}`, {
       method: "PATCH",
@@ -189,13 +159,11 @@ export default function DevPage() {
     });
     if (!r.ok) return;
     const updated = await r.json();
-    setSessions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, name: updated.name } : s))
-    );
-    setEditingTitle(false);
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, name: updated.name } : s)));
   }
 
   async function deleteSession(id: string) {
+    setMenuOpen(false);
     if (!confirm("Delete this session and all its messages? This cannot be undone.")) return;
     const r = await fetch(`/api/admin/dev/sessions/${id}`, { method: "DELETE" });
     if (!r.ok) return;
@@ -205,7 +173,6 @@ export default function DevPage() {
       if (remaining.length > 0) {
         setActiveSessionId(remaining[0].id);
       } else {
-        // Auto-create a new session if none remain
         const r2 = await fetch("/api/admin/dev/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -246,6 +213,10 @@ export default function DevPage() {
     setInput("");
     setSending(true);
 
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+    }
+
     try {
       const r = await fetch("/api/admin/dev/chat", {
         method: "POST",
@@ -275,7 +246,6 @@ export default function DevPage() {
         );
       }
 
-      // Update session preview in list
       setSessions((prev) =>
         prev
           .map((s) =>
@@ -309,9 +279,18 @@ export default function DevPage() {
     }
   }
 
+  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    setInput(e.target.value);
+    const el = e.target;
+    el.style.height = "auto";
+    const lineH = parseInt(getComputedStyle(el).lineHeight) || 22;
+    el.style.height = Math.min(el.scrollHeight, lineH * 6 + 16) + "px";
+  }
+
   function startTitleEdit() {
     setTitleDraft(activeSession?.name ?? "");
     setEditingTitle(true);
+    setMenuOpen(false);
   }
 
   function commitTitleEdit() {
@@ -324,45 +303,6 @@ export default function DevPage() {
 
   return (
     <>
-      {/* New session modal */}
-      {newSessionModalOpen && (
-        <div
-          className="admin-dev-modal-backdrop"
-          onClick={(e) => { if (e.target === e.currentTarget) { setNewSessionModalOpen(false); setNewSessionName(""); } }}
-        >
-          <div className="admin-dev-modal">
-            <div className="admin-dev-modal-title">New session</div>
-            <input
-              ref={newSessionInputRef}
-              className="admin-dev-modal-input"
-              placeholder={new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-              value={newSessionName}
-              onChange={(e) => setNewSessionName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") createSession();
-                if (e.key === "Escape") { setNewSessionModalOpen(false); setNewSessionName(""); }
-              }}
-            />
-            <div className="admin-dev-modal-actions">
-              <button
-                className="admin-btn-secondary"
-                style={{ fontSize: "0.8125rem", padding: "5px 12px" }}
-                onClick={() => { setNewSessionModalOpen(false); setNewSessionName(""); }}
-              >
-                Cancel
-              </button>
-              <button
-                className="admin-btn-primary"
-                style={{ fontSize: "0.8125rem", padding: "5px 14px" }}
-                onClick={createSession}
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Mobile drawer backdrop */}
       {drawerOpen && (
         <div
@@ -372,165 +312,160 @@ export default function DevPage() {
       )}
 
       <div className="admin-dev-layout">
-        {/* Left: Sessions panel */}
+        {/* ── Left: Sessions panel ── */}
         <div className={`admin-dev-sessions-panel${drawerOpen ? " admin-dev-sessions-panel--drawer-open" : ""}`}>
           <div className="admin-dev-sessions-header">
             <button
-              className="admin-btn-primary"
-              style={{ width: "100%", fontSize: "0.8125rem", padding: "6px 12px" }}
-              onClick={() => { setNewSessionModalOpen(true); setDrawerOpen(false); }}
+              className="admin-dev-new-session-btn"
+              onClick={() => { setInlineNewSession(true); setDrawerOpen(false); }}
             >
               + New session
             </button>
           </div>
 
           <div className="admin-dev-sessions-list">
+            {inlineNewSession && (
+              <div className="admin-dev-session-item admin-dev-session-item--new">
+                <input
+                  ref={inlineNewRef}
+                  className="admin-dev-inline-name-input"
+                  placeholder={new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}
+                  value={inlineNewName}
+                  onChange={(e) => setInlineNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") createSessionInline();
+                    if (e.key === "Escape") { setInlineNewSession(false); setInlineNewName(""); }
+                  }}
+                  onBlur={createSessionInline}
+                />
+              </div>
+            )}
+
             {loadingSessions ? (
-              <div style={{ padding: "16px 12px", color: "var(--text-tertiary)", fontSize: "0.8125rem" }}>
+              <div style={{ padding: "12px", color: "var(--text-tertiary)", fontSize: "0.8125rem" }}>
                 Loading…
               </div>
-            ) : sessions.length === 0 ? (
-              <div style={{ padding: "16px 12px", color: "var(--text-tertiary)", fontSize: "0.8125rem" }}>
-                {activeSessionId === null ? "Could not connect to sessions." : "No sessions yet."}
+            ) : sessions.length === 0 && !inlineNewSession ? (
+              <div style={{ padding: "12px", color: "var(--text-tertiary)", fontSize: "0.8125rem" }}>
+                No sessions yet.
               </div>
             ) : (
-              sessions.map((s) => (
-                <div
-                  key={s.id}
-                  className={`admin-dev-session-item${activeSessionId === s.id ? " admin-dev-session-item--active" : ""}`}
-                  onClick={() => switchSession(s.id)}
-                >
-                  <div className="admin-dev-session-info">
-                    <div className="admin-dev-session-name">{s.name}</div>
-                    <div className="admin-dev-session-meta">
-                      {formatDate(s.updated_at)} · {s.message_count} msg{s.message_count !== 1 ? "s" : ""}
+              sessions.map((s) => {
+                const isActive = activeSessionId === s.id;
+                const isRenaming = renamingSessionId === s.id;
+                return (
+                  <div
+                    key={s.id}
+                    className={`admin-dev-session-item${isActive ? " admin-dev-session-item--active" : ""}`}
+                    onClick={() => !isRenaming && switchSession(s.id)}
+                  >
+                    <div className="admin-dev-session-info">
+                      {isRenaming ? (
+                        <input
+                          ref={renameInputRef}
+                          className="admin-dev-inline-name-input"
+                          value={renameDraft}
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") renameSession(s.id, renameDraft);
+                            if (e.key === "Escape") setRenamingSessionId(null);
+                          }}
+                          onBlur={() => renameSession(s.id, renameDraft)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <div className="admin-dev-session-name">{s.name}</div>
+                      )}
+                      <div className="admin-dev-session-meta">
+                        {formatDate(s.updated_at)} · {s.message_count} msg{s.message_count !== 1 ? "s" : ""}
+                      </div>
+                    </div>
+                    <div className="admin-dev-session-actions" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        className="admin-dev-session-action-btn"
+                        title="Rename"
+                        onClick={() => {
+                          if (!isActive) switchSession(s.id);
+                          setRenamingSessionId(s.id);
+                          setRenameDraft(s.name);
+                        }}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="admin-dev-session-action-btn admin-dev-session-action-btn--danger"
+                        title="Delete"
+                        onClick={() => deleteSession(s.id)}
+                      >
+                        ✕
+                      </button>
                     </div>
                   </div>
-                  <div className="admin-dev-session-actions" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      className="admin-dev-session-action-btn"
-                      title="Rename"
-                      onClick={() => {
-                        setActiveSessionId(s.id);
-                        setTimeout(() => startTitleEdit(), 50);
-                        setDrawerOpen(false);
-                      }}
-                    >
-                      ✎
-                    </button>
-                    <button
-                      className="admin-dev-session-action-btn admin-dev-session-action-btn--danger"
-                      title="Delete"
-                      onClick={() => deleteSession(s.id)}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
 
-        {/* Right: Chat panel */}
+        {/* ── Right: Chat panel ── */}
         <div className="admin-dev-chat-panel">
-          {/* Header */}
-          <div className="admin-dev-header">
-            <div className="admin-dev-session-title-area">
-              {/* Mobile: sessions drawer button */}
-              <button
-                className="admin-btn-secondary"
-                style={{ fontSize: "0.8125rem", padding: "4px 10px", flexShrink: 0 }}
-                onClick={() => setDrawerOpen(true)}
-                aria-label="Sessions"
-                title="Sessions"
-              >
-                ☰
-              </button>
+          {/* Minimal title bar */}
+          <div className="admin-dev-chat-title-bar">
+            <button
+              className="admin-dev-drawer-btn"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Sessions"
+            >
+              ☰
+            </button>
 
-              {editingTitle ? (
-                <input
-                  ref={titleInputRef}
-                  className="admin-dev-session-title-input"
-                  value={titleDraft}
-                  onChange={(e) => setTitleDraft(e.target.value)}
-                  onBlur={commitTitleEdit}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitTitleEdit();
-                    if (e.key === "Escape") setEditingTitle(false);
-                  }}
-                />
-              ) : (
-                <span
-                  className="admin-dev-session-title"
-                  title="Click to rename"
-                  onClick={startTitleEdit}
-                >
-                  {activeSession?.name ?? "No session"}
-                </span>
+            {editingTitle ? (
+              <input
+                ref={titleInputRef}
+                className="admin-dev-session-title-input"
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={commitTitleEdit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitTitleEdit();
+                  if (e.key === "Escape") setEditingTitle(false);
+                }}
+              />
+            ) : (
+              <span
+                className="admin-dev-session-title"
+                title="Click to rename"
+                onClick={startTitleEdit}
+              >
+                {activeSession?.name ?? "No session"}
+              </span>
+            )}
+
+            {/* ··· menu */}
+            <div ref={menuRef} style={{ position: "relative" }}>
+              <button
+                className={`admin-dev-menu-btn${menuOpen ? " admin-dev-menu-btn--open" : ""}`}
+                onClick={() => setMenuOpen(!menuOpen)}
+                title="Session options"
+              >
+                ···
+              </button>
+              {menuOpen && (
+                <div className="admin-dev-menu-dropdown">
+                  <button className="admin-dev-menu-item" onClick={startTitleEdit}>
+                    Rename
+                  </button>
+                  <button
+                    className="admin-dev-menu-item admin-dev-menu-item--danger"
+                    onClick={() => activeSessionId && deleteSession(activeSessionId)}
+                    disabled={!activeSessionId}
+                  >
+                    Delete session
+                  </button>
+                </div>
               )}
             </div>
-
-            <div className="admin-dev-header-actions">
-              <button
-                className="admin-btn-secondary"
-                style={{ fontSize: "0.8125rem", padding: "5px 12px" }}
-                onClick={() => setContextOpen(!contextOpen)}
-              >
-                {contextOpen ? "Hide context" : "Show context"}
-              </button>
-              <button
-                className="admin-btn-secondary"
-                style={{ fontSize: "0.8125rem", padding: "5px 12px", color: "#dc2626" }}
-                onClick={() => activeSessionId && deleteSession(activeSessionId)}
-                disabled={!activeSessionId}
-                title="Delete this session"
-              >
-                Delete session
-              </button>
-            </div>
           </div>
-
-          {/* Context panel */}
-          {contextOpen && (
-            <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontFamily: "monospace", fontSize: "0.8125rem", maxHeight: "240px", overflowY: "auto" }}>
-              {contextLoading ? (
-                <div style={{ color: "var(--text-tertiary)" }}>Loading…</div>
-              ) : contextError ? (
-                <div style={{ color: "var(--text-tertiary)" }}>Could not load context from CLAUDE.md</div>
-              ) : devContext ? (
-                <>
-                  <h3 style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px" }}>
-                    Stack
-                  </h3>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <tbody>
-                      {devContext.stack.map(({ layer, technology }) => (
-                        <tr key={layer}>
-                          <td style={{ padding: "3px 12px 3px 0", color: "var(--text-tertiary)", whiteSpace: "nowrap", verticalAlign: "top" }}>{layer}</td>
-                          <td style={{ padding: "3px 0", color: "var(--text-primary)" }}>{technology}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <h3 style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "16px 0 10px" }}>
-                    Build Phases
-                  </h3>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                    {devContext.phases.map((p) => (
-                      <div key={p.number} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ color: "var(--text-primary)" }}>Phase {p.number} — {p.name}</span>
-                        <PhaseIndicator status={p.status} />
-                      </div>
-                    ))}
-                  </div>
-                  <p style={{ marginTop: "12px", color: "var(--text-tertiary)", fontSize: "0.75rem" }}>
-                    Full CLAUDE.md is loaded in the system prompt.
-                  </p>
-                </>
-              ) : null}
-            </div>
-          )}
 
           {/* Messages */}
           <div className="admin-dev-messages">
@@ -550,28 +485,12 @@ export default function DevPage() {
               messages.map((m) => (
                 <div
                   key={m.id}
-                  style={{ padding: "12px 0", borderBottom: "1px solid var(--border)" }}
+                  className={`admin-dev-message${m.role === "user" ? " admin-dev-message--user" : " admin-dev-message--bruce"}`}
                 >
-                  <div
-                    style={{
-                      fontSize: "0.75rem",
-                      fontWeight: 700,
-                      color: m.role === "user" ? "var(--accent)" : "var(--text-secondary)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.04em",
-                      marginBottom: "6px",
-                    }}
-                  >
+                  <div className="admin-dev-message-label">
                     {m.role === "user" ? "Jake" : "Bruce"}
                   </div>
-                  <div
-                    style={{
-                      fontSize: "0.9375rem",
-                      color: "var(--text-primary)",
-                      whiteSpace: "pre-wrap",
-                      lineHeight: 1.6,
-                    }}
-                  >
+                  <div className="admin-dev-message-content">
                     {m.content || (m.role === "assistant" && sending ? (
                       <span style={{ color: "var(--text-tertiary)" }}>…</span>
                     ) : "")}
@@ -582,32 +501,28 @@ export default function DevPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
+          {/* Input docked to bottom */}
           <div className="admin-dev-input-area">
-            <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "8px 12px", background: "var(--bg-primary)" }}>
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask anything technical, or paste logs / errors / configs here…"
-                className="admin-dev-input"
-                rows={4}
-                disabled={sending || !activeSessionId}
-              />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "6px" }}>
-                <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
-                  ⌘ + Enter to send
-                </span>
-                <button
-                  className="admin-btn-primary"
-                  onClick={send}
-                  disabled={sending || !input.trim() || !activeSessionId}
-                  style={{ padding: "7px 16px" }}
-                >
-                  {sending ? "Sending…" : "Send"}
-                </button>
-              </div>
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask anything technical, or paste logs / errors / configs here…"
+              className="admin-dev-input"
+              rows={2}
+              disabled={sending || !activeSessionId}
+            />
+            <div className="admin-dev-input-footer">
+              <span className="admin-dev-input-hint">⌘ + Enter to send</span>
+              <button
+                className="admin-btn-primary"
+                onClick={send}
+                disabled={sending || !input.trim() || !activeSessionId}
+                style={{ padding: "6px 14px", fontSize: "0.8125rem" }}
+              >
+                {sending ? "Sending…" : "Send"}
+              </button>
             </div>
           </div>
         </div>
