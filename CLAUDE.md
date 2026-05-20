@@ -23,18 +23,18 @@ Private household AI for the Johnson family at heybruce.app. Jake runs the build
 | Web search | Perplexity API |
 | URL fetching | Jina Reader |
 | Push notifications | Firebase Cloud Messaging |
-| Background jobs | DigitalOcean droplet + PM2 |
+| Background jobs | DigitalOcean droplet + PM2; Vercel native cron |
 | Domain | heybruce.app |
 
 ---
 
 ## Database Schema
 
-Migrations 001–018 applied. `schema.sql` is the source of truth — always update it when altering structure.
+Migrations 001–029 applied. `schema.sql` is the source of truth — always update it when altering structure.
 
 **household** — single row; `memories` (jsonb), `context` (jsonb with family member data)
 
-**users** — one per member; `id` (auth.users FK), `email`, `name`, `avatar_url`, `role` (admin|member), `status` (active|suspended|deactivated), `morning_summary_time`, `notification_sensitivity`, `notification_preferences` (jsonb), `fcm_token`, `google_access_token`, `google_refresh_token`, `google_token_expires_at`, `google_drive_root_id`, `google_drive_personal_id`, `google_drive_projects_id`, `color_hex`, `home_location`, `preferred_model`, `deactivated_at`, `purge_at`
+**users** — one per member; `id` (auth.users FK), `email`, `name`, `avatar_url`, `role` (admin|member), `status` (active|suspended|deactivated), `morning_summary_time`, `notification_sensitivity`, `notification_preferences` (jsonb), `fcm_token` (legacy — superseded by `user_fcm_tokens`), `google_access_token`, `google_refresh_token`, `google_token_expires_at`, `google_drive_root_id`, `google_drive_personal_id`, `google_drive_projects_id`, `color_hex`, `home_location`, `preferred_model`, `deactivated_at`, `purge_at`
 
 **invite_tokens** — single-use 48hr links; `token`, `created_by`, `email`, `role`, `used`, `expires_at`
 
@@ -44,9 +44,9 @@ Migrations 001–018 applied. `schema.sql` is the source of truth — always upd
 
 **chats** — `id`, `owner_id`, `project_id` (null = standalone), `type` (private|group|family|family_group|family_thread|incognito), `title`, `is_incognito`, `deleted_at` (soft-delete for threads), `last_message_at`
 
-**chat_members** — `chat_id`, `user_id`; used for group/family/thread chats only
+**chat_members** — `chat_id`, `user_id`, `last_read_at` (nullable — per-member read marker powering unread dots, migration 024); used for group/family/thread chats only
 
-**messages** — `id`, `chat_id`, `sender_id` (null = Bruce), `role` (user|assistant|system), `content`, `metadata` (jsonb), `image_url`, `attachment_type`, `attachment_filename`
+**messages** — `id`, `chat_id`, `sender_id` (null = Bruce), `role` (user|assistant|system), `content`, `metadata` (jsonb), `image_url`, `attachment_type`, `attachment_filename`, `file_ids` (jsonb — Anthropic Files API IDs for context-efficient history replay, migration 021)
 
 **files** — `project_id`, `owner_id`, `google_drive_file_id`, `name`, `mime_type`, `drive_url`
 
@@ -58,41 +58,78 @@ Migrations 001–018 applied. `schema.sql` is the source of truth — always upd
 
 **user_presence** — `user_id` + `chat_id` composite PK, `updated_at`; no user-facing RLS, service role only
 
+**admin_dev_sessions** — named sessions for the Bruce Dev admin workspace; `id`, `name`, `created_at`, `updated_at`. No RLS, service role only.
+
+**admin_dev_messages** — persistent history for the Bruce Dev workspace; `id`, `session_id` (FK → admin_dev_sessions), `role`, `content`, `created_at`. No RLS, service role only.
+
+**system_config** — runtime-mutable key/value store for config that can't live in env vars (e.g. OAuth tokens refreshed via admin UI); PK on `key TEXT`. RLS: admin read only, service-role writes.
+
+**user_fcm_tokens** — multi-device FCM token table (migration 026) replacing single `users.fcm_token`. `id`, `user_id`, `token` (UNIQUE), `device_hint`, `created_at`, `last_seen_at`. RLS enabled, service role only. `notifyUser()` fans out to all tokens; stale tokens (FCM 404) are auto-deleted.
+
+**reminders** — personal reminders managed via the `manage_reminders` tool; `id`, `user_id`, `content`, `remind_at`, `completed_at`, `notified_at`, `chat_id` (FK → chats ON DELETE SET NULL — used for FCM deep-link). RLS: users manage own rows.
+
 **RLS** is enabled on every table. `is_admin()` bypasses it for: `household`, `users`, `invite_tokens`, `pending_memory`. Admin does NOT bypass RLS on: `projects`, `project_members`, `chats`, `chat_members`, `messages`, `files`, `memory`. Memory privacy is architectural — no admin content access.
 
 ---
 
 ## Active Tools
 
-All three chat routes include the same tool set.
+All chat routes use the same tool set. Tool definitions live in `lib/`. System blocks are assembled by `buildToolSystemBlocks()` in `lib/chat/streamHandler.ts` and appended to the system prompt.
 
-**web_search** — Perplexity API. Tool defined in `lib/searchTools.ts`. Used for current events, live data, anything past knowledge cutoff. System block: `SEARCH_SYSTEM_BLOCK` in `lib/searchTools.ts`.
+**web_search** — Perplexity API. Defined in `lib/searchTools.ts`. Used for current events, live data, anything past knowledge cutoff. System block: `SEARCH_SYSTEM_BLOCK`.
 
 **browse_url** — Jina Reader. Defined in `lib/searchTools.ts`. Fetches any public URL as clean markdown. Only visit URLs the user explicitly provides. System block: `BROWSE_SYSTEM_BLOCK`.
 
-**generate_image** — Replicate flux-schnell. Not a standard tool — Bruce emits `<image_request>{"prompt":"...","quality":"standard|hd"}</image_request>` as XML in its text response. `app/api/chat/route.ts` intercepts the tag, strips it from the stream, and sends a `IMAGE_REQ:` sentinel to the client, which then calls the image endpoint. Defined via `IMAGE_SYSTEM_BLOCK` in `lib/anthropic/index.ts`. Standalone chat only.
+**search_chat_history** — Full-text search of persisted message history via `messages_content_fts_idx` GIN index (migration 029). Defined in `lib/searchTools.ts`. Scoped to the current project when in project context. System block: `HISTORY_SEARCH_SYSTEM_BLOCK`. All contexts.
+
+**generate_image** — Replicate flux-schnell. Not a standard tool — Bruce emits `<image_request>{"prompt":"...","quality":"standard|hd"}</image_request>` as XML in its text response. `app/api/chat/route.ts` intercepts the tag, strips it from the stream, and sends an `IMAGE_REQ:` sentinel to the client, which then calls the image endpoint. Defined via `IMAGE_SYSTEM_BLOCK` in `lib/anthropic/index.ts`. Standalone and single-member project chats only.
 
 **Google Calendar** — `lib/google/calendarTools.ts`. Read/create/update/delete/respond to events. System block: `CALENDAR_SYSTEM_BLOCK`.
 
 **Gmail** — `lib/google/gmailTools.ts`. Read/send/archive/delete. Three-tier confirmation rules per operation. System block: `GMAIL_SYSTEM_BLOCK`.
 
+**manage_reminders** — `lib/remindersTools.ts`. Create, list, complete, and snooze personal reminders. Low-stakes: create immediately with brief acknowledgment, no confirmation needed. System block: `REMINDERS_SYSTEM_BLOCK`. All contexts.
+
+**Document tools** — `lib/documents/documentTools.ts`. Read spreadsheets, CSVs, and Drive files; resolve paths; list directory contents. System block: `DOCUMENT_SYSTEM_BLOCK`. All contexts.
+
 **Media analysis** — Bruce reads PDFs and analyzes images. Defined via `IMAGE_VISION_BLOCK` in `lib/anthropic/index.ts`. All contexts.
+
+**Multi-step task progress** — For tasks with 3+ sequential tool calls, Bruce emits `<task_progress>` XML blocks that render as live progress cards on the client. No intermediate text or calculations during tool execution — only the task card and a brief final summary. Defined via `TASK_PROGRESS_SYSTEM_BLOCK` in `lib/anthropic/index.ts`. All contexts.
+
+**Market intelligence layer** — `MARKET_INTELLIGENCE` constant in `lib/chat/buildSystemPrompt.ts`, injected into the system prompt for all non-dev contexts. Instructs Bruce to always run a current web search before answering on AI industry, technology market, or financial topics — training data is treated as background only. Preferred sources: Bloomberg, FT, WSJ, Reuters Technology, Stratechery, The Information, SEC EDGAR. Tracks hyperscaler capex, datacenter infrastructure, energy, semiconductors, and related sectors.
+
+---
+
+## Background Infrastructure
+
+**Vercel native cron — reminders:** `GET /api/cron/reminders`, scheduled `"* * * * *"` (every minute) in `vercel.json`. Vercel injects `Authorization: Bearer <CRON_SECRET>` in production. Handler finds reminders where `remind_at <= now`, `notified_at IS NULL`, and `completed_at IS NULL`; fires FCM to all of the user's tokens in `user_fcm_tokens`; sets `notified_at = now()`. Deep-link URL uses `reminders.chat_id` when set.
+
+**DigitalOcean droplet + PM2:** long-running background jobs not suited to serverless (e.g. Google Drive sync, morning summary generation).
 
 ---
 
 ## System Prompt Builders
 
-All in `lib/anthropic/index.ts`.
+**Single entry point:** `buildSystemPrompt(ctx: SystemPromptContext)` in `lib/chat/buildSystemPrompt.ts`. Routes pass a `SystemPromptContext` and get back the full prompt string — they never assemble prompt fragments, append tool blocks, or concatenate identity/household/member layers themselves.
 
-**Shared constants:** `LAYER_IDENTITY`, `LAYER_HOUSEHOLD` — used by all three builders. `buildMemberLayer(userName, userTimestamp, memoryBlock)` adds per-session context: who is speaking, per-member tone instruction, timestamp, and memory block.
+**Shared constants** exported from `lib/anthropic/index.ts` and imported by `buildSystemPrompt.ts`:
+- `LAYER_IDENTITY` — Bruce's character and core identity
+- `LAYER_HOUSEHOLD` — Johnson family member list and context
+- `buildMemberLayer(userName, userTimestamp, memoryBlock)` — adds who is speaking, per-member tone instruction, timestamp, and assembled memory block
 
-**buildSystemPrompt(userName, memoryBlock, userTimestamp)** — standalone chat. Identity + household + member layer + formatting guidance (prefer lists, max 2-col tables, avoid wide tables).
+**Mode discriminator:** `SystemPromptContext.mode` is `"standalone" | "project" | "family" | "dev"`. Layer order per mode:
 
-**buildProjectSystemPrompt(userName, memoryBlock, userTimestamp, project)** — project chat. Adds project block (name, instructions, members, files, Drive content). Single-member: same formatting as standalone. Multi-member: adds participation rule + plain prose only (no markdown).
+- **standalone:** `LAYER_IDENTITY` → `LAYER_HOUSEHOLD` → `memberLayer` → `MARKET_INTELLIGENCE` → `chatContext` (SOLO_FORMAT — prefer lists, max 2-col tables, avoid wide tables)
+- **project (single-member):** same as standalone plus a project block (name, instructions, members, files, Drive content)
+- **project (group):** same plus MULTI_MEMBER_PARTICIPATION_RULE and GROUP_FORMAT instead of SOLO_FORMAT
+- **family:** `LAYER_IDENTITY` → `LAYER_HOUSEHOLD` → `memberLayer` → `MARKET_INTELLIGENCE` → `chatContext` (MULTI_MEMBER_PARTICIPATION_RULE + GROUP_FORMAT + FAMILY_THREE_TIER)
+- **dev:** `LAYER_IDENTITY` → `LAYER_HOUSEHOLD` → `memberLayer` → `extraSections[]`. No MARKET_INTELLIGENCE, no tool blocks.
 
-**buildFamilyChatSystemPrompt(senderName, memoryBlock, userTimestamp)** — family/group chat. Adds participation rule, plain prose only, three-tier stakes rule, tone guidelines.
+After the core layers, `buildSystemPrompt` appends optional context injected by the route:
+- `locationContext` — per-route location sentence
+- `remindersContext` — upcoming reminders block for passive awareness (queried live from DB)
 
-Route handlers append tool system blocks after the builder output: `CALENDAR_SYSTEM_BLOCK`, `GMAIL_SYSTEM_BLOCK`, `SEARCH_SYSTEM_BLOCK`, `BROWSE_SYSTEM_BLOCK`. Standalone also gets `IMAGE_SYSTEM_BLOCK`. All contexts get `IMAGE_VISION_BLOCK`.
+Tool system blocks are appended last via `buildToolSystemBlocks(opts)` from `lib/chat/streamHandler.ts`: `CALENDAR_SYSTEM_BLOCK`, `GMAIL_SYSTEM_BLOCK`, `REMINDERS_SYSTEM_BLOCK`, `IMAGE_SYSTEM_BLOCK` (standalone + single-member project only), `IMAGE_VISION_BLOCK`, `SEARCH_SYSTEM_BLOCK`, `BROWSE_SYSTEM_BLOCK`, `HISTORY_SEARCH_SYSTEM_BLOCK`, `DOCUMENT_SYSTEM_BLOCK`, `TASK_PROGRESS_SYSTEM_BLOCK`.
 
 ---
 
@@ -195,5 +232,6 @@ Summary of key decisions recorded:
 | 5 — Connectors + Admin | ✅ Complete (2026-05-01) |
 | 6 — Polish | 🔄 In progress |
 
-Phase 6 complete: image generation, web search, browse_url, mobile UI fixes, family thread navigation, admin memory panel.
+Phase 6 complete: image generation, web search, browse_url, mobile UI fixes, family thread navigation, admin memory panel, unread dot indicators, TASK_PROGRESS system (multi-step task cards), document tools (Sheets/Docs/Drive), search_chat_history + full-text search index, manage_reminders tool + FCM delivery + Vercel cron, multi-device FCM (user_fcm_tokens), Group Chat Awareness (unified participation rule), Settings page (tab layout, desktop panel, Back button), PWA icon refresh (all slots, iOS apple-touch-icon versioning), MARKET_INTELLIGENCE research layer.
+
 Phase 6 planned: user-facing chat deletion, "continue in group chat" feature.

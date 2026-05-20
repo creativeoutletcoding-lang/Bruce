@@ -1,5 +1,5 @@
 # Bruce Database Schema — Live Reference
-_Reflects schema.sql + migrations 003–014_
+_Reflects schema.sql + migrations 001–029_
 
 ---
 
@@ -40,7 +40,7 @@ Columns added incrementally across migrations 003, 005, 011, 012.
 | morning_summary_time | TEXT | NOT NULL | `'08:00'` |
 | notification_sensitivity | TEXT | NOT NULL | `'medium'` |
 | notification_preferences | JSONB | NOT NULL | `'{}'` |
-| fcm_token | TEXT | nullable | — |
+| fcm_token | TEXT | nullable | — (legacy; superseded by user_fcm_tokens) |
 | google_access_token | TEXT | nullable | — |
 | google_refresh_token | TEXT | nullable | — |
 | google_token_expires_at | TIMESTAMPTZ | nullable | — |
@@ -102,12 +102,13 @@ Workspace containers. Any member can own a project.
 | name | TEXT | NOT NULL | — |
 | icon | TEXT | NOT NULL | `'📁'` |
 | instructions | TEXT | NOT NULL | `''` |
+| isolate_memory | BOOLEAN | NOT NULL | `false` |
 | status | TEXT | NOT NULL | `'active'` |
 | created_at | TIMESTAMPTZ | NOT NULL | NOW() |
 | updated_at | TIMESTAMPTZ | NOT NULL | NOW() |
 
 - **PK:** id — **FK:** `owner_id → users(id)` ON DELETE SET NULL
-- **Constraint:** `status IN ('active','archived')`
+- **Constraints:** `status IN ('active','archived')`
 - **Index:** `idx_projects_owner (owner_id)`
 - **Trigger:** `projects_updated_at`
 - **RLS:** enabled
@@ -159,7 +160,7 @@ All conversation containers: private, project, family group, family threads, inc
 
 - **PK:** id — **FKs:** `owner_id → users(id)` CASCADE, `project_id → projects(id)` CASCADE
 - **Constraint:** `type IN ('private','group','family','family_group','family_thread','incognito')`
-- **Indexes:** `idx_chats_owner`, `idx_chats_project`, `idx_chats_last_message (DESC)`, `idx_chats_type`, `idx_chats_deleted (WHERE deleted_at IS NOT NULL)`
+- **Indexes:** `idx_chats_owner`, `idx_chats_project`, `idx_chats_last_message (last_message_at DESC)`, `idx_chats_type`
 - **Trigger:** `chats_updated_at`
 - **Realtime:** yes (supabase_realtime)
 - **RLS:** enabled
@@ -182,15 +183,17 @@ Who is in a group, family group, or family thread chat.
 | chat_id | UUID | NOT NULL | — (FK → chats) |
 | user_id | UUID | NOT NULL | — (FK → users) |
 | joined_at | TIMESTAMPTZ | NOT NULL | NOW() |
+| last_read_at | TIMESTAMPTZ | nullable | — (per-member read marker, migration 024) |
 
 - **PK:** id — **FKs:** `chat_id → chats(id)` CASCADE, `user_id → users(id)` CASCADE
 - **Constraint:** UNIQUE(chat_id, user_id)
-- **Indexes:** `idx_chat_members_chat`, `idx_chat_members_user`
+- **Indexes:** `idx_chat_members_chat`, `idx_chat_members_user`, `idx_chat_members_last_read (chat_id, user_id, last_read_at)`
 - **Realtime:** yes
 - **RLS:** enabled
   - `chat_members_select` — own row, chat member, or admin
   - `chat_members_insert_owner` — chat owner or admin
   - `chat_members_delete_owner` — chat owner or admin
+  - `chat_members_update_self_last_read` — own row only (lets member mark chat as read)
   - `family_thread_members_select` — any member of the same family thread
 
 ---
@@ -210,15 +213,17 @@ Every persisted message in every chat. Incognito messages never reach this table
 | image_url | TEXT | nullable | — |
 | attachment_type | TEXT | nullable | — |
 | attachment_filename | TEXT | nullable | — |
+| file_ids | JSONB | nullable | — (Anthropic Files API IDs, migration 021) |
 | created_at | TIMESTAMPTZ | NOT NULL | NOW() |
 
 - **PK:** id — **FKs:** `chat_id → chats(id)` CASCADE, `sender_id → users(id)` ON DELETE SET NULL
 - **Constraint:** `role IN ('user','assistant','system')`
-- **Indexes:** `idx_messages_chat`, `idx_messages_chat_created (chat_id, created_at)`, `idx_messages_sender`
+- **Indexes:** `idx_messages_chat`, `idx_messages_chat_created (chat_id, created_at)`, `idx_messages_sender`, `messages_content_fts_idx GIN (to_tsvector('english', content))` (migration 029)
 - **Realtime:** yes
-- **RLS:** enabled — messages never updated or deleted by users
+- **RLS:** enabled
   - `messages_select` — chat member, project member of the containing project, or admin
   - `messages_insert` — sender_id = uid, must be chat/project member
+  - `messages_delete` — sender_id = uid (own messages only)
   - `family_thread_messages_select` — membership-gated family thread access
   - `family_thread_messages_insert` — membership-gated insert
 
@@ -251,12 +256,15 @@ Google Drive files attached to projects.
 
 ## memory
 
-Per-member personal memory. Three tiers: core, active, archive.
+Two types: private (one member + Bruce) and shared (multiple members).
 
 | Column | Type | Nullable | Default |
 |--------|------|----------|---------|
 | id | UUID | NOT NULL | uuid_generate_v4() |
-| user_id | UUID | NOT NULL | — (FK → users) |
+| type | TEXT | NOT NULL | `'private'` |
+| owner_id | UUID | nullable | — (FK → users, private only) |
+| member_combination | TEXT | nullable | — (shared only: sorted UUIDs joined ':') |
+| project_id | UUID | nullable | — (FK → projects, project-isolated only) |
 | content | TEXT | NOT NULL | — |
 | tier | TEXT | NOT NULL | `'active'` |
 | relevance_score | FLOAT | NOT NULL | `1.0` |
@@ -265,12 +273,20 @@ Per-member personal memory. Three tiers: core, active, archive.
 | created_at | TIMESTAMPTZ | NOT NULL | NOW() |
 | updated_at | TIMESTAMPTZ | NOT NULL | NOW() |
 
-- **PK:** id — **FK:** `user_id → users(id)` CASCADE
-- **Constraint:** `tier IN ('core','active','archive')`
-- **Indexes:** `idx_memory_user`, `idx_memory_user_tier`, `idx_memory_relevance (user_id, relevance_score DESC)`
+- **PK:** id — **FKs:** `owner_id → users(id)` CASCADE, `project_id → projects(id)` CASCADE
+- **Constraints:** `type IN ('private','shared')`, `tier IN ('core','active','archive')`
+- **Indexes:**
+  - `idx_memory_owner (owner_id) WHERE owner_id IS NOT NULL`
+  - `idx_memory_owner_tier (owner_id, tier) WHERE owner_id IS NOT NULL`
+  - `idx_memory_owner_relevance (owner_id, relevance_score DESC) WHERE owner_id IS NOT NULL`
+  - `idx_memory_member_combo (member_combination) WHERE member_combination IS NOT NULL`
+  - `idx_memory_project (project_id) WHERE project_id IS NOT NULL`
 - **Trigger:** `memory_updated_at`
-- **RLS:** enabled — strict owner-only, no admin bypass
-  - `memory_owner_only` — ALL operations require user_id = auth.uid()
+- **RLS:** enabled — strict member-only, no admin bypass
+  - `memory_select` — private: owner_id = uid; shared: uid in member_combination array
+  - `memory_insert` — same conditions as select
+  - `memory_update` — same conditions
+  - `memory_delete` — same conditions
 
 ---
 
@@ -335,20 +351,96 @@ One row per (user_id, chat_id). Upserted on a 30s heartbeat while a chat window 
 
 ---
 
-## admin_dev_messages
+## admin_dev_sessions
 
-Persistent history for the Bruce Dev admin workspace. Added in migration 014.
+Named sessions for the Bruce Dev admin workspace. Migration 015.
 
 | Column | Type | Nullable | Default |
 |--------|------|----------|---------|
 | id | UUID | NOT NULL | uuid_generate_v4() |
+| name | TEXT | NOT NULL | `'Untitled session'` |
+| created_at | TIMESTAMPTZ | NOT NULL | NOW() |
+| updated_at | TIMESTAMPTZ | NOT NULL | NOW() |
+
+- **PK:** id
+- **RLS:** none — accessed exclusively via service role
+
+---
+
+## admin_dev_messages
+
+Persistent message history for the Bruce Dev admin workspace. Migrations 014–015.
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| id | UUID | NOT NULL | uuid_generate_v4() |
+| session_id | UUID | nullable | — (FK → admin_dev_sessions ON DELETE CASCADE) |
 | role | TEXT | NOT NULL | — |
 | content | TEXT | NOT NULL | — |
 | created_at | TIMESTAMPTZ | NOT NULL | NOW() |
 
 - **PK:** id
 - **Constraint:** `role IN ('user','assistant')`
-- **RLS:** none — accessed exclusively via service role client in admin API routes
+- **RLS:** none — accessed exclusively via service role in admin API routes
+
+---
+
+## system_config
+
+Runtime-mutable key/value store for config that cannot live in env vars (e.g. OAuth tokens refreshed through the admin UI). Migration 025.
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| key | TEXT | NOT NULL | — (PK) |
+| value | TEXT | NOT NULL | — |
+| updated_at | TIMESTAMPTZ | NOT NULL | NOW() |
+
+- **PK:** key
+- **RLS:** enabled
+  - `system_config_admin_read` — SELECT for admin only; writes are service-role only
+
+---
+
+## user_fcm_tokens
+
+One row per device per user. Replaces the single `users.fcm_token` column with multi-device support. Migration 026.
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| id | UUID | NOT NULL | gen_random_uuid() |
+| user_id | UUID | NOT NULL | — (FK → auth.users ON DELETE CASCADE) |
+| token | TEXT | NOT NULL | — (UNIQUE) |
+| device_hint | TEXT | nullable | — |
+| created_at | TIMESTAMPTZ | NOT NULL | now() |
+| last_seen_at | TIMESTAMPTZ | NOT NULL | now() |
+
+- **PK:** id — **FK:** `user_id → auth.users(id)` ON DELETE CASCADE
+- **Constraint:** UNIQUE(token) — token uniqueness is enforced globally; a token that moves accounts is re-attributed on next registration
+- **Index:** `idx_user_fcm_tokens_user_id (user_id)`
+- **RLS:** enabled, no user-facing policies — service role only. `notifyUser()` fans out to all tokens for a user; stale tokens (FCM 404) are auto-deleted.
+
+---
+
+## reminders
+
+Personal reminders managed via the `manage_reminders` tool. Migrations 027–028.
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| id | UUID | NOT NULL | gen_random_uuid() |
+| user_id | UUID | NOT NULL | — (FK → users ON DELETE CASCADE) |
+| content | TEXT | NOT NULL | — |
+| remind_at | TIMESTAMPTZ | NOT NULL | — |
+| completed_at | TIMESTAMPTZ | nullable | — |
+| notified_at | TIMESTAMPTZ | nullable | — (set by cron after FCM fires) |
+| chat_id | UUID | nullable | — (FK → chats ON DELETE SET NULL, for FCM deep-link) |
+| created_at | TIMESTAMPTZ | NOT NULL | now() |
+
+- **PK:** id — **FKs:** `user_id → users(id)` CASCADE, `chat_id → chats(id)` ON DELETE SET NULL
+- **Index:** `idx_reminders_user_pending (user_id, remind_at) WHERE completed_at IS NULL`
+- **RLS:** enabled
+  - `users_manage_own_reminders` — ALL operations: user_id = auth.uid()
+- **Cron:** `GET /api/cron/reminders` (Vercel native, every minute) finds due reminders (`remind_at <= now`, `notified_at IS NULL`, `completed_at IS NULL`), fires FCM, sets `notified_at`
 
 ---
 
@@ -360,6 +452,7 @@ Persistent history for the Bruce Dev admin workspace. Added in migration 014.
 | `is_project_member(p_id UUID)` | BOOLEAN | True if auth.uid() is in project_members for that project. |
 | `is_chat_member(c_id UUID)` | BOOLEAN | True if auth.uid() owns or is a member of that chat. |
 | `update_updated_at()` | TRIGGER | Sets NEW.updated_at = NOW() before UPDATE. |
+| `get_memory_metrics()` | TABLE | Aggregate memory counts per member (total, by tier, by type). SECURITY DEFINER — admin panel only, no content access. Migration 018/019. |
 
 ---
 
