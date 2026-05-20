@@ -38,6 +38,7 @@ export default function RemindersView() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [completedExpanded, setCompletedExpanded] = useState(false);
+  const [showAllUpcoming, setShowAllUpcoming] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -74,6 +75,10 @@ export default function RemindersView() {
   const upcoming = reminders.filter((r) => r.completed_at === null && new Date(r.remind_at) >= now);
   const past = reminders.filter((r) => r.completed_at !== null || new Date(r.remind_at) < now);
 
+  const UPCOMING_CAP = 5;
+  const visibleUpcoming = showAllUpcoming ? upcoming : upcoming.slice(0, UPCOMING_CAP);
+  const hiddenCount = upcoming.length - UPCOMING_CAP;
+
   if (loading) return <p style={styles.empty}>Loading…</p>;
 
   return (
@@ -81,16 +86,26 @@ export default function RemindersView() {
       {upcoming.length === 0 ? (
         <p style={styles.empty}>No upcoming reminders.</p>
       ) : (
-        upcoming.map((r) => (
-          <ReminderItem
-            key={r.id}
-            reminder={r}
-            pendingDeleteId={pendingDeleteId}
-            onComplete={handleComplete}
-            onDelete={handleDelete}
-            onOpenChat={(url) => router.push(url)}
-          />
-        ))
+        <>
+          {visibleUpcoming.map((r) => (
+            <ReminderItem
+              key={r.id}
+              reminder={r}
+              pendingDeleteId={pendingDeleteId}
+              onComplete={handleComplete}
+              onDelete={handleDelete}
+              onOpenChat={(url) => router.push(url)}
+            />
+          ))}
+          {!showAllUpcoming && hiddenCount > 0 && (
+            <button
+              onClick={() => setShowAllUpcoming(true)}
+              style={styles.showAllButton}
+            >
+              Show all ({upcoming.length})
+            </button>
+          )}
+        </>
       )}
 
       {past.length > 0 && (
@@ -215,7 +230,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.875rem",
     color: "var(--text-tertiary)",
     margin: 0,
-    padding: "4px 0",
+    padding: "16px 0",
+  },
+  showAllButton: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: "10px 0",
+    fontSize: "0.8125rem",
+    color: "var(--text-tertiary)",
+    textAlign: "left" as const,
   },
   row: {
     display: "flex",

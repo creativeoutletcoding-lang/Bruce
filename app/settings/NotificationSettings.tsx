@@ -161,7 +161,7 @@ function ToggleRow({
   last?: boolean;
 }) {
   return (
-    <div style={{ ...styles.toggleRow, borderBottom: last ? "none" : "1px solid var(--border)", paddingBottom: last ? 0 : "16px" }}>
+    <div style={{ ...styles.toggleRow, padding: "13px 0", borderBottom: last ? "none" : "1px solid var(--border)" }}>
       <div style={styles.toggleLabel}>
         <span style={styles.toggleTitle}>{title}</span>
         <span style={styles.toggleDesc}>{desc}</span>
@@ -223,7 +223,7 @@ const styles: Record<string, React.CSSProperties> = {
   group: {
     display: "flex",
     flexDirection: "column",
-    gap: "16px",
+    gap: "0",
     paddingBottom: "4px",
     borderBottom: "1px solid var(--border)",
   },

@@ -8,12 +8,12 @@ export interface ModelOption {
 export const MODELS: ModelOption[] = [
   {
     id: "claude-haiku-4-5-20251001",
-    label: "Haiku",
+    label: "Haiku 4.5",
     description: "Fast and efficient. Best for quick questions and everyday tasks.",
   },
   {
     id: "claude-sonnet-4-6",
-    label: "Sonnet",
+    label: "Sonnet 4.6",
     description: "Balanced. Smart and fast. Bruce's default.",
     isDefault: true,
   },
@@ -25,7 +25,7 @@ export const MODELS: ModelOption[] = [
   {
     id: "claude-opus-4-7",
     label: "Opus 4.7",
-    description: "Most capable model available. Best for the hardest tasks, long-running work, and detailed image analysis.",
+    description: "Most capable model available. Best for the hardest tasks, long-running work, and deep analysis.",
   },
 ];
 
