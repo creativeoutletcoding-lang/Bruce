@@ -1206,3 +1206,86 @@ span[class*="typingDots"] > span:nth-child(3),
 @media (prefers-color-scheme: dark) {
   .bubble-tint { background-color: color-mix(in srgb, var(--bubble-color, #6b7280) 40%, transparent); }
 }
+
+/* ── Settings two-column layout ──────────────────────────────────────── */
+.settings-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+/* Mobile: horizontal scrollable tab strip */
+.settings-nav {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  margin-bottom: 16px;
+}
+.settings-nav::-webkit-scrollbar { display: none; }
+.settings-content { flex: 1; min-width: 0; }
+/* Mobile tab pill */
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  padding: 7px 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--transition), color var(--transition), border-color var(--transition);
+  flex-shrink: 0;
+}
+.settings-nav-item:hover { color: var(--text-primary); }
+.settings-nav-item-active {
+  background-color: var(--bg-secondary);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+@media (min-width: 769px) {
+  /* Desktop: sidebar nav column + content panel row */
+  .settings-shell {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 24px;
+  }
+  .settings-nav {
+    flex-direction: column;
+    width: 172px;
+    flex-shrink: 0;
+    overflow-x: visible;
+    gap: 2px;
+    padding-bottom: 0;
+    margin-bottom: 0;
+    position: sticky;
+    top: 24px;
+  }
+  .settings-nav-item {
+    padding: 9px 12px;
+    border-radius: var(--radius-md);
+    border: none;
+    width: 100%;
+    text-align: left;
+    font-size: 0.9375rem;
+    justify-content: flex-start;
+    flex-shrink: unset;
+  }
+  .settings-nav-item:hover {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+  .settings-nav-item-active {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+}
+}
