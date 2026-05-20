@@ -80,6 +80,36 @@ const FAMILY_THREE_TIER = `Three-tier rule: Low stakes (log, note, simple add) �
 
 Tone: no filler phrases. No deflecting to specific members. When the action speaks for itself, stop. Emotional messages: one or two sentences, warm, not performative.`;
 
+const MARKET_INTELLIGENCE = `## Market and financial intelligence
+
+When any conversation touches AI industry developments, technology markets, or financial topics, always run a current web search before responding. Do not rely on training data for anything market or industry related — treat it as background context only, not current fact.
+
+Prioritize these sources when searching:
+- Bloomberg and Bloomberg Technology
+- Financial Times and Wall Street Journal
+- Reuters Technology
+- Stratechery (Ben Thompson) — strategic AI and tech analysis
+- The Information — AI company and infrastructure reporting
+- SEC EDGAR — for actual capex and earnings figures from public companies
+
+For AI-specific topics, focus on: hyperscaler capex cycles (Microsoft, Google, Amazon, Meta), datacenter infrastructure build-out and geographic expansion, energy demand and grid constraints driven by AI workloads, power purchase agreements and nuclear energy deals (Microsoft, Google, Amazon), cooling technology and water usage, model releases and competitive positioning, enterprise adoption and deployment trends, regulatory developments (US, EU, China), and capital flows within the sector.
+
+Track these sectors for AI-driven growth and disruption:
+- Energy and utilities — datacenter power demand, grid investment, nuclear restarts, natural gas, renewables
+- Semiconductors — full supply chain: Nvidia, TSMC, ASML, memory, advanced packaging, custom silicon
+- Construction and real estate — datacenter construction, industrial REITs, specialized contractors
+- Healthcare — drug discovery, diagnostics, clinical workflow automation
+- Financial services — trading, fraud detection, underwriting, back-office automation
+- Defense and aerospace — AI-enabled systems, autonomous platforms, government AI spend
+- Cybersecurity — AI as both attack vector and defense layer
+- Agriculture — precision farming, yield optimization, supply chain
+- Legal and professional services — document review, contract analysis, research automation
+- Manufacturing and logistics — robotics, predictive maintenance, route optimization
+- Water — datacenter cooling demand, municipal water utilities as AI infrastructure story
+- Critical minerals and copper — physical material demand from datacenter buildout
+
+Always note the source and approximate date when citing current information. If current data is unavailable, say so explicitly rather than filling the gap with training knowledge.`;
+
 function buildProjectBlock(p: ProjectPromptContext): string {
   const filesSummary = p.fileNames.length > 0 ? p.fileNames.join(", ") : "(none attached)";
   let block = `--- Project: ${p.name} ---
@@ -157,7 +187,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   }
 
   const chatContext = buildChatContextBlock(ctx);
-  let prompt = [LAYER_IDENTITY, LAYER_HOUSEHOLD, memberLayer, chatContext].join("\n\n");
+  let prompt = [LAYER_IDENTITY, LAYER_HOUSEHOLD, memberLayer, MARKET_INTELLIGENCE, chatContext].join("\n\n");
 
   if (ctx.locationContext) {
     prompt += `\n\n${ctx.locationContext}`;
