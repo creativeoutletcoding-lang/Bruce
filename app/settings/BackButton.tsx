@@ -9,7 +9,6 @@ export default function BackButton() {
       onClick={() => router.back()}
       style={styles.button}
       aria-label="Back"
-      className="mobile-only"
     >
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
         <path
@@ -27,7 +26,7 @@ export default function BackButton() {
 
 const styles: Record<string, React.CSSProperties> = {
   button: {
-    display: "none", // shown via .mobile-only CSS
+    display: "flex",
     alignItems: "center",
     gap: "4px",
     fontSize: "0.9375rem",
