@@ -108,7 +108,7 @@ export async function executeHistorySearchTool(
 
   if (scope === "project") {
     if (!projectId) return JSON.stringify({ results: [], message: "No project context available." });
-    let q = supabase.from("chats").select("id").eq("project_id", projectId).eq("type", "project");
+    let q = supabase.from("chats").select("id").eq("project_id", projectId);
     if (currentChatId) q = q.neq("id", currentChatId);
     const { data } = await q;
     chatIds = (data as ChatRow[] | null ?? []).map((c) => c.id);
