@@ -4,6 +4,7 @@ import BackButton from "./BackButton";
 import ModelPreference from "./ModelPreference";
 import GoogleReconnect from "./GoogleReconnect";
 import NotificationSettings from "./NotificationSettings";
+import RemindersView from "./RemindersView";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -57,6 +58,11 @@ export default async function SettingsPage() {
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>AI Model</h2>
           <ModelPreference initialModel={(profile as { name: string; email: string; avatar_url: string | null; preferred_model: string | null } | null)?.preferred_model ?? "claude-sonnet-4-6"} />
+        </div>
+
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Reminders</h2>
+          <RemindersView />
         </div>
 
         <div style={styles.section}>
