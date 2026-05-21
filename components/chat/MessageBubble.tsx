@@ -525,7 +525,7 @@ export default function MessageBubble({
             borderRadius: "var(--radius-md)",
             boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
             overflow: "hidden",
-            minWidth: "130px",
+            width: "fit-content",
           }}
         >
           {onReact && (
@@ -678,6 +678,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 2px",
   },
   contextMenuItem: {
+    display: "block",
     width: "100%",
     padding: "10px 14px",
     textAlign: "left" as const,
@@ -686,9 +687,9 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     backgroundColor: "transparent",
     transition: "background-color var(--transition)",
-    display: "block",
     border: "none",
     color: "var(--text-primary)",
+    whiteSpace: "nowrap" as const,
   },
   imageBtnWrapper: {
     display: "block",
