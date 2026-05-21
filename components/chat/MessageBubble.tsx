@@ -533,7 +533,7 @@ export default function MessageBubble({
               style={styles.contextMenuItem}
               onClick={() => { setCtxMenu(null); onReact("thumbs_up"); }}
             >
-              👍 React
+              👍
             </button>
           )}
           {canDelete && (
