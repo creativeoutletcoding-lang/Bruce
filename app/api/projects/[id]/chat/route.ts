@@ -223,7 +223,7 @@ export async function POST(request: NextRequest, { params }: Props) {
   const firstAtt = attachments[0];
   const firstDocFilename = attachments.find((a) => a.type === "document")?.filename ?? null;
   const hasFileIds = fileIds.some(Boolean);
-  const { error: msgError } = await adminSupabase.from("messages").insert({
+  const { data: insertedMsg, error: msgError } = await adminSupabase.from("messages").insert({
     chat_id: currentChatId,
     sender_id: user.id,
     role: "user",
@@ -233,9 +233,10 @@ export async function POST(request: NextRequest, { params }: Props) {
     attachment_filename: firstDocFilename,
     ...(() => { const m: Record<string, unknown> = {}; if (attachmentMeta.length > 0) m.attachments = attachmentMeta; if (pastedAttachments.length > 0) m.pastedAttachments = pastedAttachments; return Object.keys(m).length > 0 ? { metadata: m } : {}; })(),
     ...(hasFileIds ? { file_ids: fileIds } : {}),
-  });
+  }).select("id").single();
 
   if (msgError) console.error("[api/projects/chat] Failed to insert user message:", msgError);
+  const latestUserMessageId = (insertedMsg as { id: string } | null)?.id ?? null;
 
   // Thread-follow notifications: only notify project members who have already
   // participated in this specific chat thread (not all project members).
@@ -329,6 +330,7 @@ export async function POST(request: NextRequest, { params }: Props) {
       enabled: true,
       adminSupabase,
       chatId: currentChatId,
+      latestUserMessageId,
     },
     searchContext: { projectId },
     onComplete: bruceNotifRecipients.length > 0

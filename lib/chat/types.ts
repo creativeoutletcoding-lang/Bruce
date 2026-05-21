@@ -28,6 +28,18 @@ export interface MessageAttachment {
   filename?: string;
 }
 
+export interface ReactionReactor {
+  userId: string | null; // null = Bruce
+  colorHex?: string;
+}
+
+export interface ReactionEntry {
+  type: string;
+  count: number;
+  reactors: ReactionReactor[];
+  hasCurrentUser: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;

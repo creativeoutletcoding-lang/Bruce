@@ -158,6 +158,8 @@ export async function POST(request: NextRequest) {
   }));
   const fileIds = attachments.map((att) => att.file_id);
 
+  let latestUserMessageId: string | null = null;
+
   if (!isIncognito) {
     if (!currentChatId) {
       chatTitle = generateChatTitle(displayMessage);
@@ -183,7 +185,7 @@ export async function POST(request: NextRequest) {
     const firstAtt = attachments[0];
     const firstDocFilename = attachments.find((a) => a.type === "document")?.filename ?? null;
     const hasFileIds = fileIds.some(Boolean);
-    const { error: msgError } = await adminSupabase.from("messages").insert({
+    const { data: insertedMsg, error: msgError } = await adminSupabase.from("messages").insert({
       chat_id: currentChatId,
       sender_id: user.id,
       role: "user",
@@ -193,9 +195,10 @@ export async function POST(request: NextRequest) {
       attachment_filename: firstDocFilename,
       ...(() => { const m: Record<string, unknown> = {}; if (attachmentMeta.length > 0) m.attachments = attachmentMeta; if (pastedAttachments.length > 0) m.pastedAttachments = pastedAttachments; return Object.keys(m).length > 0 ? { metadata: m } : {}; })(),
       ...(hasFileIds ? { file_ids: fileIds } : {}),
-    });
+    }).select("id").single();
 
     if (msgError) console.error("[api/chat] Failed to insert user message:", msgError);
+    latestUserMessageId = (insertedMsg as { id: string } | null)?.id ?? null;
   }
 
   let userContent: Anthropic.Messages.MessageParam["content"];
@@ -252,6 +255,7 @@ export async function POST(request: NextRequest) {
       enabled: !isIncognito,
       adminSupabase,
       chatId: currentChatId,
+      latestUserMessageId,
     },
     searchContext: { projectId: null },
   });

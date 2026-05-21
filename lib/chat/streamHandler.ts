@@ -42,6 +42,11 @@ import {
   REMINDERS_SYSTEM_BLOCK,
   executeRemindersTool,
 } from "@/lib/remindersTools";
+import {
+  REACTION_TOOL,
+  REACTION_SYSTEM_BLOCK,
+  executeReactionTool,
+} from "@/lib/chat/reactionTools";
 
 // ── Tool sets ────────────────────────────────────────────────────────────────
 // Standalone + project chats get the full tool set including image generation.
@@ -56,6 +61,7 @@ export const TOOLS_FULL = [
   BROWSE_TOOL,
   HISTORY_SEARCH_TOOL,
   ...DOCUMENT_TOOLS,
+  REACTION_TOOL,
 ];
 
 export function buildToolSystemBlocks(opts: { includeImageGen: boolean }): string {
@@ -69,7 +75,8 @@ export function buildToolSystemBlocks(opts: { includeImageGen: boolean }): strin
     BROWSE_SYSTEM_BLOCK +
     HISTORY_SEARCH_SYSTEM_BLOCK +
     DOCUMENT_SYSTEM_BLOCK +
-    TASK_PROGRESS_SYSTEM_BLOCK
+    TASK_PROGRESS_SYSTEM_BLOCK +
+    REACTION_SYSTEM_BLOCK
   );
 }
 
@@ -82,6 +89,8 @@ export interface PersistOptions {
   adminSupabase: SupabaseClient;
   /** Chat row id — must exist before stream starts. */
   chatId: string | null;
+  /** ID of the user message Bruce is responding to — passed to react_to_message. Null for incognito. */
+  latestUserMessageId?: string | null;
 }
 
 export interface StreamRunOptions {
@@ -169,6 +178,7 @@ async function executeOneTool(
   input: Record<string, unknown>,
   userId: string,
   chatId: string | null,
+  latestUserMessageId: string | null | undefined,
   projectId?: string | null,
 ): Promise<string> {
   if (name === "web_search" || name === "browse_url") {
@@ -179,6 +189,9 @@ async function executeOneTool(
   }
   if (name === "manage_reminders") {
     return executeRemindersTool(input, userId, chatId);
+  }
+  if (name === "react_to_message") {
+    return executeReactionTool(latestUserMessageId ?? null, chatId);
   }
   if (GMAIL_TOOL_NAMES.has(name)) {
     return executeGmailTool(name, input, userId);
@@ -360,7 +373,7 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
               let result: string;
               try {
                 result = await Promise.race([
-                  executeOneTool(tc.name, tc.input as Record<string, unknown>, userId, persist.chatId, searchContext?.projectId),
+                  executeOneTool(tc.name, tc.input as Record<string, unknown>, userId, persist.chatId, persist.latestUserMessageId, searchContext?.projectId),
                   new Promise<never>((_, reject) =>
                     setTimeout(
                       () => reject(new Error(`"${tc.name}" did not complete within ${TOOL_TIMEOUT_MS / 1000}s`)),
@@ -373,18 +386,19 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
               }
               const isToolError = result.startsWith("Error:");
 
-              // Emit a task-progress sentinel so the client can tick the task card
-              // live as each tool completes, without waiting for Bruce's final text.
-              const stepLabel = TOOL_STEP_LABELS[tc.name] ?? tc.name;
-              const detail = isToolError
-                ? result.slice(0, 100)
-                : extractStepDetail(tc.name, result);
-              const sentinelPayload = JSON.stringify({
-                step: stepLabel,
-                status: isToolError ? "error" : "done",
-                ...(detail ? { detail } : {}),
-              });
-              controller.enqueue(encoder.encode(`${TASK_PROGRESS_SENTINEL}${sentinelPayload}\x1e`));
+              // react_to_message is a silent action — no task-progress card.
+              if (tc.name !== "react_to_message") {
+                const stepLabel = TOOL_STEP_LABELS[tc.name] ?? tc.name;
+                const detail = isToolError
+                  ? result.slice(0, 100)
+                  : extractStepDetail(tc.name, result);
+                const sentinelPayload = JSON.stringify({
+                  step: stepLabel,
+                  status: isToolError ? "error" : "done",
+                  ...(detail ? { detail } : {}),
+                });
+                controller.enqueue(encoder.encode(`${TASK_PROGRESS_SENTINEL}${sentinelPayload}\x1e`));
+              }
 
               return {
                 type: "tool_result" as const,

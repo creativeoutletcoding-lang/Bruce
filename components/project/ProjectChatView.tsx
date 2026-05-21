@@ -9,7 +9,8 @@ import ProjectTopBar from "./ProjectTopBar";
 import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
 import type { FileAttachment } from "@/components/chat/MessageInput";
-import type { ChatMessage, MessageAttachment, NormalizedMessage } from "@/lib/chat/types";
+import type { ChatMessage, MessageAttachment, NormalizedMessage, ReactionEntry } from "@/lib/chat/types";
+import { aggregateReactions } from "@/lib/chat/reactionUtils";
 import type { ProjectMemberDetail } from "@/lib/types";
 import {
   consumeStream,
@@ -102,6 +103,7 @@ export default function ProjectChatView({
   const instructionsFiredRef = useRef(false);
   const initialSentRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const [reactionsMap, setReactionsMap] = useState<Record<string, ReactionEntry[]>>({});
 
   useChatMemory({ chatId, messageCount: messages.length });
 
@@ -157,6 +159,26 @@ export default function ProjectChatView({
     }).catch(() => {});
   }, [chatId]);
 
+  // ── Callbacks declared before the realtime useEffect that references them ────
+
+  const loadReactionsPC = useCallback(async (msgIds: string[]) => {
+    const filtered = msgIds.filter((id) => !id.startsWith("tmp-"));
+    if (filtered.length === 0) { setReactionsMap({}); return; }
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("reactions")
+      .select("message_id, user_id, type")
+      .in("message_id", filtered);
+    const colorMap: Record<string, string | undefined> = Object.fromEntries(
+      Object.entries(memberMapRef.current).map(([id, info]) => [id, info.color_hex])
+    );
+    setReactionsMap(aggregateReactions(
+      (data ?? []) as Array<{ message_id: string; user_id: string | null; type: string }>,
+      currentUserId,
+      colorMap,
+    ));
+  }, [currentUserId]);
+
   useEffect(() => {
     const supabase = createClient();
     const topic = `project-chat-${chatId}`;
@@ -181,9 +203,65 @@ export default function ProjectChatView({
           });
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "reactions", filter: `chat_id=eq.${chatId}` },
+        (payload) => {
+          const row = payload.new as { message_id: string; user_id: string | null; type: string };
+          const colorMap: Record<string, string | undefined> = Object.fromEntries(
+            Object.entries(memberMapRef.current).map(([id, info]) => [id, info.color_hex])
+          );
+          setReactionsMap((prev) => {
+            const entries = prev[row.message_id] ? [...prev[row.message_id]] : [];
+            const idx = entries.findIndex((e) => e.type === row.type);
+            const isCurrentUser = row.user_id === currentUserId;
+            const reactor = { userId: row.user_id, colorHex: row.user_id ? colorMap[row.user_id] : "#0F6E56" };
+            if (idx !== -1) {
+              const entry = { ...entries[idx] };
+              if (!entry.reactors.some((r) => r.userId === row.user_id)) {
+                entry.count += 1;
+                entry.reactors = [...entry.reactors, reactor];
+                if (isCurrentUser) entry.hasCurrentUser = true;
+                entries[idx] = entry;
+              }
+            } else {
+              entries.push({ type: row.type, count: 1, reactors: [reactor], hasCurrentUser: isCurrentUser });
+            }
+            return { ...prev, [row.message_id]: entries };
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "reactions", filter: `chat_id=eq.${chatId}` },
+        (payload) => {
+          const row = payload.old as { message_id: string; user_id: string | null; type: string };
+          setReactionsMap((prev) => {
+            const entries = prev[row.message_id] ? [...prev[row.message_id]] : [];
+            const idx = entries.findIndex((e) => e.type === row.type);
+            if (idx === -1) return prev;
+            const entry = { ...entries[idx] };
+            entry.reactors = entry.reactors.filter((r) => r.userId !== row.user_id);
+            entry.count = Math.max(0, entry.count - 1);
+            if (row.user_id === currentUserId) entry.hasCurrentUser = false;
+            if (entry.count === 0) {
+              entries.splice(idx, 1);
+            } else {
+              entries[idx] = entry;
+            }
+            return { ...prev, [row.message_id]: entries.length > 0 ? entries : [] };
+          });
+        }
+      )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [chatId, currentUserId]);
+  }, [chatId, currentUserId, loadReactionsPC]);
+
+  useEffect(() => {
+    const ids = initialMessages.map((m) => m.id);
+    if (ids.length > 0) loadReactionsPC(ids);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const hasInitialFiles = attachedFiles.length > 0;
@@ -209,7 +287,42 @@ export default function ProjectChatView({
         toChatMessage(normalizeMessage(row), memberMapRef.current)
       )
     );
-  }, [chatId]);
+    const ids = (data as Array<{ id: string }>).map((r) => r.id);
+    await loadReactionsPC(ids);
+  }, [chatId, loadReactionsPC]);
+
+  const handleReact = useCallback(async (messageId: string, type: string) => {
+    setReactionsMap((prev) => {
+      const entries = prev[messageId] ? [...prev[messageId]] : [];
+      const idx = entries.findIndex((e) => e.type === type);
+      if (idx !== -1) {
+        const entry = { ...entries[idx] };
+        if (entry.hasCurrentUser) {
+          entry.count = Math.max(0, entry.count - 1);
+          entry.hasCurrentUser = false;
+          entry.reactors = entry.reactors.filter((r) => r.userId !== currentUserId);
+          entries[idx] = entry;
+          if (entry.count === 0) entries.splice(idx, 1);
+        } else {
+          entry.count += 1;
+          entry.hasCurrentUser = true;
+          entry.reactors = [...entry.reactors, { userId: currentUserId, colorHex: userColorHex }];
+          entries[idx] = entry;
+        }
+      } else {
+        entries.push({ type, count: 1, hasCurrentUser: true, reactors: [{ userId: currentUserId, colorHex: userColorHex }] });
+      }
+      return { ...prev, [messageId]: entries };
+    });
+    await fetch(`/api/messages/${messageId}/reaction`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type }),
+    });
+    const supabase = createClient();
+    const { data: msgs } = await supabase.from("messages").select("id").eq("chat_id", chatId).limit(100);
+    if (msgs) await loadReactionsPC((msgs as Array<{ id: string }>).map((r) => r.id));
+  }, [chatId, currentUserId, userColorHex, loadReactionsPC]);
 
   function handleStop() {
     abortRef.current?.abort();
@@ -460,6 +573,8 @@ export default function ProjectChatView({
         currentUserId={currentUserId}
         onDeleteMessage={deleteMessage}
         groupContext={members.length > 1}
+        reactionsMap={reactionsMap}
+        onReact={handleReact}
       />
 
       {error && (

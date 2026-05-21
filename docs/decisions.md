@@ -6,6 +6,22 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Reactions feature — 2026-05-21
+
+**Schema:** New `reactions` table (`id`, `message_id`, `chat_id`, `user_id`, `type`, `created_at`). `user_id` is nullable — NULL means Bruce reacted. `chat_id` is denormalized from the message's chat so realtime subscriptions can filter by `chat_id=eq.{chatId}` without a join. Two partial unique indexes enforce one reaction per type per reactor: `reactions_bruce_unique (message_id, type) WHERE user_id IS NULL` and `reactions_member_unique (message_id, user_id, type) WHERE user_id IS NOT NULL`. RLS: read via `is_chat_member(chat_id)`, insert/delete scoped to `auth.uid()`. Service role used for Bruce reactions (no auth session for Bruce).
+
+**Three-tier response model:** Bruce now has a third option between responding and staying silent: react. When a message is purely informational and acknowledgment is appropriate but no reply is needed, Bruce calls the `react_to_message({type: "thumbs_up"})` tool and produces no text. The tool was added to `TOOLS_FULL` in `streamHandler.ts`. The TASK_PROGRESS sentinel is suppressed for `react_to_message` so no task card flashes. The old "Never send a reaction, emoji, or any acknowledgment token" rule in `MULTI_MEMBER_PARTICIPATION_RULE` was replaced with an explicit react tier.
+
+**Member reactions:** Toggled via `POST /api/messages/[id]/reaction`. Optimistic updates applied immediately in component state; server sync follows; a fresh reaction load confirms final state (handles Bruce reactions that arrive after stream).
+
+**Realtime:** Family and project chat windows subscribe to `reactions` INSERT/DELETE on the same Supabase channel as messages, filtered by `chat_id=eq.{chatId}`. Standalone (ChatWindow) reloads reactions after each stream completes via `loadMessages`, which now also calls `loadReactions`.
+
+**UI:** Long press (500ms, mobile) surfaces a 👍 hint overlay that auto-dismisses after 3 seconds. Desktop right-click context menu always shows 👍 React; Delete only appears when `canDelete`. Reaction pills render below the bubble with emoji + count (if >1) + color pips (up to 5, then +N overflow). `hasCurrentUser` highlights the pill with the accent color.
+
+**Pre-build audit finding:** Image generation exclusion from family/group chats (`includeImageGen: false`) is mentioned in a comment in `streamHandler.ts` but was not in `decisions.md`. Documented here: image generation is intentionally excluded from multi-member chats to avoid inappropriate generation in shared contexts. The image tool over-firing fix (2026-05-18) tightened the prompt but the multi-member exclusion is an architectural choice, not just a prompt fix.
+
+---
+
 ### PWA icon cleanup — final 4-entry manifest + remove legacy files — 2026-05-18
 
 **Decision:** Finalized the manifest icons array to exactly four entries: `bruce-icon-192.png` (any 192), `bruce-icon-512.png` (any 512), `bruce-icon-maskable-192.png` (maskable 192), `bruce-icon-maskable-512.png` (maskable 512). Removed all unreferenced legacy icon files: `bruce-icon-any-192.png`, `bruce-icon-any-512.png`, `icon-192.png`, `icon-512.png`, and the entire `public/icons/` directory (`icon-120.png`, `icon-192.png`, `icon-512.png`). Removed the `icons` exclusion from the middleware matcher since the directory no longer exists. `app/layout.tsx` already uses `metadata.icons.apple: "/apple-touch-icon.png"` — no change needed.

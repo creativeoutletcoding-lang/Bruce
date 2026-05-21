@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import MessageBubble from "./MessageBubble";
 import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
-import type { ChatMessage, MessageAttachment, PastedAttachmentData } from "@/lib/chat/types";
+import type { ChatMessage, MessageAttachment, PastedAttachmentData, ReactionEntry } from "@/lib/chat/types";
 import type { TaskProgressData } from "@/lib/chat/taskProgress";
 
 const ImageMessage = dynamic(() => import("./ImageMessage"), { ssr: false });
@@ -25,9 +25,11 @@ interface MessageListProps {
   currentUserId?: string;
   onDeleteMessage?: (id: string) => void;
   groupContext?: boolean;
+  reactionsMap?: Record<string, ReactionEntry[]>;
+  onReact?: (messageId: string, type: string) => void;
 }
 
-export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus, currentUserId, onDeleteMessage }: MessageListProps) {
+export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus, currentUserId, onDeleteMessage, reactionsMap, onReact }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -173,6 +175,8 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 swipeOpen={openSwipeId === msg.id}
                 onSwipeOpen={() => setOpenSwipeId(msg.id)}
                 showBruceLabel={true}
+                reactions={reactionsMap?.[msg.id]}
+                onReact={onReact && !msg.id.startsWith("tmp-") ? (type) => onReact(msg.id, type) : undefined}
               />
               );
             }

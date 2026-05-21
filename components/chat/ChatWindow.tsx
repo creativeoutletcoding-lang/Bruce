@@ -10,8 +10,9 @@ import TopBar from "./TopBar";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import type { FileAttachment } from "./MessageInput";
-import type { ChatMessage, NormalizedMessage } from "@/lib/chat/types";
+import type { ChatMessage, NormalizedMessage, ReactionEntry } from "@/lib/chat/types";
 import type { MessageRole } from "@/lib/types";
+import { aggregateReactions } from "@/lib/chat/reactionUtils";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 import { modelLabel } from "@/lib/models";
 import {
@@ -68,9 +69,26 @@ export default function ChatWindow({
   const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
   const [model, setModel] = useState(initialModel ?? "claude-sonnet-4-6");
+  const [reactionsMap, setReactionsMap] = useState<Record<string, ReactionEntry[]>>({});
   const abortRef = useRef<AbortController | null>(null);
 
   useChatMemory({ chatId, messageCount: messages.length, disabled: incognito });
+
+  const loadReactions = useCallback(async (msgIds: string[]) => {
+    const filtered = msgIds.filter((id) => !id.startsWith("tmp-"));
+    if (filtered.length === 0) { setReactionsMap({}); return; }
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("reactions")
+      .select("message_id, user_id, type")
+      .in("message_id", filtered);
+    const colorMap: Record<string, string | undefined> = currentUserId ? { [currentUserId]: userColorHex } : {};
+    setReactionsMap(aggregateReactions(
+      (data ?? []) as Array<{ message_id: string; user_id: string | null; type: string }>,
+      currentUserId,
+      colorMap,
+    ));
+  }, [currentUserId, userColorHex]);
 
   const loadMessages = useCallback(async () => {
     const supabase = createClient();
@@ -84,9 +102,63 @@ export default function ChatWindow({
     setMessages(
       (data as Array<Record<string, unknown>>).map((row) => toChatMessage(normalizeMessage(row)))
     );
-  }, [chatId]);
+    const ids = (data as Array<{ id: string }>).map((r) => r.id);
+    await loadReactions(ids);
+  }, [chatId, loadReactions]);
+
+  const handleReact = useCallback(async (messageId: string, type: string) => {
+    // Optimistic update
+    setReactionsMap((prev) => {
+      const entries = prev[messageId] ? [...prev[messageId]] : [];
+      const idx = entries.findIndex((e) => e.type === type);
+      if (idx !== -1) {
+        const entry = { ...entries[idx] };
+        if (entry.hasCurrentUser) {
+          entry.count = Math.max(0, entry.count - 1);
+          entry.hasCurrentUser = false;
+          entry.reactors = entry.reactors.filter((r) => r.userId !== currentUserId);
+          entries[idx] = entry;
+          if (entry.count === 0) entries.splice(idx, 1);
+        } else {
+          entry.count += 1;
+          entry.hasCurrentUser = true;
+          entry.reactors = [...entry.reactors, { userId: currentUserId ?? null, colorHex: userColorHex }];
+          entries[idx] = entry;
+        }
+      } else {
+        entries.push({
+          type,
+          count: 1,
+          hasCurrentUser: true,
+          reactors: [{ userId: currentUserId ?? null, colorHex: userColorHex }],
+        });
+      }
+      return { ...prev, [messageId]: entries };
+    });
+    // Sync with server
+    await fetch(`/api/messages/${messageId}/reaction`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type }),
+    });
+    // Reload to get accurate state (handles Bruce reactions too)
+    const supabase = createClient();
+    const { data: msgs } = await supabase
+      .from("messages")
+      .select("id")
+      .eq("chat_id", chatId)
+      .limit(100);
+    if (msgs) await loadReactions((msgs as Array<{ id: string }>).map((r) => r.id));
+  }, [chatId, currentUserId, userColorHex, loadReactions]);
 
   useEffect(() => { setIsClient(true); }, []);
+
+  // Load initial reactions for the starting message set
+  useEffect(() => {
+    const ids = initialMessages.map((m) => m.id);
+    if (ids.length > 0) loadReactions(ids);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
@@ -402,7 +474,7 @@ export default function ChatWindow({
         </div>
       )}
 
-      <MessageList messages={messages} onRefresh={loadMessages} userColorHex={userColorHex} streamingStatus={workingStatus} currentUserId={currentUserId} onDeleteMessage={deleteMessage} />
+      <MessageList messages={messages} onRefresh={loadMessages} userColorHex={userColorHex} streamingStatus={workingStatus} currentUserId={currentUserId} onDeleteMessage={deleteMessage} reactionsMap={reactionsMap} onReact={handleReact} />
 
       {error && (
         <div style={styles.errorRow}>

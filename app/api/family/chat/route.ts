@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
 
   const firstAtt = attachments[0];
   const firstDocFilename = attachments.find((a) => a.type === "document")?.filename ?? null;
-  const { error: msgErr } = await adminSupabase.from("messages").insert({
+  const { data: insertedMsg, error: msgErr } = await adminSupabase.from("messages").insert({
     chat_id: chatId,
     sender_id: user.id,
     role: "user",
@@ -140,8 +140,9 @@ export async function POST(request: NextRequest) {
     attachment_type: firstAtt?.type ?? null,
     attachment_filename: firstDocFilename,
     ...(() => { const m: Record<string, unknown> = {}; if (attachmentMeta.length > 0) m.attachments = attachmentMeta; if (pastedAttachments.length > 0) m.pastedAttachments = pastedAttachments; return Object.keys(m).length > 0 ? { metadata: m } : {}; })(),
-  });
+  }).select("id").single();
   if (msgErr) console.error("[api/family/chat] Failed to insert user message:", msgErr);
+  const latestUserMessageId = (insertedMsg as { id: string } | null)?.id ?? null;
 
   adminSupabase
     .from("chats")
@@ -270,6 +271,7 @@ export async function POST(request: NextRequest) {
       enabled: true,
       adminSupabase,
       chatId,
+      latestUserMessageId,
     },
     searchContext: { projectId: null },
     onComplete: async (responseText) => {

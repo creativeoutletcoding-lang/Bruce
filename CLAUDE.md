@@ -68,6 +68,8 @@ Migrations 001–029 applied. `schema.sql` is the source of truth — always upd
 
 **reminders** — personal reminders managed via the `manage_reminders` tool; `id`, `user_id`, `content`, `remind_at`, `completed_at`, `notified_at`, `chat_id` (FK → chats ON DELETE SET NULL — used for FCM deep-link). RLS: users manage own rows.
 
+**reactions** — thumbs-up reactions on messages; `id`, `message_id` (FK → messages CASCADE), `chat_id` (FK → chats CASCADE, denormalized for realtime filtering), `user_id` (FK → users, nullable — NULL = Bruce), `type` (text, default `thumbs_up`), `created_at`. Partial unique indexes: one Bruce reaction per message per type; one member reaction per message per user per type. RLS: read via `is_chat_member(chat_id)`, insert/delete own only. Service role for Bruce reactions.
+
 **RLS** is enabled on every table. `is_admin()` bypasses it for: `household`, `users`, `invite_tokens`, `pending_memory`. Admin does NOT bypass RLS on: `projects`, `project_members`, `chats`, `chat_members`, `messages`, `files`, `memory`. Memory privacy is architectural — no admin content access.
 
 ---

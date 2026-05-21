@@ -6,9 +6,10 @@ import { marked } from "marked";
 import { lightHaptic } from "@/lib/utils/haptics";
 import { getDisplayName, getProfileColor } from "@/lib/chat/senderProfile";
 import type { MessageRole } from "@/lib/types";
-import type { MessageAttachment } from "@/lib/chat/types";
+import type { MessageAttachment, ReactionEntry } from "@/lib/chat/types";
 import type { PastedAttachmentData } from "@/lib/chat/pastedText";
 import { stripPastedSummaries } from "@/lib/chat/pastedText";
+import { REACTION_EMOJI } from "@/lib/chat/reactionUtils";
 import AttachmentBlock from "./AttachmentBlock";
 import AttachmentViewer, { type ViewerContent } from "./AttachmentViewer";
 
@@ -40,12 +41,16 @@ interface MessageBubbleProps {
   swipeOpen?: boolean;
   onSwipeOpen?: () => void;
   showBruceLabel?: boolean;
+  // Reactions
+  reactions?: ReactionEntry[];
+  onReact?: (type: string) => void;
 }
 
 const REVEAL_WIDTH = 80;
 const SWIPE_THRESHOLD = 56;
 const LONG_PRESS_MS = 500;
 const MOVE_THRESHOLD_PX = 4;
+const REACTION_HINT_TTL_MS = 3000;
 
 function formatTimestamp(dateStr: string): string {
   return new Date(dateStr).toLocaleTimeString("en-US", {
@@ -53,6 +58,66 @@ function formatTimestamp(dateStr: string): string {
     minute: "2-digit",
     hour12: true,
   });
+}
+
+function ReactionPill({
+  entry,
+  onToggle,
+  disabled,
+}: {
+  entry: ReactionEntry;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  const emoji = REACTION_EMOJI[entry.type] ?? entry.type;
+  const MAX_PIPS = 5;
+  const pips = entry.reactors.slice(0, MAX_PIPS);
+  const extra = entry.reactors.length - MAX_PIPS;
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "4px",
+        padding: "3px 8px",
+        borderRadius: "var(--radius-full)",
+        border: `1px solid ${entry.hasCurrentUser ? "var(--accent)" : "var(--border)"}`,
+        backgroundColor: entry.hasCurrentUser ? "rgba(15,110,86,0.08)" : "var(--bg-secondary)",
+        cursor: disabled ? "default" : "pointer",
+        fontSize: "0.875rem",
+        color: entry.hasCurrentUser ? "var(--accent)" : "var(--text-secondary)",
+        flexShrink: 0,
+      }}
+      aria-label={`React with ${emoji}${entry.count > 1 ? `, ${entry.count} reactions` : ""}`}
+    >
+      <span>{emoji}</span>
+      {entry.count > 1 && (
+        <span style={{ fontWeight: 600, fontSize: "0.75rem" }}>{entry.count}</span>
+      )}
+      <span style={{ display: "inline-flex", gap: "2px", alignItems: "center" }}>
+        {pips.map((reactor, i) => (
+          <span
+            key={i}
+            style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              backgroundColor: reactor.colorHex ?? "#9ca3af",
+              display: "inline-block",
+              flexShrink: 0,
+            }}
+          />
+        ))}
+        {extra > 0 && (
+          <span style={{ fontSize: "0.6875rem", color: "var(--text-tertiary)" }}>+{extra}</span>
+        )}
+      </span>
+    </button>
+  );
 }
 
 export default function MessageBubble({
@@ -77,11 +142,16 @@ export default function MessageBubble({
   swipeOpen = false,
   onSwipeOpen,
   showBruceLabel = false,
+  reactions,
+  onReact,
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [viewer, setViewer] = useState<ViewerContent | null>(null);
+  const [showReactionHint, setShowReactionHint] = useState(false);
+  const [reactionHintPos, setReactionHintPos] = useState({ x: 0, y: 0 });
   const ctxMenuRef = useRef<HTMLDivElement>(null);
+  const reactionHintRef = useRef<HTMLDivElement>(null);
 
   // ── Swipe state ──────────────────────────────────────────────────────────────
   const [swipeOffset, setSwipeOffset] = useState(0);
@@ -93,6 +163,7 @@ export default function MessageBubble({
   const isDragging = useRef(false);
   const gestureAborted = useRef(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reactionHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { swipeOffsetRef.current = swipeOffset; }, [swipeOffset]);
 
@@ -104,7 +175,7 @@ export default function MessageBubble({
     }
   }, [swipeOpen]);
 
-  // ── Dismiss context menu on outside click ────────────────────────────────────
+  // Dismiss context menu on outside click
   useEffect(() => {
     if (!ctxMenu) return;
     function dismiss(e: Event) {
@@ -120,55 +191,79 @@ export default function MessageBubble({
     };
   }, [ctxMenu]);
 
-  // Desktop right-click only — on touch devices, long-press shows the native
-  // text selection menu (don't intercept it).
+  // Dismiss reaction hint on outside click/tap (with delay so the long-press
+  // touchend doesn't immediately close it)
+  useEffect(() => {
+    if (!showReactionHint) return;
+    function dismiss(e: Event) {
+      if (reactionHintRef.current?.contains(e.target as Node)) return;
+      setShowReactionHint(false);
+    }
+    const timerId = setTimeout(() => {
+      document.addEventListener("mousedown", dismiss);
+      document.addEventListener("touchstart", dismiss);
+    }, 300);
+    return () => {
+      clearTimeout(timerId);
+      document.removeEventListener("mousedown", dismiss);
+      document.removeEventListener("touchstart", dismiss);
+    };
+  }, [showReactionHint]);
+
+  // Desktop right-click — on touch devices native text selection proceeds.
   function handleContextMenu(e: React.MouseEvent) {
-    if (!canDelete) return;
+    const hasActions = canDelete || !!onReact;
+    if (!hasActions) return;
     const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
     if (isTouchDevice) return;
     e.preventDefault();
     setCtxMenu({ x: e.clientX, y: e.clientY });
   }
 
-  // ── Swipe touch handlers ─────────────────────────────────────────────────────
+  // ── Swipe + long-press touch handlers ────────────────────────────────────────
   function handleSwipeTouchStart(e: React.TouchEvent) {
-    if (!canDelete) return;
     const t = e.touches[0];
     touchStartX.current = t.clientX;
     touchStartY.current = t.clientY;
-    startOffset.current = swipeOffsetRef.current;
     isDragging.current = false;
     gestureAborted.current = false;
-    // Start long-press timer; if significant movement comes first the timer is
-    // cancelled and native text selection / scroll proceeds uninterrupted.
+
+    if (canDelete) {
+      startOffset.current = swipeOffsetRef.current;
+    }
+
+    // Long-press fires after LONG_PRESS_MS if no significant movement
     longPressTimer.current = setTimeout(() => {
       longPressTimer.current = null;
+      if (!isDragging.current && !gestureAborted.current && onReact) {
+        lightHaptic();
+        setReactionHintPos({ x: touchStartX.current, y: touchStartY.current });
+        setShowReactionHint(true);
+        reactionHintTimer.current = setTimeout(() => setShowReactionHint(false), REACTION_HINT_TTL_MS);
+      }
     }, LONG_PRESS_MS);
   }
 
   function handleSwipeTouchMove(e: React.TouchEvent) {
-    if (!canDelete || gestureAborted.current) return;
+    if (gestureAborted.current) return;
     const t = e.touches[0];
     const totalDx = t.clientX - touchStartX.current;
     const totalDy = t.clientY - touchStartY.current;
     const totalMovement = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
 
-    // Cancel long-press the moment the finger moves more than 4 px — this
-    // releases native control so text selection can proceed in any direction.
     if (longPressTimer.current !== null && totalMovement > MOVE_THRESHOLD_PX) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
 
+    if (!canDelete) return;
+
     if (!isDragging.current) {
-      // Wait until gesture direction is unambiguous.
       if (Math.abs(totalDx) < MOVE_THRESHOLD_PX && Math.abs(totalDy) < MOVE_THRESHOLD_PX) return;
-      // Vertical movement dominant — abort swipe, let native scroll/selection proceed.
       if (Math.abs(totalDy) > Math.abs(totalDx)) {
         gestureAborted.current = true;
         return;
       }
-      // Horizontal movement dominant — commit to swipe-to-delete.
       isDragging.current = true;
       onSwipeOpen?.();
     }
@@ -183,9 +278,8 @@ export default function MessageBubble({
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
-    if (!isDragging.current) {
-      // Tap (no drag) — close if open
-      if (swipeOffsetRef.current < 0) {
+    if (!canDelete || !isDragging.current) {
+      if (canDelete && swipeOffsetRef.current < 0) {
         setIsSwiping(false);
         setSwipeOffset(0);
       }
@@ -229,9 +323,8 @@ export default function MessageBubble({
   const docAttachments = resolvedAttachments.filter((a) => a.type === "document");
   const hasPasted = Boolean(pastedAttachments && pastedAttachments.length > 0);
 
-  // When structured pasted attachments are present, strip the summary prefix
-  // that buildDisplayMessage baked into content so we don't show it twice.
   const displayContent = hasPasted ? stripPastedSummaries(content) : content;
+  const hasReactions = reactions && reactions.length > 0;
 
   return (
     <div style={{ position: "relative", overflow: "hidden" }}>
@@ -367,9 +460,6 @@ export default function MessageBubble({
               </span>
             ) : (
               role === "assistant" ? (
-                // Render markdown both during and after streaming so partial
-                // formatting (lists, bold, headers) appears progressively
-                // instead of snapping in at the end.
                 <div
                   className="bruce-md"
                   dangerouslySetInnerHTML={{ __html: marked(displayContent) as string }}
@@ -383,6 +473,29 @@ export default function MessageBubble({
             )}
           </div>
         )}
+
+        {/* Reaction pills — attached below the bubble */}
+        {hasReactions && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "4px",
+              justifyContent: isUser ? "flex-end" : "flex-start",
+              marginTop: "4px",
+            }}
+          >
+            {reactions!.map((entry) => (
+              <ReactionPill
+                key={entry.type}
+                entry={entry}
+                onToggle={() => onReact?.(entry.type)}
+                disabled={isStreaming}
+              />
+            ))}
+          </div>
+        )}
+
         {timestamp && (
           <div
             className="msg-timestamp"
@@ -415,11 +528,62 @@ export default function MessageBubble({
             minWidth: "130px",
           }}
         >
+          {onReact && (
+            <button
+              style={styles.contextMenuItem}
+              onClick={() => { setCtxMenu(null); onReact("thumbs_up"); }}
+            >
+              👍 React
+            </button>
+          )}
+          {canDelete && (
+            <button
+              style={{ ...styles.contextMenuItem, color: "#c0392b" }}
+              onClick={() => { setCtxMenu(null); onDelete?.(); }}
+            >
+              Delete
+            </button>
+          )}
+        </div>,
+        document.body
+      )}
+
+      {/* Reaction hint — portal to body (mobile long-press) */}
+      {showReactionHint && onReact && createPortal(
+        <div
+          ref={reactionHintRef}
+          style={{
+            position: "fixed",
+            top: Math.max(8, reactionHintPos.y - 56),
+            left: Math.max(8, reactionHintPos.x - 24),
+            zIndex: 9999,
+            backgroundColor: "var(--bg-primary)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-full)",
+            boxShadow: "var(--shadow-lg)",
+            padding: "8px 14px",
+            display: "flex",
+            gap: "8px",
+          }}
+        >
           <button
-            style={styles.contextMenuItem}
-            onClick={() => { setCtxMenu(null); onDelete?.(); }}
+            type="button"
+            style={{
+              fontSize: "1.375rem",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              lineHeight: 1,
+              padding: 0,
+            }}
+            onClick={() => {
+              setShowReactionHint(false);
+              if (reactionHintTimer.current) clearTimeout(reactionHintTimer.current);
+              onReact("thumbs_up");
+            }}
+            aria-label="React with thumbs up"
           >
-            Delete
+            👍
           </button>
         </div>,
         document.body
@@ -519,12 +683,12 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "left" as const,
     fontSize: "0.875rem",
     fontWeight: "500",
-    color: "#c0392b",
     cursor: "pointer",
     backgroundColor: "transparent",
     transition: "background-color var(--transition)",
     display: "block",
     border: "none",
+    color: "var(--text-primary)",
   },
   imageBtnWrapper: {
     display: "block",
