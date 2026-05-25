@@ -59,8 +59,8 @@ function formatTimestamp(dateStr: string): string {
   });
 }
 
-const CIRCLE_SIZE = 22;
-const CIRCLE_STEP = 14; // 22px diameter - 8px overlap
+const ICON_SIZE = 28;
+const ICON_STEP = 20; // 28px icon - 8px overlap
 
 function ReactionOverlay({
   reactions,
@@ -88,11 +88,7 @@ function ReactionOverlay({
     }
   }
 
-  const showOverflow = uniqueReactors.length >= 3;
-  const shownReactors = showOverflow ? uniqueReactors.slice(0, 2) : uniqueReactors;
-  const extraCount = uniqueReactors.length - 2;
-  const totalCircles = shownReactors.length + (showOverflow ? 1 : 0);
-  const totalWidth = CIRCLE_SIZE + (totalCircles - 1) * CIRCLE_STEP;
+  const totalWidth = ICON_SIZE + (uniqueReactors.length - 1) * ICON_STEP;
 
   const cornerStyle: React.CSSProperties = isHumanMessage
     ? isUser
@@ -109,63 +105,35 @@ function ReactionOverlay({
       disabled={disabled}
       style={{
         position: "absolute",
-        bottom: "-10px",
+        top: "-14px",
         ...cornerStyle,
         width: `${totalWidth}px`,
-        height: `${CIRCLE_SIZE}px`,
+        height: `${ICON_SIZE}px`,
         background: "transparent",
         border: "none",
         padding: 0,
         cursor: disabled ? "default" : "pointer",
-        filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.18))",
-        zIndex: 2,
+        zIndex: 10,
       }}
       aria-label={`${uniqueReactors.length} reaction${uniqueReactors.length !== 1 ? "s" : ""} — tap to react`}
     >
-      {shownReactors.map((reactor, i) => (
-        <span
+      {uniqueReactors.map((reactor, i) => (
+        <svg
           key={reactor.userId ?? "__bruce__"}
+          width={ICON_SIZE}
+          height={ICON_SIZE}
+          viewBox="0 0 24 24"
+          fill={reactor.colorHex ?? "#0F6E56"}
+          aria-hidden="true"
           style={{
             position: "absolute",
-            left: `${i * CIRCLE_STEP}px`,
-            width: `${CIRCLE_SIZE}px`,
-            height: `${CIRCLE_SIZE}px`,
-            borderRadius: "50%",
-            backgroundColor: reactor.colorHex ?? "#0F6E56",
-            border: "1.5px solid var(--bg-primary)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            left: `${i * ICON_STEP}px`,
             zIndex: i + 1,
           }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="white" aria-hidden="true">
-            <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/>
-          </svg>
-        </span>
+          <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/>
+        </svg>
       ))}
-      {showOverflow && (
-        <span
-          style={{
-            position: "absolute",
-            left: `${2 * CIRCLE_STEP}px`,
-            width: `${CIRCLE_SIZE}px`,
-            height: `${CIRCLE_SIZE}px`,
-            borderRadius: "50%",
-            backgroundColor: "var(--bg-tertiary)",
-            border: "1.5px solid var(--bg-primary)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "10px",
-            fontWeight: 600,
-            color: "white",
-            zIndex: 3,
-          }}
-        >
-          +{extraCount}
-        </span>
-      )}
     </button>
   );
 }
@@ -486,7 +454,7 @@ export default function MessageBubble({
 
         {/* Bubble wrapper — position:relative anchors the reaction overlay to this element */}
         {(showDots || displayContent) && (
-          <div style={{ position: "relative", ...(hasReactions ? { marginBottom: "14px" } : {}) }}>
+          <div style={{ position: "relative", ...(hasReactions ? { marginTop: "20px" } : {}) }}>
             <div
               className={isHumanMessage ? "bubble-tint" : undefined}
               style={
