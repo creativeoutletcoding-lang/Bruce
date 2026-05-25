@@ -82,9 +82,10 @@ export default function ChatWindow({
       .from("reactions")
       .select("message_id, user_id, type")
       .in("message_id", filtered);
+    if (!data) return;
     const colorMap: Record<string, string | undefined> = currentUserId ? { [currentUserId]: userColorHex } : {};
     setReactionsMap(aggregateReactions(
-      (data ?? []) as Array<{ message_id: string; user_id: string | null; type: string }>,
+      data as Array<{ message_id: string; user_id: string | null; type: string }>,
       currentUserId,
       colorMap,
     ));
@@ -135,21 +136,14 @@ export default function ChatWindow({
       }
       return { ...prev, [messageId]: entries };
     });
-    // Sync with server
-    await fetch(`/api/messages/${messageId}/reaction`, {
+    // Fire and forget — optimistic update is authoritative; loadMessages after
+    // the next stream will sync server state including any Bruce reactions.
+    fetch(`/api/messages/${messageId}/reaction`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type }),
     });
-    // Reload to get accurate state (handles Bruce reactions too)
-    const supabase = createClient();
-    const { data: msgs } = await supabase
-      .from("messages")
-      .select("id")
-      .eq("chat_id", chatId)
-      .limit(100);
-    if (msgs) await loadReactions((msgs as Array<{ id: string }>).map((r) => r.id));
-  }, [chatId, currentUserId, userColorHex, loadReactions]);
+  }, [currentUserId, userColorHex]);
 
   useEffect(() => { setIsClient(true); }, []);
 

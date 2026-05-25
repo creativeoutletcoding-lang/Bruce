@@ -172,8 +172,9 @@ export default function ProjectChatView({
     const colorMap: Record<string, string | undefined> = Object.fromEntries(
       Object.entries(memberMapRef.current).map(([id, info]) => [id, info.color_hex])
     );
+    if (!data) return;
     setReactionsMap(aggregateReactions(
-      (data ?? []) as Array<{ message_id: string; user_id: string | null; type: string }>,
+      data as Array<{ message_id: string; user_id: string | null; type: string }>,
       currentUserId,
       colorMap,
     ));
@@ -314,15 +315,13 @@ export default function ProjectChatView({
       }
       return { ...prev, [messageId]: entries };
     });
-    await fetch(`/api/messages/${messageId}/reaction`, {
+    // Realtime subscription handles server state; fire and forget here.
+    fetch(`/api/messages/${messageId}/reaction`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type }),
     });
-    const supabase = createClient();
-    const { data: msgs } = await supabase.from("messages").select("id").eq("chat_id", chatId).limit(100);
-    if (msgs) await loadReactionsPC((msgs as Array<{ id: string }>).map((r) => r.id));
-  }, [chatId, currentUserId, userColorHex, loadReactionsPC]);
+  }, [currentUserId, userColorHex]);
 
   function handleStop() {
     abortRef.current?.abort();

@@ -454,7 +454,7 @@ export default function MessageBubble({
 
         {/* Bubble wrapper — position:relative anchors the reaction overlay to this element */}
         {(showDots || displayContent) && (
-          <div style={{ position: "relative", ...(hasReactions ? { marginTop: "20px" } : {}) }}>
+          <div style={{ position: "relative", display: "inline-block", ...(hasReactions ? { marginTop: "20px" } : {}) }}>
             <div
               className={isHumanMessage ? "bubble-tint" : undefined}
               style={
