@@ -60,22 +60,20 @@ function formatTimestamp(dateStr: string): string {
 }
 
 const ICON_SIZE = 28;
-const ICON_STEP = 20; // 28px icon - 8px overlap
 
-function ReactionOverlay({
+// Renders reaction icons in normal flow BEFORE the bubble so absolute
+// positioning is not needed. marginBottom: -22px pulls the bubble up by
+// 14px (8px gap + 14px overlap); zIndex: 1 paints the row on top of the
+// bubble below it.
+function ReactionRow({
   reactions,
   isUser,
   isHumanMessage,
-  onReact,
-  disabled,
 }: {
   reactions: ReactionEntry[];
   isUser: boolean;
   isHumanMessage: boolean;
-  onReact: (type: string) => void;
-  disabled?: boolean;
 }) {
-  // Collect unique reactors across all reaction types, preserving order
   const seen = new Set<string>();
   const uniqueReactors: { userId: string | null; colorHex?: string }[] = [];
   for (const entry of reactions) {
@@ -88,34 +86,23 @@ function ReactionOverlay({
     }
   }
 
-  const totalWidth = ICON_SIZE + (uniqueReactors.length - 1) * ICON_STEP;
-
-  const cornerStyle: React.CSSProperties = isHumanMessage
-    ? isUser
-      ? { right: "8px" }
-      : { left: "8px" }
-    : { left: "0" };
-
-  const reactionType = reactions[0]?.type ?? "thumbs_up";
-
   return (
-    <button
-      type="button"
-      onClick={() => !disabled && onReact(reactionType)}
-      disabled={disabled}
+    <div
       style={{
-        position: "absolute",
-        top: "-14px",
-        ...cornerStyle,
-        width: `${totalWidth}px`,
+        width: "100%",
         height: `${ICON_SIZE}px`,
-        background: "transparent",
-        border: "none",
-        padding: 0,
-        cursor: disabled ? "default" : "pointer",
-        zIndex: 10,
+        // 8px flex gap + 14px desired overlap = -22px
+        marginBottom: "-22px",
+        position: "relative",
+        zIndex: 1,
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "flex-end",
+        justifyContent: isUser ? "flex-end" : "flex-start",
+        paddingRight: isUser ? "8px" : undefined,
+        paddingLeft: (!isUser && isHumanMessage) ? "8px" : undefined,
+        pointerEvents: "none",
       }}
-      aria-label={`${uniqueReactors.length} reaction${uniqueReactors.length !== 1 ? "s" : ""} — tap to react`}
     >
       {uniqueReactors.map((reactor, i) => (
         <svg
@@ -126,15 +113,17 @@ function ReactionOverlay({
           fill={reactor.colorHex ?? "#0F6E56"}
           aria-hidden="true"
           style={{
-            position: "absolute",
-            left: `${i * ICON_STEP}px`,
+            display: "block",
+            flexShrink: 0,
+            marginLeft: i === 0 ? 0 : "-8px",
+            position: "relative",
             zIndex: i + 1,
           }}
         >
           <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/>
         </svg>
       ))}
-    </button>
+    </div>
   );
 }
 
@@ -452,55 +441,53 @@ export default function MessageBubble({
           </div>
         )}
 
-        {/* Bubble wrapper — position:relative anchors the reaction overlay to this element */}
-        {(showDots || displayContent) && (
-          <div style={{ position: "relative", display: "inline-block", ...(hasReactions ? { marginTop: "20px" } : {}) }}>
-            <div
-              className={isHumanMessage ? "bubble-tint" : undefined}
-              style={
-                isHumanMessage
-                  ? {
-                      ...styles.bubble,
-                      whiteSpace: "pre-wrap",
-                      ["--bubble-color" as string]: isUser ? resolvedOwnColor : resolvedSenderColor,
-                      ...(isUser
-                        ? { borderRight: `2.5px solid ${resolvedOwnColor}`, borderRadius: "10px 0 0 10px" }
-                        : { borderLeft: `2.5px solid ${resolvedSenderColor}`, borderRadius: "0 10px 10px 0" }),
-                      color: "var(--text-primary)",
-                    }
-                  : styles.assistantContent
-              }
-            >
-              {showDots ? (
-                <span style={styles.dotsRow}>
-                  <span style={styles.dot1} />
-                  <span style={styles.dot2} />
-                  <span style={styles.dot3} />
-                </span>
-              ) : (
-                role === "assistant" ? (
-                  <div
-                    className="bruce-md"
-                    dangerouslySetInnerHTML={{ __html: marked(displayContent) as string }}
-                  />
-                ) : (
-                  <span style={styles.content}>{displayContent}</span>
-                )
-              )}
-              {interrupted && (
-                <div style={styles.interruptedNote}>Stopped</div>
-              )}
-            </div>
+        {/* Reaction icons — rendered before the bubble in flow so no
+            absolute positioning is needed. The row overlaps the bubble's
+            top corner via marginBottom: -22px + zIndex: 1. */}
+        {hasReactions && (
+          <ReactionRow
+            reactions={reactions!}
+            isUser={isUser}
+            isHumanMessage={isHumanMessage}
+          />
+        )}
 
-            {/* iMessage-style reaction overlay — stacked profile color circles */}
-            {hasReactions && onReact && (
-              <ReactionOverlay
-                reactions={reactions!}
-                isUser={isUser}
-                isHumanMessage={isHumanMessage}
-                onReact={onReact}
-                disabled={isStreaming}
-              />
+        {/* Bubble */}
+        {(showDots || displayContent) && (
+          <div
+            className={isHumanMessage ? "bubble-tint" : undefined}
+            style={
+              isHumanMessage
+                ? {
+                    ...styles.bubble,
+                    whiteSpace: "pre-wrap",
+                    ["--bubble-color" as string]: isUser ? resolvedOwnColor : resolvedSenderColor,
+                    ...(isUser
+                      ? { borderRight: `2.5px solid ${resolvedOwnColor}`, borderRadius: "10px 0 0 10px" }
+                      : { borderLeft: `2.5px solid ${resolvedSenderColor}`, borderRadius: "0 10px 10px 0" }),
+                    color: "var(--text-primary)",
+                  }
+                : styles.assistantContent
+            }
+          >
+            {showDots ? (
+              <span style={styles.dotsRow}>
+                <span style={styles.dot1} />
+                <span style={styles.dot2} />
+                <span style={styles.dot3} />
+              </span>
+            ) : (
+              role === "assistant" ? (
+                <div
+                  className="bruce-md"
+                  dangerouslySetInnerHTML={{ __html: marked(displayContent) as string }}
+                />
+              ) : (
+                <span style={styles.content}>{displayContent}</span>
+              )
+            )}
+            {interrupted && (
+              <div style={styles.interruptedNote}>Stopped</div>
             )}
           </div>
         )}
