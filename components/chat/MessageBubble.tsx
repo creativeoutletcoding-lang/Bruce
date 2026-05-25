@@ -136,12 +136,12 @@ function ReactionOverlay({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: "12px",
-            lineHeight: 1,
             zIndex: i + 1,
           }}
         >
-          👍
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="white" aria-hidden="true">
+            <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/>
+          </svg>
         </span>
       ))}
       {showOverflow && (
@@ -377,7 +377,7 @@ export default function MessageBubble({
   const hasReactions = reactions && reactions.length > 0;
 
   return (
-    <div style={{ position: "relative", overflow: "hidden" }}>
+    <div style={{ position: "relative", overflowX: "clip" }}>
       {/* Delete button — revealed by swipe, sits behind the content layer */}
       {canDelete && (
         <button
@@ -420,80 +420,73 @@ export default function MessageBubble({
           </div>
         )}
 
-        {/* Content wrapper — position:relative anchors the reaction overlay */}
-        <div style={{
-          position: "relative",
-          display: "flex",
-          flexDirection: "column",
-          gap: "8px",
-          ...(hasReactions ? { marginBottom: "14px" } : {}),
-        }}>
-          {/* Pasted text attachment blocks */}
-          {hasPasted && pastedAttachments!.map((att, i) => (
-            <AttachmentBlock
-              key={i}
-              type="pasted_text"
-              label="Pasted text"
-              meta={`${att.wordCount} words · ${att.lineCount} lines`}
-              onClick={() => setViewer({ type: "pasted_text", content: att.content, wordCount: att.wordCount, lineCount: att.lineCount, title: "Pasted text" })}
-            />
-          ))}
+        {/* Pasted text attachment blocks */}
+        {hasPasted && pastedAttachments!.map((att, i) => (
+          <AttachmentBlock
+            key={i}
+            type="pasted_text"
+            label="Pasted text"
+            meta={`${att.wordCount} words · ${att.lineCount} lines`}
+            onClick={() => setViewer({ type: "pasted_text", content: att.content, wordCount: att.wordCount, lineCount: att.lineCount, title: "Pasted text" })}
+          />
+        ))}
 
-          {/* Image attachments — tappable thumbnail */}
-          {imageAttachments.length > 0 && (
-            <div style={{
-              display: "flex",
-              gap: "6px",
-              flexWrap: "wrap",
-              justifyContent: isUser ? "flex-end" : "flex-start",
-            }}>
-              {imageAttachments.map((img, i) => (
-                <button
-                  key={i}
-                  onClick={() => setViewer({ type: "image", url: img.url, title: img.filename ?? "Image" })}
-                  style={styles.imageBtnWrapper}
-                  type="button"
-                  aria-label="View image"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={img.url}
-                    alt=""
-                    style={{
-                      maxWidth: "260px",
-                      width: imageAttachments.length > 1 ? "128px" : undefined,
-                      height: imageAttachments.length > 1 ? "128px" : "auto",
-                      borderRadius: "var(--radius-lg)",
-                      objectFit: "cover",
-                      display: "block",
-                    }}
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Document attachment blocks */}
-          {docAttachments.length > 0 && (
-            <div style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "4px",
-              alignItems: isUser ? "flex-end" : "flex-start",
-            }}>
-              {docAttachments.map((doc, i) => (
-                <AttachmentBlock
-                  key={i}
-                  type="document"
-                  label={doc.filename ?? "Document"}
-                  onClick={() => doc.url ? setViewer({ type: "document", url: doc.url, title: doc.filename ?? "Document" }) : undefined}
+        {/* Image attachments — tappable thumbnail */}
+        {imageAttachments.length > 0 && (
+          <div style={{
+            display: "flex",
+            gap: "6px",
+            flexWrap: "wrap",
+            justifyContent: isUser ? "flex-end" : "flex-start",
+          }}>
+            {imageAttachments.map((img, i) => (
+              <button
+                key={i}
+                onClick={() => setViewer({ type: "image", url: img.url, title: img.filename ?? "Image" })}
+                style={styles.imageBtnWrapper}
+                type="button"
+                aria-label="View image"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={img.url}
+                  alt=""
+                  style={{
+                    maxWidth: "260px",
+                    width: imageAttachments.length > 1 ? "128px" : undefined,
+                    height: imageAttachments.length > 1 ? "128px" : "auto",
+                    borderRadius: "var(--radius-lg)",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
                 />
-              ))}
-            </div>
-          )}
+              </button>
+            ))}
+          </div>
+        )}
 
-          {/* Bubble only when there is text content or streaming dots */}
-          {(showDots || displayContent) && (
+        {/* Document attachment blocks */}
+        {docAttachments.length > 0 && (
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px",
+            alignItems: isUser ? "flex-end" : "flex-start",
+          }}>
+            {docAttachments.map((doc, i) => (
+              <AttachmentBlock
+                key={i}
+                type="document"
+                label={doc.filename ?? "Document"}
+                onClick={() => doc.url ? setViewer({ type: "document", url: doc.url, title: doc.filename ?? "Document" }) : undefined}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Bubble wrapper — position:relative anchors the reaction overlay to this element */}
+        {(showDots || displayContent) && (
+          <div style={{ position: "relative", ...(hasReactions ? { marginBottom: "14px" } : {}) }}>
             <div
               className={isHumanMessage ? "bubble-tint" : undefined}
               style={
@@ -530,19 +523,19 @@ export default function MessageBubble({
                 <div style={styles.interruptedNote}>Stopped</div>
               )}
             </div>
-          )}
 
-          {/* iMessage-style reaction overlay — stacked profile color circles */}
-          {hasReactions && onReact && (
-            <ReactionOverlay
-              reactions={reactions!}
-              isUser={isUser}
-              isHumanMessage={isHumanMessage}
-              onReact={onReact}
-              disabled={isStreaming}
-            />
-          )}
-        </div>
+            {/* iMessage-style reaction overlay — stacked profile color circles */}
+            {hasReactions && onReact && (
+              <ReactionOverlay
+                reactions={reactions!}
+                isUser={isUser}
+                isHumanMessage={isHumanMessage}
+                onReact={onReact}
+                disabled={isStreaming}
+              />
+            )}
+          </div>
+        )}
 
         {timestamp && (
           <div
