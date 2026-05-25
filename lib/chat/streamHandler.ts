@@ -316,6 +316,7 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
           stream.on("text", (text) => {
             turnText += text;
             fullResponse += text;
+            handleText(text);
           });
 
           const finalMsg = await stream.finalMessage();
@@ -340,7 +341,7 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
               ];
               continue;
             }
-            handleText(turnText);
+            // Text already streamed per-chunk via stream.on("text") → handleText(text).
             break;
           }
 
