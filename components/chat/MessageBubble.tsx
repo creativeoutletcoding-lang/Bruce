@@ -9,7 +9,6 @@ import type { MessageRole } from "@/lib/types";
 import type { MessageAttachment, ReactionEntry } from "@/lib/chat/types";
 import type { PastedAttachmentData } from "@/lib/chat/pastedText";
 import { stripPastedSummaries } from "@/lib/chat/pastedText";
-import { REACTION_EMOJI } from "@/lib/chat/reactionUtils";
 import AttachmentBlock from "./AttachmentBlock";
 import AttachmentViewer, { type ViewerContent } from "./AttachmentViewer";
 
@@ -60,62 +59,113 @@ function formatTimestamp(dateStr: string): string {
   });
 }
 
-function ReactionPill({
-  entry,
-  onToggle,
+const CIRCLE_SIZE = 22;
+const CIRCLE_STEP = 14; // 22px diameter - 8px overlap
+
+function ReactionOverlay({
+  reactions,
+  isUser,
+  isHumanMessage,
+  onReact,
   disabled,
 }: {
-  entry: ReactionEntry;
-  onToggle: () => void;
+  reactions: ReactionEntry[];
+  isUser: boolean;
+  isHumanMessage: boolean;
+  onReact: (type: string) => void;
   disabled?: boolean;
 }) {
-  const emoji = REACTION_EMOJI[entry.type] ?? entry.type;
-  const MAX_PIPS = 5;
-  const pips = entry.reactors.slice(0, MAX_PIPS);
-  const extra = entry.reactors.length - MAX_PIPS;
+  // Collect unique reactors across all reaction types, preserving order
+  const seen = new Set<string>();
+  const uniqueReactors: { userId: string | null; colorHex?: string }[] = [];
+  for (const entry of reactions) {
+    for (const reactor of entry.reactors) {
+      const key = reactor.userId ?? "__bruce__";
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueReactors.push(reactor);
+      }
+    }
+  }
+
+  const showOverflow = uniqueReactors.length >= 3;
+  const shownReactors = showOverflow ? uniqueReactors.slice(0, 2) : uniqueReactors;
+  const extraCount = uniqueReactors.length - 2;
+  const totalCircles = shownReactors.length + (showOverflow ? 1 : 0);
+  const totalWidth = CIRCLE_SIZE + (totalCircles - 1) * CIRCLE_STEP;
+
+  const cornerStyle: React.CSSProperties = isHumanMessage
+    ? isUser
+      ? { right: "8px" }
+      : { left: "8px" }
+    : { left: "0" };
+
+  const reactionType = reactions[0]?.type ?? "thumbs_up";
 
   return (
     <button
       type="button"
-      onClick={onToggle}
+      onClick={() => !disabled && onReact(reactionType)}
       disabled={disabled}
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "4px",
-        padding: "3px 8px",
-        borderRadius: "var(--radius-full)",
-        border: `1px solid ${entry.hasCurrentUser ? "var(--accent)" : "var(--border)"}`,
-        backgroundColor: entry.hasCurrentUser ? "rgba(15,110,86,0.08)" : "var(--bg-secondary)",
+        position: "absolute",
+        bottom: "-10px",
+        ...cornerStyle,
+        width: `${totalWidth}px`,
+        height: `${CIRCLE_SIZE}px`,
+        background: "transparent",
+        border: "none",
+        padding: 0,
         cursor: disabled ? "default" : "pointer",
-        fontSize: "0.875rem",
-        color: entry.hasCurrentUser ? "var(--accent)" : "var(--text-secondary)",
-        flexShrink: 0,
+        filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.18))",
+        zIndex: 2,
       }}
-      aria-label={`React with ${emoji}${entry.count > 1 ? `, ${entry.count} reactions` : ""}`}
+      aria-label={`${uniqueReactors.length} reaction${uniqueReactors.length !== 1 ? "s" : ""} — tap to react`}
     >
-      <span>{emoji}</span>
-      {entry.count > 1 && (
-        <span style={{ fontWeight: 600, fontSize: "0.75rem" }}>{entry.count}</span>
+      {shownReactors.map((reactor, i) => (
+        <span
+          key={reactor.userId ?? "__bruce__"}
+          style={{
+            position: "absolute",
+            left: `${i * CIRCLE_STEP}px`,
+            width: `${CIRCLE_SIZE}px`,
+            height: `${CIRCLE_SIZE}px`,
+            borderRadius: "50%",
+            backgroundColor: reactor.colorHex ?? "#0F6E56",
+            border: "1.5px solid var(--bg-primary)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "12px",
+            lineHeight: 1,
+            zIndex: i + 1,
+          }}
+        >
+          👍
+        </span>
+      ))}
+      {showOverflow && (
+        <span
+          style={{
+            position: "absolute",
+            left: `${2 * CIRCLE_STEP}px`,
+            width: `${CIRCLE_SIZE}px`,
+            height: `${CIRCLE_SIZE}px`,
+            borderRadius: "50%",
+            backgroundColor: "var(--bg-tertiary)",
+            border: "1.5px solid var(--bg-primary)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "10px",
+            fontWeight: 600,
+            color: "white",
+            zIndex: 3,
+          }}
+        >
+          +{extraCount}
+        </span>
       )}
-      <span style={{ display: "inline-flex", gap: "2px", alignItems: "center" }}>
-        {pips.map((reactor, i) => (
-          <span
-            key={i}
-            style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              backgroundColor: reactor.colorHex ?? "#9ca3af",
-              display: "inline-block",
-              flexShrink: 0,
-            }}
-          />
-        ))}
-        {extra > 0 && (
-          <span style={{ fontSize: "0.6875rem", color: "var(--text-tertiary)" }}>+{extra}</span>
-        )}
-      </span>
     </button>
   );
 }
@@ -370,131 +420,129 @@ export default function MessageBubble({
           </div>
         )}
 
-        {/* Pasted text attachment blocks */}
-        {hasPasted && pastedAttachments!.map((att, i) => (
-          <AttachmentBlock
-            key={i}
-            type="pasted_text"
-            label="Pasted text"
-            meta={`${att.wordCount} words · ${att.lineCount} lines`}
-            onClick={() => setViewer({ type: "pasted_text", content: att.content, wordCount: att.wordCount, lineCount: att.lineCount, title: "Pasted text" })}
-          />
-        ))}
+        {/* Content wrapper — position:relative anchors the reaction overlay */}
+        <div style={{
+          position: "relative",
+          display: "flex",
+          flexDirection: "column",
+          gap: "8px",
+          ...(hasReactions ? { marginBottom: "14px" } : {}),
+        }}>
+          {/* Pasted text attachment blocks */}
+          {hasPasted && pastedAttachments!.map((att, i) => (
+            <AttachmentBlock
+              key={i}
+              type="pasted_text"
+              label="Pasted text"
+              meta={`${att.wordCount} words · ${att.lineCount} lines`}
+              onClick={() => setViewer({ type: "pasted_text", content: att.content, wordCount: att.wordCount, lineCount: att.lineCount, title: "Pasted text" })}
+            />
+          ))}
 
-        {/* Image attachments — tappable thumbnail */}
-        {imageAttachments.length > 0 && (
-          <div style={{
-            display: "flex",
-            gap: "6px",
-            flexWrap: "wrap",
-            justifyContent: isUser ? "flex-end" : "flex-start",
-          }}>
-            {imageAttachments.map((img, i) => (
-              <button
-                key={i}
-                onClick={() => setViewer({ type: "image", url: img.url, title: img.filename ?? "Image" })}
-                style={styles.imageBtnWrapper}
-                type="button"
-                aria-label="View image"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={img.url}
-                  alt=""
-                  style={{
-                    maxWidth: "260px",
-                    width: imageAttachments.length > 1 ? "128px" : undefined,
-                    height: imageAttachments.length > 1 ? "128px" : "auto",
-                    borderRadius: "var(--radius-lg)",
-                    objectFit: "cover",
-                    display: "block",
-                  }}
-                />
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Document attachment blocks */}
-        {docAttachments.length > 0 && (
-          <div style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "4px",
-            alignItems: isUser ? "flex-end" : "flex-start",
-          }}>
-            {docAttachments.map((doc, i) => (
-              <AttachmentBlock
-                key={i}
-                type="document"
-                label={doc.filename ?? "Document"}
-                onClick={() => doc.url ? setViewer({ type: "document", url: doc.url, title: doc.filename ?? "Document" }) : undefined}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Bubble only when there is text content or streaming dots */}
-        {(showDots || displayContent) && (
-          <div
-            className={isHumanMessage ? "bubble-tint" : undefined}
-            style={
-              isHumanMessage
-                ? {
-                    ...styles.bubble,
-                    whiteSpace: "pre-wrap",
-                    ["--bubble-color" as string]: isUser ? resolvedOwnColor : resolvedSenderColor,
-                    ...(isUser
-                      ? { borderRight: `2.5px solid ${resolvedOwnColor}`, borderRadius: "10px 0 0 10px" }
-                      : { borderLeft: `2.5px solid ${resolvedSenderColor}`, borderRadius: "0 10px 10px 0" }),
-                    color: "var(--text-primary)",
-                  }
-                : styles.assistantContent
-            }
-          >
-            {showDots ? (
-              <span style={styles.dotsRow}>
-                <span style={styles.dot1} />
-                <span style={styles.dot2} />
-                <span style={styles.dot3} />
-              </span>
-            ) : (
-              role === "assistant" ? (
-                <div
-                  className="bruce-md"
-                  dangerouslySetInnerHTML={{ __html: marked(displayContent) as string }}
-                />
-              ) : (
-                <span style={styles.content}>{displayContent}</span>
-              )
-            )}
-            {interrupted && (
-              <div style={styles.interruptedNote}>Stopped</div>
-            )}
-          </div>
-        )}
-
-        {/* Reaction pills — attached below the bubble */}
-        {hasReactions && (
-          <div
-            style={{
+          {/* Image attachments — tappable thumbnail */}
+          {imageAttachments.length > 0 && (
+            <div style={{
               display: "flex",
+              gap: "6px",
               flexWrap: "wrap",
-              gap: "4px",
               justifyContent: isUser ? "flex-end" : "flex-start",
-              marginTop: "4px",
-            }}
-          >
-            {reactions!.map((entry) => (
-              <ReactionPill
-                key={entry.type}
-                entry={entry}
-                onToggle={() => onReact?.(entry.type)}
-                disabled={isStreaming}
-              />
-            ))}
-          </div>
-        )}
+            }}>
+              {imageAttachments.map((img, i) => (
+                <button
+                  key={i}
+                  onClick={() => setViewer({ type: "image", url: img.url, title: img.filename ?? "Image" })}
+                  style={styles.imageBtnWrapper}
+                  type="button"
+                  aria-label="View image"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.url}
+                    alt=""
+                    style={{
+                      maxWidth: "260px",
+                      width: imageAttachments.length > 1 ? "128px" : undefined,
+                      height: imageAttachments.length > 1 ? "128px" : "auto",
+                      borderRadius: "var(--radius-lg)",
+                      objectFit: "cover",
+                      display: "block",
+                    }}
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Document attachment blocks */}
+          {docAttachments.length > 0 && (
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "4px",
+              alignItems: isUser ? "flex-end" : "flex-start",
+            }}>
+              {docAttachments.map((doc, i) => (
+                <AttachmentBlock
+                  key={i}
+                  type="document"
+                  label={doc.filename ?? "Document"}
+                  onClick={() => doc.url ? setViewer({ type: "document", url: doc.url, title: doc.filename ?? "Document" }) : undefined}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Bubble only when there is text content or streaming dots */}
+          {(showDots || displayContent) && (
+            <div
+              className={isHumanMessage ? "bubble-tint" : undefined}
+              style={
+                isHumanMessage
+                  ? {
+                      ...styles.bubble,
+                      whiteSpace: "pre-wrap",
+                      ["--bubble-color" as string]: isUser ? resolvedOwnColor : resolvedSenderColor,
+                      ...(isUser
+                        ? { borderRight: `2.5px solid ${resolvedOwnColor}`, borderRadius: "10px 0 0 10px" }
+                        : { borderLeft: `2.5px solid ${resolvedSenderColor}`, borderRadius: "0 10px 10px 0" }),
+                      color: "var(--text-primary)",
+                    }
+                  : styles.assistantContent
+              }
+            >
+              {showDots ? (
+                <span style={styles.dotsRow}>
+                  <span style={styles.dot1} />
+                  <span style={styles.dot2} />
+                  <span style={styles.dot3} />
+                </span>
+              ) : (
+                role === "assistant" ? (
+                  <div
+                    className="bruce-md"
+                    dangerouslySetInnerHTML={{ __html: marked(displayContent) as string }}
+                  />
+                ) : (
+                  <span style={styles.content}>{displayContent}</span>
+                )
+              )}
+              {interrupted && (
+                <div style={styles.interruptedNote}>Stopped</div>
+              )}
+            </div>
+          )}
+
+          {/* iMessage-style reaction overlay — stacked profile color circles */}
+          {hasReactions && onReact && (
+            <ReactionOverlay
+              reactions={reactions!}
+              isUser={isUser}
+              isHumanMessage={isHumanMessage}
+              onReact={onReact}
+              disabled={isStreaming}
+            />
+          )}
+        </div>
 
         {timestamp && (
           <div
