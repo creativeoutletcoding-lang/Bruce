@@ -2,6 +2,7 @@ import type { ReactionEntry } from "@/lib/chat/types";
 
 export const REACTION_EMOJI: Record<string, string> = {
   thumbs_up: "👍",
+  heart: "❤️",
 };
 
 export function aggregateReactions(

@@ -61,28 +61,25 @@ function formatTimestamp(dateStr: string): string {
 
 const ICON_SIZE = 28;
 
-// Renders reaction icons in normal flow BEFORE the bubble so absolute
-// positioning is not needed. marginBottom: -22px pulls the bubble up by
-// 14px (8px gap + 14px overlap); zIndex: 1 paints the row on top of the
-// bubble below it.
-function ReactionRow({
-  reactions,
-  isUser,
-  isHumanMessage,
-}: {
-  reactions: ReactionEntry[];
-  isUser: boolean;
-  isHumanMessage: boolean;
-}) {
-  const seen = new Set<string>();
-  const uniqueReactors: { userId: string | null; colorHex?: string }[] = [];
+const REACTION_PATHS: Record<string, string> = {
+  thumbs_up: "M2 20h2a1 1 0 0 0 1-1v-7a1 1 0 0 0-1-1H2v9zm18.5-9H14V7a3 3 0 0 0-3-3l-1 6-2.5 2v8h9.1a2 2 0 0 0 1.98-1.7l1.4-7A2 2 0 0 0 20.5 11z",
+  heart: "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z",
+};
+
+// Renders reaction icons in normal flow BEFORE the bubble. Each reactor gets
+// their own colored icon matching the reaction type they used.
+// marginBottom: -20px (8px gap + 12px overlap) + zIndex: 1 paints the row
+// on top of the bubble below it.
+function ReactionRow({ reactions }: { reactions: ReactionEntry[] }) {
+  // Flatten reactors in type order, preserving per-type SVG
+  const items: Array<{ colorHex: string | undefined; type: string; key: string }> = [];
   for (const entry of reactions) {
     for (const reactor of entry.reactors) {
-      const key = reactor.userId ?? "__bruce__";
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniqueReactors.push(reactor);
-      }
+      items.push({
+        colorHex: reactor.colorHex,
+        type: entry.type,
+        key: `${entry.type}-${reactor.userId ?? "__bruce__"}`,
+      });
     }
   }
 
@@ -91,9 +88,7 @@ function ReactionRow({
       style={{
         width: "100%",
         height: `${ICON_SIZE}px`,
-        // 8px flex gap + 12px desired overlap = -20px
         marginBottom: "-20px",
-        // Always anchor to the right corner
         marginRight: "-4px",
         position: "relative",
         zIndex: 1,
@@ -104,13 +99,13 @@ function ReactionRow({
         pointerEvents: "none",
       }}
     >
-      {uniqueReactors.map((reactor, i) => (
+      {items.map((item, i) => (
         <svg
-          key={reactor.userId ?? "__bruce__"}
+          key={item.key}
           width={ICON_SIZE}
           height={ICON_SIZE}
           viewBox="0 0 24 24"
-          fill={reactor.colorHex ?? "#0F6E56"}
+          fill={item.colorHex ?? "#0F6E56"}
           aria-hidden="true"
           style={{
             display: "block",
@@ -121,7 +116,7 @@ function ReactionRow({
             filter: "drop-shadow(0px 1px 3px rgba(0,0,0,0.35))",
           }}
         >
-          <path d="M2 20h2a1 1 0 0 0 1-1v-7a1 1 0 0 0-1-1H2v9zm18.5-9H14V7a3 3 0 0 0-3-3l-1 6-2.5 2v8h9.1a2 2 0 0 0 1.98-1.7l1.4-7A2 2 0 0 0 20.5 11z"/>
+          <path d={REACTION_PATHS[item.type] ?? REACTION_PATHS.thumbs_up} />
         </svg>
       ))}
     </div>
@@ -446,11 +441,7 @@ export default function MessageBubble({
             absolute positioning is needed. The row overlaps the bubble's
             top corner via marginBottom: -22px + zIndex: 1. */}
         {hasReactions && (
-          <ReactionRow
-            reactions={reactions!}
-            isUser={isUser}
-            isHumanMessage={isHumanMessage}
-          />
+          <ReactionRow reactions={reactions!} />
         )}
 
         {/* Bubble */}
@@ -526,12 +517,20 @@ export default function MessageBubble({
           }}
         >
           {onReact && (
-            <button
-              style={styles.contextMenuItem}
-              onClick={() => { setCtxMenu(null); onReact("thumbs_up"); }}
-            >
-              👍
-            </button>
+            <>
+              <button
+                style={styles.contextMenuItem}
+                onClick={() => { setCtxMenu(null); onReact("thumbs_up"); }}
+              >
+                👍
+              </button>
+              <button
+                style={styles.contextMenuItem}
+                onClick={() => { setCtxMenu(null); onReact("heart"); }}
+              >
+                ❤️
+              </button>
+            </>
           )}
           {canDelete && (
             <button
@@ -563,25 +562,28 @@ export default function MessageBubble({
             gap: "8px",
           }}
         >
-          <button
-            type="button"
-            style={{
-              fontSize: "1.375rem",
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              lineHeight: 1,
-              padding: 0,
-            }}
-            onClick={() => {
-              setShowReactionHint(false);
-              if (reactionHintTimer.current) clearTimeout(reactionHintTimer.current);
-              onReact("thumbs_up");
-            }}
-            aria-label="React with thumbs up"
-          >
-            👍
-          </button>
+          {(["thumbs_up", "heart"] as const).map((type) => (
+            <button
+              key={type}
+              type="button"
+              style={{
+                fontSize: "1.375rem",
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                lineHeight: 1,
+                padding: 0,
+              }}
+              onClick={() => {
+                setShowReactionHint(false);
+                if (reactionHintTimer.current) clearTimeout(reactionHintTimer.current);
+                onReact(type);
+              }}
+              aria-label={`React with ${type === "thumbs_up" ? "thumbs up" : "heart"}`}
+            >
+              {type === "thumbs_up" ? "👍" : "❤️"}
+            </button>
+          ))}
         </div>,
         document.body
       )}
