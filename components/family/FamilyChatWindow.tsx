@@ -207,8 +207,8 @@ export default function FamilyChatWindow({
       }
       return { ...prev, [messageId]: entries };
     });
-    // Realtime subscription handles server state; fire and forget here.
-    fetch(`/api/messages/${messageId}/reaction`, {
+    // Await so the write commits before the user can navigate away.
+    await fetch(`/api/messages/${messageId}/reaction`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type }),

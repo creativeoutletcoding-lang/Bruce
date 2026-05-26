@@ -136,9 +136,9 @@ export default function ChatWindow({
       }
       return { ...prev, [messageId]: entries };
     });
-    // Fire and forget — optimistic update is authoritative; loadMessages after
-    // the next stream will sync server state including any Bruce reactions.
-    fetch(`/api/messages/${messageId}/reaction`, {
+    // Await so the write commits before the user can navigate away.
+    // No reload after — optimistic update is authoritative.
+    await fetch(`/api/messages/${messageId}/reaction`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type }),
