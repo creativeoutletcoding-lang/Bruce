@@ -48,12 +48,21 @@ export default async function FamilyPage() {
     normalizeMessage(row)
   );
 
+  const msgIds = messages.map((m) => m.id);
+  const { data: reactionRows } = msgIds.length > 0
+    ? await adminSupabase
+        .from("reactions")
+        .select("message_id, user_id, type")
+        .in("message_id", msgIds)
+    : { data: [] as Array<{ message_id: string; user_id: string | null; type: string }> };
+
   return (
     <FamilyChatWindow
       chatId={chatId}
       currentUserId={authUser.id}
       members={members}
       initialMessages={messages}
+      initialReactions={(reactionRows ?? []) as Array<{ message_id: string; user_id: string | null; type: string }>}
       topbar={<FamilyTopBar />}
     />
   );

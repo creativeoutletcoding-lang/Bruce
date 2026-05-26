@@ -68,6 +68,14 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
     };
   });
 
+  const msgIds = normalizedMessages.map((m) => m.id);
+  const { data: reactionRows } = msgIds.length > 0
+    ? await adminSupabase
+        .from("reactions")
+        .select("message_id, user_id, type")
+        .in("message_id", msgIds)
+    : { data: [] as Array<{ message_id: string; user_id: string | null; type: string }> };
+
   return (
     <ProjectChatView
       chatId={chatId}
@@ -79,6 +87,7 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
       userColorHex={userColorHex}
       currentUserId={user.id}
       members={members}
+      initialReactions={(reactionRows ?? []) as Array<{ message_id: string; user_id: string | null; type: string }>}
     />
   );
 }

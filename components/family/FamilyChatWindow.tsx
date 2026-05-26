@@ -22,6 +22,8 @@ import { extractLatestTaskProgress, stripTaskProgressTags } from "@/lib/chat/tas
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+type ReactionRow = { message_id: string; user_id: string | null; type: string };
+
 interface FamilyChatWindowProps {
   chatId: string;
   currentUserId: string;
@@ -29,6 +31,7 @@ interface FamilyChatWindowProps {
   initialMessages: NormalizedMessage[];
   topbar: React.ReactNode;
   placeholder?: string;
+  initialReactions?: ReactionRow[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -65,6 +68,7 @@ export default function FamilyChatWindow({
   initialMessages,
   topbar,
   placeholder = "Message the family…",
+  initialReactions,
 }: FamilyChatWindowProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -85,7 +89,11 @@ export default function FamilyChatWindow({
   const isStreamingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const userColorHex = memberMapRef.current[currentUserId]?.color_hex;
-  const [reactionsMap, setReactionsMap] = useState<Record<string, ReactionEntry[]>>({});
+  const [reactionsMap, setReactionsMap] = useState<Record<string, ReactionEntry[]>>(() => {
+    if (!initialReactions?.length) return {};
+    const colorMap = Object.fromEntries(members.map((m) => [m.id, m.color_hex]));
+    return aggregateReactions(initialReactions, currentUserId, colorMap);
+  });
 
   useChatMemory({ chatId, messageCount: messages.length });
 
@@ -215,12 +223,7 @@ export default function FamilyChatWindow({
     });
   }, [currentUserId, userColorHex]);
 
-  // Load initial reactions on mount
-  useEffect(() => {
-    const ids = initialMessages.map((m) => m.id);
-    if (ids.length > 0) loadReactions(ids);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Initial reactions hydrated from server props; loadReactions used after streaming.
 
   // Realtime — messages + reactions
   useEffect(() => {

@@ -22,6 +22,8 @@ import {
 } from "@/lib/chat/clientStream";
 import { useChatMemory } from "@/lib/chat/useChatMemory";
 
+type ReactionRow = { message_id: string; user_id: string | null; type: string };
+
 interface ChatWindowProps {
   chatId: string;
   initialMessages: NormalizedMessage[];
@@ -29,6 +31,7 @@ interface ChatWindowProps {
   userColorHex?: string;
   initialModel?: string;
   currentUserId?: string;
+  initialReactions?: ReactionRow[];
 }
 
 function toChatMessage(n: NormalizedMessage): ChatMessage {
@@ -53,6 +56,7 @@ export default function ChatWindow({
   userColorHex,
   initialModel,
   currentUserId,
+  initialReactions,
 }: ChatWindowProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -69,7 +73,11 @@ export default function ChatWindow({
   const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
   const [model, setModel] = useState(initialModel ?? "claude-sonnet-4-6");
-  const [reactionsMap, setReactionsMap] = useState<Record<string, ReactionEntry[]>>({});
+  const [reactionsMap, setReactionsMap] = useState<Record<string, ReactionEntry[]>>(() => {
+    if (!initialReactions?.length) return {};
+    const colorMap: Record<string, string | undefined> = currentUserId ? { [currentUserId]: userColorHex } : {};
+    return aggregateReactions(initialReactions, currentUserId, colorMap);
+  });
   const abortRef = useRef<AbortController | null>(null);
 
   useChatMemory({ chatId, messageCount: messages.length, disabled: incognito });
@@ -147,12 +155,7 @@ export default function ChatWindow({
 
   useEffect(() => { setIsClient(true); }, []);
 
-  // Load initial reactions for the starting message set
-  useEffect(() => {
-    const ids = initialMessages.map((m) => m.id);
-    if (ids.length > 0) loadReactions(ids);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Initial reactions hydrated from server props; loadReactions used after streaming.
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;

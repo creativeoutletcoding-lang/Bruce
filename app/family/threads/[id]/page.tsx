@@ -72,12 +72,21 @@ export default async function FamilyThreadPage({
     normalizeMessage(row)
   );
 
+  const msgIds = messages.map((m) => m.id);
+  const { data: reactionRows } = msgIds.length > 0
+    ? await adminSupabase
+        .from("reactions")
+        .select("message_id, user_id, type")
+        .in("message_id", msgIds)
+    : { data: [] as Array<{ message_id: string; user_id: string | null; type: string }> };
+
   return (
     <FamilyChatWindow
       chatId={id}
       currentUserId={authUser.id}
       members={allMembers}
       initialMessages={messages}
+      initialReactions={(reactionRows ?? []) as Array<{ message_id: string; user_id: string | null; type: string }>}
       topbar={
         <FamilyThreadTopBar
           threadId={id}

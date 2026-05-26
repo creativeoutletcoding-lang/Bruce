@@ -21,6 +21,8 @@ import { useChatMemory } from "@/lib/chat/useChatMemory";
 import { getDisplayName } from "@/lib/chat/senderProfile";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 
+type ReactionRow = { message_id: string; user_id: string | null; type: string };
+
 interface ProjectChatViewProps {
   chatId: string;
   projectId: string;
@@ -31,6 +33,7 @@ interface ProjectChatViewProps {
   userColorHex?: string;
   currentUserId: string;
   members: ProjectMemberDetail[];
+  initialReactions?: ReactionRow[];
 }
 
 function toChatMessage(
@@ -69,6 +72,7 @@ export default function ProjectChatView({
   userColorHex,
   currentUserId,
   members,
+  initialReactions,
 }: ProjectChatViewProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -103,7 +107,11 @@ export default function ProjectChatView({
   const instructionsFiredRef = useRef(false);
   const initialSentRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
-  const [reactionsMap, setReactionsMap] = useState<Record<string, ReactionEntry[]>>({});
+  const [reactionsMap, setReactionsMap] = useState<Record<string, ReactionEntry[]>>(() => {
+    if (!initialReactions?.length) return {};
+    const colorMap = Object.fromEntries(members.map((m) => [m.id, m.color_hex]));
+    return aggregateReactions(initialReactions, currentUserId, colorMap);
+  });
 
   useChatMemory({ chatId, messageCount: messages.length });
 
@@ -258,11 +266,8 @@ export default function ProjectChatView({
     return () => { supabase.removeChannel(channel); };
   }, [chatId, currentUserId, loadReactionsPC]);
 
-  useEffect(() => {
-    const ids = initialMessages.map((m) => m.id);
-    if (ids.length > 0) loadReactionsPC(ids);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Initial reactions are hydrated from server-rendered props; no async
+  // mount load needed. loadReactionsPC is still used after streaming.
 
   useEffect(() => {
     const hasInitialFiles = attachedFiles.length > 0;

@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import ChatWindow from "@/components/chat/ChatWindow";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 import { getUserProfile } from "@/lib/user/getUserProfile";
@@ -47,6 +47,15 @@ export default async function ChatIdPage({ params }: Props) {
   const userColorHex = profile?.color_hex;
   const preferredModel = profile?.preferred_model ?? "claude-sonnet-4-6";
 
+  const adminSupabase = createServiceRoleClient();
+  const msgIds = normalizedMessages.map((m) => m.id);
+  const { data: reactionRows } = msgIds.length > 0
+    ? await adminSupabase
+        .from("reactions")
+        .select("message_id, user_id, type")
+        .in("message_id", msgIds)
+    : { data: [] as Array<{ message_id: string; user_id: string | null; type: string }> };
+
   return (
     <ChatWindow
       chatId={id}
@@ -55,6 +64,7 @@ export default async function ChatIdPage({ params }: Props) {
       userColorHex={userColorHex}
       initialModel={preferredModel}
       currentUserId={user.id}
+      initialReactions={(reactionRows ?? []) as Array<{ message_id: string; user_id: string | null; type: string }>}
     />
   );
 }
