@@ -91,16 +91,17 @@ function ReactionRow({
       style={{
         width: "100%",
         height: `${ICON_SIZE}px`,
-        // 8px flex gap + 14px desired overlap = -22px
-        marginBottom: "-22px",
+        // 8px flex gap + 12px desired overlap = -20px
+        marginBottom: "-20px",
+        // Negative side margin lets the icon extend 4px past the bubble corner
+        marginRight: isUser ? "-4px" : undefined,
+        marginLeft: (!isUser && isHumanMessage) ? "-4px" : undefined,
         position: "relative",
         zIndex: 1,
         display: "flex",
         flexDirection: "row",
         alignItems: "flex-end",
         justifyContent: isUser ? "flex-end" : "flex-start",
-        paddingRight: isUser ? "8px" : undefined,
-        paddingLeft: (!isUser && isHumanMessage) ? "8px" : undefined,
         pointerEvents: "none",
       }}
     >
@@ -118,9 +119,10 @@ function ReactionRow({
             marginLeft: i === 0 ? 0 : "-8px",
             position: "relative",
             zIndex: i + 1,
+            filter: "drop-shadow(0px 1px 3px rgba(0,0,0,0.35))",
           }}
         >
-          <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/>
+          <path d="M2 20h2a1 1 0 0 0 1-1v-7a1 1 0 0 0-1-1H2v9zm18.5-9H14V7a3 3 0 0 0-3-3l-1 6-2.5 2v8h9.1a2 2 0 0 0 1.98-1.7l1.4-7A2 2 0 0 0 20.5 11z"/>
         </svg>
       ))}
     </div>
