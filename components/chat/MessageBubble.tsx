@@ -93,15 +93,14 @@ function ReactionRow({
         height: `${ICON_SIZE}px`,
         // 8px flex gap + 12px desired overlap = -20px
         marginBottom: "-20px",
-        // Negative side margin lets the icon extend 4px past the bubble corner
-        marginRight: isUser ? "-4px" : undefined,
-        marginLeft: (!isUser && isHumanMessage) ? "-4px" : undefined,
+        // Always anchor to the right corner
+        marginRight: "-4px",
         position: "relative",
         zIndex: 1,
         display: "flex",
         flexDirection: "row",
         alignItems: "flex-end",
-        justifyContent: isUser ? "flex-end" : "flex-start",
+        justifyContent: "flex-end",
         pointerEvents: "none",
       }}
     >
