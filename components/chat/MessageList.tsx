@@ -175,8 +175,8 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 swipeOpen={openSwipeId === msg.id}
                 onSwipeOpen={() => setOpenSwipeId(msg.id)}
                 showBruceLabel={true}
-                reactions={reactionsMap?.[msg.id]}
-                onReact={onReact && !msg.id.startsWith("tmp-") ? (type) => onReact(msg.id, type) : undefined}
+                reactions={msg.role === "assistant" ? reactionsMap?.[msg.id] : undefined}
+                onReact={msg.role === "assistant" && onReact && !msg.id.startsWith("tmp-") ? (type) => onReact(msg.id, type) : undefined}
               />
               );
             }

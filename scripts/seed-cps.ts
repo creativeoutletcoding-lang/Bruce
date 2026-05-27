@@ -100,7 +100,8 @@ async function main() {
       instructions:
         "Business workspace for Capital Petsitters. Be concise and practical. " +
         "Nana prefers clear simple explanations. " +
-        "Always recalculate WC at 3% from scratch before any payment action.",
+        "Always recalculate WC at 3% from scratch before any payment action. " +
+        "After writing the payroll tab, read it back and sum Gross Pay, WC Deduction, and Total Pay directly from the written rows before reporting the verification summary. Never use running totals accumulated during processing. The tab is the source of truth — report only figures read directly from it.",
     })
     .select("id")
     .single();
