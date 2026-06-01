@@ -33,7 +33,9 @@ export default function FamilyThreadTopBar({
   const [currentMemberIds, setCurrentMemberIds] = useState<string[]>(threadMemberIds);
 
   const threadMembers = allMembers.filter((m) => currentMemberIds.includes(m.id));
-  const addableMembers = allMembers.filter((m) => !currentMemberIds.includes(m.id));
+  const addableMembers = allMembers.filter(
+    (m) => !currentMemberIds.includes(m.id) && !excludedMemberIds.includes(m.id)
+  );
 
   async function handleDelete() {
     setIsDeleting(true);
@@ -213,32 +215,26 @@ export default function FamilyThreadTopBar({
               <>
                 <p style={styles.modalBody}>Choose a household member to add.</p>
                 <div style={styles.memberList}>
-                  {addableMembers.map((member) => {
-                    const isExcluded = excludedMemberIds.includes(member.id);
-                    return (
-                      <button
-                        key={member.id}
-                        style={{
-                          ...styles.memberRow,
-                          ...(selectedUserId === member.id ? styles.memberRowSelected : {}),
-                          ...(isExcluded ? { opacity: 0.35, pointerEvents: "none", cursor: "not-allowed" } : {}),
-                        }}
-                        onClick={isExcluded ? undefined : () => setSelectedUserId(member.id)}
-                        disabled={isExcluded}
-                        aria-disabled={isExcluded}
-                      >
-                        <div style={{ ...styles.memberAvatar, backgroundColor: getProfileColor(member.id, member.color_hex) }}>
-                          <span style={styles.avatarInitial}>{member.name.charAt(0)}</span>
-                        </div>
-                        <span style={styles.memberName}>{getDisplayName(member.name)}</span>
-                        {selectedUserId === member.id && (
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.checkIcon} aria-hidden="true">
-                            <path d="M3 8l4 4 6-7" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )}
-                      </button>
-                    );
-                  })}
+                  {addableMembers.map((member) => (
+                    <button
+                      key={member.id}
+                      style={{
+                        ...styles.memberRow,
+                        ...(selectedUserId === member.id ? styles.memberRowSelected : {}),
+                      }}
+                      onClick={() => setSelectedUserId(member.id)}
+                    >
+                      <div style={{ ...styles.memberAvatar, backgroundColor: getProfileColor(member.id, member.color_hex) }}>
+                        <span style={styles.avatarInitial}>{member.name.charAt(0)}</span>
+                      </div>
+                      <span style={styles.memberName}>{getDisplayName(member.name)}</span>
+                      {selectedUserId === member.id && (
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.checkIcon} aria-hidden="true">
+                          <path d="M3 8l4 4 6-7" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </button>
+                  ))}
                 </div>
               </>
             )}

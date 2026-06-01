@@ -508,7 +508,9 @@ export default function ProjectHome({
 
   const visibleMemberAvatars = memberList.slice(0, 4);
   const attachedDriveIds = new Set(fileList.map((f) => f.google_drive_file_id));
-  const nonMembers = allUsers.filter((u) => !memberList.some((m) => m.id === u.id));
+  const nonMembers = allUsers.filter(
+    (u) => !memberList.some((m) => m.id === u.id) && !excludedMemberIds.includes(u.id)
+  );
 
   // ── Render ────────────────────────────────────────────────────
 
@@ -1031,26 +1033,19 @@ export default function ProjectHome({
               </p>
             ) : (
               <div style={styles.tabContent}>
-                {nonMembers.map((u) => {
-                  const isExcluded = excludedMemberIds.includes(u.id);
-                  return (
-                    <button
-                      key={u.id}
-                      style={{
-                        ...styles.userPickerRow,
-                        ...(isExcluded ? { opacity: 0.35, pointerEvents: "none", cursor: "not-allowed" } : {}),
-                      }}
-                      onClick={isExcluded ? undefined : () => handleAddMember(u.id)}
-                      disabled={isAddingMember || isExcluded}
-                      aria-disabled={isExcluded}
-                    >
-                      <div style={{ ...styles.userPickerAvatar, backgroundColor: u.color_hex }}>
-                        {u.name[0].toUpperCase()}
-                      </div>
-                      <span style={styles.userPickerName}>{u.name}</span>
-                    </button>
-                  );
-                })}
+                {nonMembers.map((u) => (
+                  <button
+                    key={u.id}
+                    style={styles.userPickerRow}
+                    onClick={() => handleAddMember(u.id)}
+                    disabled={isAddingMember}
+                  >
+                    <div style={{ ...styles.userPickerAvatar, backgroundColor: u.color_hex }}>
+                      {u.name[0].toUpperCase()}
+                    </div>
+                    <span style={styles.userPickerName}>{u.name}</span>
+                  </button>
+                ))}
               </div>
             )}
           </div>
