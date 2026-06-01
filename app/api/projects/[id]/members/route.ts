@@ -60,7 +60,15 @@ export async function POST(request: NextRequest, { params }: Props) {
     .from("project_members")
     .insert({ project_id: id, user_id: body.user_id, role: "member" });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (error.message?.includes("member_exclusion_violation")) {
+      return NextResponse.json(
+        { error: "This member cannot be added to this project." },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   return NextResponse.json({ success: true }, { status: 201 });
 }

@@ -190,6 +190,9 @@ export async function POST(request: NextRequest) {
       .insert(otherMemberIds.map((userId) => ({ chat_id: thread.id, user_id: userId })));
 
     if (membersErr) {
+      if (membersErr.message?.includes("member_exclusion_violation")) {
+        return new Response("Cannot create thread: member combination is not allowed.", { status: 409 });
+      }
       console.error("[api/family/threads] Failed to add other members", {
         chatId: thread.id,
         message: membersErr.message,

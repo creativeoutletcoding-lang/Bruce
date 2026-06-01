@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import FamilyChatWindow from "@/components/family/FamilyChatWindow";
 import FamilyThreadTopBar from "@/components/family/FamilyThreadTopBar";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
+import { getExcludedMemberIds } from "@/lib/members/getExcludedMemberIds";
 import type { UserSummary } from "@/lib/types";
 
 export default async function FamilyThreadPage({
@@ -80,6 +81,8 @@ export default async function FamilyThreadPage({
         .in("message_id", msgIds)
     : { data: [] as Array<{ message_id: string; user_id: string | null; type: string }> };
 
+  const excludedMemberIds = await getExcludedMemberIds(authUser.id);
+
   return (
     <FamilyChatWindow
       chatId={id}
@@ -93,6 +96,7 @@ export default async function FamilyThreadPage({
           threadName={thread.title ?? "Group Chat"}
           allMembers={allMembers}
           threadMemberIds={threadMemberIds}
+          excludedMemberIds={excludedMemberIds}
         />
       }
       placeholder={`Message in ${thread.title ?? "this group chat"}…`}

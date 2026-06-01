@@ -6,7 +6,7 @@ Read this before doing anything. Source of truth for all implementation decision
 
 ## What Bruce Is
 
-Private household AI for the Johnson family at heybruce.app. Jake runs the build. Members: Jake (36, admin), Laurianne (33), Jocelynn (16), Nana (69). Kids with no accounts: Elliot (8), Henry (5), Violette (5). Not a product — infrastructure built to behave like a trusted family presence.
+Private household AI for the Johnson family at heybruce.app. Jake runs the build. Members: Jake (36, admin), Laurianne (33), Jocelynn (16), Nana (69), Grampy (new — mutually excluded from Nana). Kids with no accounts: Elliot (8), Henry (5), Violette (5). Not a product — infrastructure built to behave like a trusted family presence.
 
 ---
 
@@ -30,7 +30,7 @@ Private household AI for the Johnson family at heybruce.app. Jake runs the build
 
 ## Database Schema
 
-Migrations 001–029 applied. `schema.sql` is the source of truth — always update it when altering structure.
+Migrations 001–030 applied; 031 pending Supabase SQL editor. `schema.sql` is the source of truth — always update it when altering structure.
 
 **household** — single row; `memories` (jsonb), `context` (jsonb with family member data)
 
@@ -69,6 +69,8 @@ Migrations 001–029 applied. `schema.sql` is the source of truth — always upd
 **reminders** — personal reminders managed via the `manage_reminders` tool; `id`, `user_id`, `content`, `remind_at`, `completed_at`, `notified_at`, `chat_id` (FK → chats ON DELETE SET NULL — used for FCM deep-link). RLS: users manage own rows.
 
 **reactions** — thumbs-up reactions on messages; `id`, `message_id` (FK → messages CASCADE), `chat_id` (FK → chats CASCADE, denormalized for realtime filtering), `user_id` (FK → users, nullable — NULL = Bruce), `type` (text, default `thumbs_up`), `created_at`. Partial unique indexes: one Bruce reaction per message per type; one member reaction per message per user per type. RLS: read via `is_chat_member(chat_id)`, insert/delete own only. Service role for Bruce reactions.
+
+**member_exclusions** — mutual exclusion pairs preventing two members from sharing a chat or project (migration 031); `id`, `user_id_a` (FK → users CASCADE), `user_id_b` (FK → users CASCADE), `created_by` (FK → users), `created_at`. Unique expression index on `(LEAST, GREATEST)` of the UUID pair. Admin-only RLS. DB triggers on `chat_members` and `project_members` enforce exclusions at insert time — raise `member_exclusion_violation` which API routes catch and return 409. `getExcludedMemberIds(userId)` in `lib/members/` fetches via service role for the UI layer.
 
 **RLS** is enabled on every table. `is_admin()` bypasses it for: `household`, `users`, `invite_tokens`, `pending_memory`. Admin does NOT bypass RLS on: `projects`, `project_members`, `chats`, `chat_members`, `messages`, `files`, `memory`. Memory privacy is architectural — no admin content access.
 

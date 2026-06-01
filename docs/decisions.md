@@ -6,6 +6,22 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Member exclusions — 2026-05-31
+
+**Problem:** Grampy (new household member) and Nana have a relationship that makes it inappropriate for them to share chats or projects together. Needed a hard constraint, not just a UI convention.
+
+**Schema:** New `member_exclusions` table stores mutual exclusion pairs (`user_id_a`, `user_id_b`, `created_by`). A unique expression index on `(LEAST, GREATEST)` of the two UUID columns prevents duplicate/reversed pairs. Admin-only RLS — non-admin users cannot read or write exclusions directly.
+
+**Enforcement:** DB-level triggers on `chat_members` (`enforce_chat_member_exclusion`) and `project_members` (`enforce_project_member_exclusion`) fire BEFORE INSERT and raise `member_exclusion_violation` if the incoming member conflicts with an existing member in the same chat/project. This makes the constraint impossible to bypass through the API.
+
+**API layer:** Both routes that add members (`POST /api/projects/[id]/members`, `POST /api/family/threads/[id]/members`) catch the `member_exclusion_violation` exception and return 409 with a generic message — no reason exposed to the client. Thread creation (`POST /api/family/threads`) also handles 409 for the batch insert case.
+
+**UI layer:** `getExcludedMemberIds(userId)` in `lib/members/getExcludedMemberIds.ts` fetches excluded IDs server-side via service role (bypasses admin-only RLS). Server pages (`/projects/[id]`, `/family/threads/[id]`) call this and pass `excludedMemberIds` as a prop. Member picker UI (ProjectHome, FamilyThreadTopBar) renders excluded members greyed out (`opacity: 0.35`, `pointer-events: none`) with no interaction — no tooltip or explanation.
+
+**Seed:** After Grampy's account is created, run the commented SQL in `031_member_exclusions.sql` to insert the Grampy ↔ Nana exclusion row. See migration-log.md for status.
+
+---
+
 ### Reactions feature — 2026-05-21
 
 **Schema:** New `reactions` table (`id`, `message_id`, `chat_id`, `user_id`, `type`, `created_at`). `user_id` is nullable — NULL means Bruce reacted. `chat_id` is denormalized from the message's chat so realtime subscriptions can filter by `chat_id=eq.{chatId}` without a join. Two partial unique indexes enforce one reaction per type per reactor: `reactions_bruce_unique (message_id, type) WHERE user_id IS NULL` and `reactions_member_unique (message_id, user_id, type) WHERE user_id IS NOT NULL`. RLS: read via `is_chat_member(chat_id)`, insert/delete scoped to `auth.uid()`. Service role used for Bruce reactions (no auth session for Bruce).

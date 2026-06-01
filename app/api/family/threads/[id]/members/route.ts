@@ -56,6 +56,9 @@ export async function POST(
     .upsert({ chat_id: id, user_id: body.userId }, { onConflict: "chat_id,user_id" });
 
   if (error) {
+    if (error.message?.includes("member_exclusion_violation")) {
+      return new Response("This member cannot be added to this conversation.", { status: 409 });
+    }
     console.error("[api/family/threads/[id]/members] Add member failed:", error);
     return new Response("Failed to add member", { status: 500 });
   }

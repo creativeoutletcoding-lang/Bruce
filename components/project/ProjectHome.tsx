@@ -55,6 +55,7 @@ interface ProjectHomeProps {
   initialChats: ChatPreview[];
   userId: string;
   userRole: "owner" | "member";
+  excludedMemberIds: string[];
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -92,6 +93,7 @@ export default function ProjectHome({
   initialChats,
   userId,
   userRole,
+  excludedMemberIds,
 }: ProjectHomeProps) {
   const router = useRouter();
   const supabase = createClient();
@@ -1029,19 +1031,26 @@ export default function ProjectHome({
               </p>
             ) : (
               <div style={styles.tabContent}>
-                {nonMembers.map((u) => (
-                  <button
-                    key={u.id}
-                    style={styles.userPickerRow}
-                    onClick={() => handleAddMember(u.id)}
-                    disabled={isAddingMember}
-                  >
-                    <div style={{ ...styles.userPickerAvatar, backgroundColor: u.color_hex }}>
-                      {u.name[0].toUpperCase()}
-                    </div>
-                    <span style={styles.userPickerName}>{u.name}</span>
-                  </button>
-                ))}
+                {nonMembers.map((u) => {
+                  const isExcluded = excludedMemberIds.includes(u.id);
+                  return (
+                    <button
+                      key={u.id}
+                      style={{
+                        ...styles.userPickerRow,
+                        ...(isExcluded ? { opacity: 0.35, pointerEvents: "none", cursor: "not-allowed" } : {}),
+                      }}
+                      onClick={isExcluded ? undefined : () => handleAddMember(u.id)}
+                      disabled={isAddingMember || isExcluded}
+                      aria-disabled={isExcluded}
+                    >
+                      <div style={{ ...styles.userPickerAvatar, backgroundColor: u.color_hex }}>
+                        {u.name[0].toUpperCase()}
+                      </div>
+                      <span style={styles.userPickerName}>{u.name}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

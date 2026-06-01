@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import ProjectHome from "@/components/project/ProjectHome";
+import { getExcludedMemberIds } from "@/lib/members/getExcludedMemberIds";
 import type {
   ProjectMemberDetail,
   ProjectMemberRole,
@@ -69,6 +70,8 @@ export default async function ProjectPage({ params }: Props) {
     owner_id: c.owner_id as string,
   }));
 
+  const excludedMemberIds = await getExcludedMemberIds(user.id);
+
   return (
     <ProjectHome
       projectId={projectId}
@@ -82,6 +85,7 @@ export default async function ProjectPage({ params }: Props) {
       initialChats={initialChats}
       userId={user.id}
       userRole={userRole}
+      excludedMemberIds={excludedMemberIds}
     />
   );
 }
