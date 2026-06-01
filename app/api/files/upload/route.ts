@@ -39,19 +39,17 @@ export async function POST(request: NextRequest) {
     : (filename.split(".").pop() ?? "bin");
   const filePath = `${user.id}/${Date.now()}.${fileExt}`;
 
-  const supabasePromise = (async () => {
-    try {
-      const { error } = await adminSupabase.storage
-        .from("message-images")
-        .upload(filePath, Buffer.from(base64, "base64"), { contentType: mediaType, upsert: false });
-      if (!error) {
-        const { data } = adminSupabase.storage.from("message-images").getPublicUrl(filePath);
-        return data.publicUrl;
-      }
-    } catch { /* silent */ }
-    return "";
-  })();
+  const [file_id, storageResult] = await Promise.all([
+    anthropicPromise,
+    adminSupabase.storage
+      .from("message-images")
+      .upload(filePath, Buffer.from(base64, "base64"), { contentType: mediaType, upsert: false }),
+  ]);
 
-  const [file_id, url] = await Promise.all([anthropicPromise, supabasePromise]);
-  return Response.json({ file_id, url });
+  if (storageResult.error) {
+    return new Response(`Storage upload failed: ${storageResult.error.message}`, { status: 500 });
+  }
+
+  const { data: urlData } = adminSupabase.storage.from("message-images").getPublicUrl(filePath);
+  return Response.json({ file_id, url: urlData.publicUrl });
 }

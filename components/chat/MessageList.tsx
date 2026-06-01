@@ -87,6 +87,24 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
     }
   }, [messages]);
 
+  // When the keyboard appears the input container grows, shrinking this list.
+  // scrollTop doesn't auto-adjust, so the last message slides above the fold.
+  // Re-anchor to the bottom instantly whenever the visual viewport shrinks.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let lastHeight = vv.height;
+    function onViewportResize() {
+      const newHeight = vv!.height;
+      if (newHeight < lastHeight) {
+        scrollToBottom("instant");
+      }
+      lastHeight = newHeight;
+    }
+    vv.addEventListener("resize", onViewportResize);
+    return () => vv.removeEventListener("resize", onViewportResize);
+  }, []);
+
   return (
     <div style={styles.wrapper}>
       <PullProgressBar pullProgress={Math.min(pullDistance / 56, 1)} refreshing={isRefreshing} />

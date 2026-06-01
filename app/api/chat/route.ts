@@ -5,7 +5,7 @@ import {
   assembleMemoryBlock,
   generateChatTitle,
 } from "@/lib/anthropic";
-import { parsePastedAttachments } from "@/lib/chat/pastedText";
+import { parsePastedAttachments, stripPastedSummaries } from "@/lib/chat/pastedText";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import {
   runChatStream,
@@ -88,6 +88,19 @@ export async function POST(request: NextRequest) {
           .join(", ");
         return { role: m.role as string, content: desc };
       }
+
+      // Reconstruct pasted content so Bruce sees the actual text in follow-up turns.
+      // The DB stores only a summary label in content; the real text is in metadata.pastedAttachments.
+      const pastedMeta = meta?.pastedAttachments as Array<{ content: string }> | undefined;
+      if (pastedMeta && pastedMeta.length > 0) {
+        const userText = stripPastedSummaries(text);
+        const blocks = pastedMeta
+          .map((a) => `<attached_text filename="pasted-text.txt">\n${a.content}\n</attached_text>`)
+          .join("\n\n");
+        const fullContent = userText.trim() ? `${blocks}\n\n${userText}` : blocks;
+        return { role: m.role as string, content: fullContent };
+      }
+
       return { role: m.role as string, content: text };
     }).filter((m) => {
       const c = m.content;

@@ -10,7 +10,7 @@ import TopBar from "./TopBar";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import type { FileAttachment } from "./MessageInput";
-import type { ChatMessage, NormalizedMessage, ReactionEntry } from "@/lib/chat/types";
+import type { ChatMessage, MessageAttachment, NormalizedMessage, ReactionEntry } from "@/lib/chat/types";
 import type { MessageRole } from "@/lib/types";
 import { aggregateReactions } from "@/lib/chat/reactionUtils";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
@@ -79,6 +79,7 @@ export default function ChatWindow({
     return aggregateReactions(initialReactions, currentUserId, colorMap);
   });
   const abortRef = useRef<AbortController | null>(null);
+  const pendingBlobAttachmentsRef = useRef<MessageAttachment[]>([]);
 
   useChatMemory({ chatId, messageCount: messages.length, disabled: incognito });
 
@@ -215,6 +216,10 @@ export default function ChatWindow({
     if ((!text && !attachedFiles.length) || isStreaming) return;
 
     const filesToSend = attachedFiles;
+    // Capture blob URLs before clearing — used as fallback if storage upload fails
+    pendingBlobAttachmentsRef.current = filesToSend
+      .filter((f) => f.previewUrl)
+      .map((f) => ({ url: f.previewUrl!, type: f.type, filename: f.filename }));
     setInput("");
     setAttachedFiles([]);
     setError(null);
@@ -435,6 +440,23 @@ export default function ChatWindow({
       // will load fresh state from DB.
       if (!incognito && !abort.signal.aborted) {
         await loadMessages();
+        // If storage upload failed, the DB message has an empty image URL.
+        // Fall back to the captured blob URL so the image stays visible.
+        const blobs = pendingBlobAttachmentsRef.current;
+        if (blobs.length > 0) {
+          pendingBlobAttachmentsRef.current = [];
+          setMessages((prev) => {
+            const lastUserIdx = prev.reduce((acc, m, i) => m.role === "user" ? i : acc, -1);
+            if (lastUserIdx === -1) return prev;
+            const msg = prev[lastUserIdx];
+            const metaAtts = msg.metadata?.attachments as MessageAttachment[] | undefined;
+            const hasRealUrl =
+              (msg.imageUrl && msg.imageUrl.length > 0) ||
+              metaAtts?.some((a) => a.url && a.url.length > 0);
+            if (hasRealUrl) return prev;
+            return prev.map((m, i) => (i === lastUserIdx ? { ...m, attachments: blobs } : m));
+          });
+        }
       }
     }
   }
