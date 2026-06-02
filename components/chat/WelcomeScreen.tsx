@@ -20,6 +20,8 @@ interface WelcomeScreenProps {
   onModelChange: (id: string) => void;
   // Optional "add to project" entry in the + menu (hidden in incognito / no memberships).
   moveToProject?: MoveToProjectConfig;
+  selectedProject?: { id: string; name: string } | null;
+  onClearProject?: () => void;
 }
 
 function getGreeting(name: string): string {
@@ -41,6 +43,8 @@ export default function WelcomeScreen({
   model,
   onModelChange,
   moveToProject,
+  selectedProject,
+  onClearProject,
 }: WelcomeScreenProps) {
   const { incognito } = useChatContext();
   const firstName = userName.split(" ")[0];
@@ -78,10 +82,32 @@ export default function WelcomeScreen({
                 <ModelPicker currentModel={model} onSelect={onModelChange} />
               }
             />
+            {selectedProject && onClearProject && (
+              <div style={styles.projectPill}>
+                <FolderIcon />
+                <span style={styles.projectPillName}>{selectedProject.name}</span>
+                <button
+                  type="button"
+                  onClick={onClearProject}
+                  style={styles.projectPillClear}
+                  aria-label="Remove from project"
+                >
+                  ×
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 18 18" fill="none" aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-tertiary)" }}>
+      <path d="M2 5.5a1.5 1.5 0 0 1 1.5-1.5h3l1.5 1.5h5A1.5 1.5 0 0 1 14.5 7v5A1.5 1.5 0 0 1 13 13.5H3.5A1.5 1.5 0 0 1 2 12V5.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -135,5 +161,39 @@ const styles: Record<string, React.CSSProperties> = {
     borderTop: "none",
     padding: "0",
     backgroundColor: "transparent",
+  },
+  projectPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "5px",
+    marginTop: "8px",
+    padding: "4px 6px 4px 9px",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-full)",
+    backgroundColor: "var(--bg-secondary)",
+    fontSize: "0.8125rem",
+    color: "var(--text-secondary)",
+  },
+  projectPillName: {
+    maxWidth: "200px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+  },
+  projectPillClear: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "16px",
+    height: "16px",
+    borderRadius: "var(--radius-full)",
+    border: "none",
+    background: "transparent",
+    color: "var(--text-tertiary)",
+    cursor: "pointer",
+    fontSize: "0.9375rem",
+    lineHeight: 1,
+    padding: 0,
+    flexShrink: 0,
   },
 };

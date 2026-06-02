@@ -234,6 +234,8 @@ export default function NewChatOrchestrator({
               ? { projects: movableProjects, onSelect: handleAssignProject, label: "Add to project" }
               : undefined
           }
+          selectedProject={selectedProject}
+          onClearProject={() => setSelectedProject(null)}
         />
       </div>
     );

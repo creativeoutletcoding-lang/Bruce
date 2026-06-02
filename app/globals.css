@@ -314,7 +314,14 @@ span[class*="typingDots"] > span:nth-child(3),
    WELCOME SCREEN — input card reset
    ============================================================ */
 
-/* On mobile, the welcome input is a centered card — undo the flat-bar overrides */
+/* Welcome input: centered card layout + vertically-centered row items.
+   The welcome screen is always single-line so align-items:center is correct;
+   regular chats keep the default flex-end so buttons sit at the bottom
+   when the textarea grows multi-line. */
+.welcome-input-wrapper .msg-input-row {
+  align-items: center !important;
+}
+
 @media (max-width: 768px) {
   .welcome-input-wrapper .msg-input-container {
     padding: 0 !important;
