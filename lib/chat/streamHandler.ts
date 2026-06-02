@@ -16,7 +16,7 @@ import {
   executeGmailTool,
 } from "@/lib/google/gmailTools";
 import {
-  SEARCH_TOOL,
+  WEB_SEARCH_TOOL,
   SEARCH_SYSTEM_BLOCK,
   SEARCH_STATUS_SENTINEL,
   BROWSE_TOOL,
@@ -57,7 +57,7 @@ export const TOOLS_FULL = [
   ...CALENDAR_TOOLS,
   ...GMAIL_TOOLS,
   ...REMINDERS_TOOLS,
-  SEARCH_TOOL,
+  WEB_SEARCH_TOOL, // Anthropic native server tool — added to every request
   BROWSE_TOOL,
   HISTORY_SEARCH_TOOL,
   ...DOCUMENT_TOOLS,
@@ -181,7 +181,7 @@ async function executeOneTool(
   latestUserMessageId: string | null | undefined,
   projectId?: string | null,
 ): Promise<string> {
-  if (name === "web_search" || name === "browse_url") {
+  if (name === "browse_url") {
     return executeSearchTool(name, input);
   }
   if (name === "search_chat_history") {
@@ -303,8 +303,6 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
         const MAX_TOKENS_CONTINUES = 3;
 
         while (true) {
-          let turnText = "";
-
           const stream = anthropic.messages.stream({
             model,
             max_tokens: maxTokens ?? 2048,
@@ -314,9 +312,25 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
           }, { signal: clientAbort.signal });
 
           stream.on("text", (text) => {
-            turnText += text;
             fullResponse += text;
             handleText(text);
+          });
+
+          // Native web search runs server-side as a `server_tool_use` block — it
+          // never appears as a client tool_use. Detect it from the raw stream so
+          // we can show the "Searching the web…" status while Anthropic searches.
+          stream.on("streamEvent", (event) => {
+            const e = event as { type?: string; content_block?: { type?: string; name?: string } };
+            if (
+              e.type === "content_block_start" &&
+              e.content_block?.type === "server_tool_use" &&
+              e.content_block?.name === "web_search"
+            ) {
+              if (!webSearchUsed) {
+                webSearchUsed = true;
+                controller.enqueue(encoder.encode(SEARCH_STATUS_SENTINEL));
+              }
+            }
           });
 
           const finalMsg = await stream.finalMessage();
@@ -354,10 +368,6 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
           // still safe — the catch handler below saves fullResponse.
           maxTokensContinues = 0;
 
-          if (toolCalls.some((tc) => tc.name === "web_search")) {
-            webSearchUsed = true;
-            controller.enqueue(encoder.encode(SEARCH_STATUS_SENTINEL));
-          }
           if (toolCalls.some((tc) => tc.name === "browse_url")) {
             browseUrlUsed = true;
             controller.enqueue(encoder.encode(BROWSE_STATUS_SENTINEL));

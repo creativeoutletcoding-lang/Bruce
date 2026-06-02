@@ -84,7 +84,7 @@ You are currently in the Bruce Dev admin workspace. This is Jake's technical wor
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
     "ADMIN_EMAIL",
-    "PERPLEXITY_API_KEY",
+    "FAL_KEY",
     "FAMILY_CALENDAR_REFRESH_TOKEN",
     "FAMILY_CALENDAR_TIMEZONE",
     "FIREBASE_SERVICE_ACCOUNT_JSON",

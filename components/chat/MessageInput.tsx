@@ -333,11 +333,27 @@ export default function MessageInput({
                 onChange={handleFileChange}
               />
             )}
-            <InputPlusMenu
-              onAttachFile={onFilesAttach ? () => fileInputRef.current?.click() : undefined}
-              moveToProject={moveToProject}
-              disabled={disabled}
-            />
+            {moveToProject ? (
+              // "Move to project" is eligible → full "+" menu (attach + move).
+              <InputPlusMenu
+                onAttachFile={onFilesAttach ? () => fileInputRef.current?.click() : undefined}
+                moveToProject={moveToProject}
+                disabled={disabled}
+              />
+            ) : (
+              // No move option → keep attach a single tap (no menu).
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                style={styles.attachButton}
+                aria-label="Attach file"
+                type="button"
+                disabled={disabled}
+              >
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                  <path d="M15 9.5l-5.5 5.5a4 4 0 0 1-5.657-5.657l6-6a2.5 2.5 0 0 1 3.535 3.535L7.5 12.5a1 1 0 0 1-1.414-1.414L11.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            )}
           </>
         )}
         <textarea

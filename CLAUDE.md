@@ -19,8 +19,8 @@ Private household AI for the Johnson family at heybruce.app. Jake runs the build
 | Database | Supabase (Postgres + RLS + Realtime) |
 | Auth | Supabase Auth + Google OAuth |
 | AI | Anthropic — claude-sonnet-4-6 |
-| Image generation | Replicate (flux-schnell) |
-| Web search | Perplexity API |
+| Image generation | fal.ai (FLUX.1 — flux/dev + flux-pro/v1.1) |
+| Web search | Anthropic native web search (server tool) |
 | URL fetching | Jina Reader |
 | Push notifications | Firebase Cloud Messaging |
 | Background jobs | DigitalOcean droplet + PM2; Vercel native cron |
@@ -80,13 +80,13 @@ Migrations 001–030 applied; 031 pending Supabase SQL editor. `schema.sql` is t
 
 All chat routes use the same tool set. Tool definitions live in `lib/`. System blocks are assembled by `buildToolSystemBlocks()` in `lib/chat/streamHandler.ts` and appended to the system prompt.
 
-**web_search** — Perplexity API. Defined in `lib/searchTools.ts`. Used for current events, live data, anything past knowledge cutoff. System block: `SEARCH_SYSTEM_BLOCK`.
+**web_search** — Anthropic native web search **server tool** (`{ type: "web_search_20260209", name: "web_search" }`, exported as `WEB_SEARCH_TOOL` from `lib/searchTools.ts`, added to `TOOLS_FULL` on every request). Anthropic runs the search server-side and streams `server_tool_use` + `web_search_tool_result` blocks back inside the same assistant turn — there is **no client-side dispatch**. `streamHandler` detects the `server_tool_use` content-block-start to emit the "Searching the web…" status. Used for current events, live data, anything past knowledge cutoff. System block: `SEARCH_SYSTEM_BLOCK`.
 
 **browse_url** — Jina Reader. Defined in `lib/searchTools.ts`. Fetches any public URL as clean markdown. Only visit URLs the user explicitly provides. System block: `BROWSE_SYSTEM_BLOCK`.
 
 **search_chat_history** — Full-text search of persisted message history via `messages_content_fts_idx` GIN index (migration 029). Defined in `lib/searchTools.ts`. Scoped to the current project when in project context. System block: `HISTORY_SEARCH_SYSTEM_BLOCK`. All contexts.
 
-**generate_image** — Replicate flux-schnell. Not a standard tool — Bruce emits `<image_request>{"prompt":"...","quality":"standard|hd"}</image_request>` as XML in its text response. `app/api/chat/route.ts` intercepts the tag, strips it from the stream, and sends an `IMAGE_REQ:` sentinel to the client, which then calls the image endpoint. Defined via `IMAGE_SYSTEM_BLOCK` in `lib/anthropic/index.ts`. Standalone and single-member project chats only.
+**generate_image** — fal.ai FLUX.1. Not a standard tool — Bruce emits `<image_request>{"prompt":"...","quality":"standard|hd"}</image_request>` as XML in its text response. `app/api/chat/route.ts` intercepts the tag, strips it from the stream, and sends an `IMAGE_REQ:` sentinel to the client, which then calls the image endpoint. The single image module is `lib/image/generateImage.ts` (`generateImage({ prompt, model?, imageSize? }) → { url }`); `quality` maps standard→`fal-ai/flux/dev`, hd→`fal-ai/flux-pro/v1.1`. `lib/images/generate.ts` (`generateImageAndSave`) calls it, then persists to Drive + DB. No polling/cold start. Requires `FAL_KEY`. Defined via `IMAGE_SYSTEM_BLOCK` in `lib/anthropic/index.ts`. Standalone and single-member project chats only.
 
 **Google Calendar** — `lib/google/calendarTools.ts`. Read/create/update/delete/respond to events. System block: `CALENDAR_SYSTEM_BLOCK`.
 

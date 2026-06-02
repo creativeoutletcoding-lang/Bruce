@@ -1,22 +1,16 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { webSearch, browseUrl } from "@/lib/search";
+import { browseUrl } from "@/lib/search";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 
-export const SEARCH_TOOL: Anthropic.Messages.Tool = {
+// Anthropic native web search. This is a server-side tool — Anthropic runs the
+// search and streams the results back inside the same assistant turn, so there
+// is NO client-side dispatch for "web_search" (unlike browse_url / history).
+// The cast lets it sit alongside the custom tools in the tools array; the SDK
+// passes the object straight through to the API.
+export const WEB_SEARCH_TOOL = {
+  type: "web_search_20260209",
   name: "web_search",
-  description:
-    "Search the web for current information. Use when the user asks about recent events, real-time data, live prices, sports scores, news, weather, or anything that may have changed since your knowledge cutoff. Do not use for things you already know well.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      query: {
-        type: "string",
-        description: "The search query to run. Be specific and concise.",
-      },
-    },
-    required: ["query"],
-  },
-};
+} as unknown as Anthropic.Messages.Tool;
 
 export const BROWSE_TOOL: Anthropic.Messages.Tool = {
   name: "browse_url",
@@ -173,14 +167,12 @@ export async function executeHistorySearchTool(
   return JSON.stringify({ results });
 }
 
+// web_search is handled natively by Anthropic (server tool) and never reaches
+// this dispatcher — only browse_url (Jina) is executed client-side here.
 export async function executeSearchTool(
   name: string,
   input: Record<string, unknown>
 ): Promise<string> {
-  if (name === "web_search") {
-    const result = await webSearch(input.query as string);
-    return JSON.stringify(result);
-  }
   if (name === "browse_url") {
     return await browseUrl(input.url as string);
   }

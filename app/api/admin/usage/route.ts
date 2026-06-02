@@ -74,11 +74,11 @@ export async function GET() {
   // Cost estimation
   // Anthropic claude-sonnet-4-6: ~$3/M input + $15/M output, ~1600 tokens/exchange → ~$0.012/message
   const chatApiCost = parseFloat((totalMessages * 0.012).toFixed(2));
-  // Replicate flux-schnell: $0.003/image
-  const replicateCost = parseFloat((totalImages * 0.003).toFixed(2));
-  // Perplexity sonar-pro: ~$0.005/request
-  const perplexityCost = parseFloat((totalSearches * 0.005).toFixed(2));
-  const totalCost = parseFloat((chatApiCost + replicateCost + perplexityCost).toFixed(2));
+  // fal.ai FLUX.1 [dev]: ~$0.025/image
+  const imageCost = parseFloat((totalImages * 0.025).toFixed(2));
+  // Anthropic native web search: ~$0.01/search
+  const webSearchCost = parseFloat((totalSearches * 0.01).toFixed(2));
+  const totalCost = parseFloat((chatApiCost + imageCost + webSearchCost).toFixed(2));
 
   return NextResponse.json({
     period,
@@ -89,8 +89,8 @@ export async function GET() {
     web_searches: totalSearches,
     cost_breakdown: {
       chat_api: chatApiCost,
-      replicate: replicateCost,
-      perplexity: perplexityCost,
+      images: imageCost,
+      web_search: webSearchCost,
       total: totalCost,
     },
   });

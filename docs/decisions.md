@@ -6,6 +6,26 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Provider swaps — Perplexity→Anthropic web search, Replicate→fal.ai images + attach regression fix — 2026-06-01
+
+**Three changes in one session.**
+
+**1. Attach regression fix.** The move-to-project feature had replaced the one-tap paperclip with a "+" menu in *every* chat context, making attach two taps everywhere. `MessageInput` now branches: when a `moveToProject` config is passed (the existing eligibility — standalone private, owned, not yet moved), it renders the shared `InputPlusMenu`; otherwise it renders the original one-tap paperclip button directly. Eligibility is not re-derived — it's still just "did ChatWindow pass `moveToProject`?".
+
+**2. Web search: Perplexity → Anthropic native (clean cut).** Removed all Perplexity code (`webSearch()` and the custom `SEARCH_TOOL`), the `PERPLEXITY_API_KEY` references, and UI copy. Web search is now the Anthropic native **server tool** `{ type: "web_search_20260209", name: "web_search" }` (`WEB_SEARCH_TOOL` in `lib/searchTools.ts`), added to `TOOLS_FULL` on every request. Anthropic runs the search server-side and returns `server_tool_use` + `web_search_tool_result` blocks within the same turn, so there is no client-side dispatch for `web_search` (only `browse_url`/`search_chat_history` remain client-executed). `streamHandler` detects the `server_tool_use` content-block-start to emit the existing "Searching the web…" status (already provider-neutral). **Verified live against the API**: the `web_search_20260209` tool is accepted and returns search results + citations within the turn.
+
+**3. Image generation: Replicate → fal.ai (clean cut).** Removed all Replicate code (the predict/poll/download loop) and `REPLICATE_API_TOKEN`. New single module `lib/image/generateImage.ts` wraps the fal.ai client (`fal.subscribe`) — `generateImage({ prompt, model?, imageSize? }) → { url }`, default `fal-ai/flux/dev`, hd → `fal-ai/flux-pro/v1.1`, clean error handling with a user-facing fallback message. `lib/images/generate.ts` (`generateImageAndSave`) now calls it then persists to Drive + DB as before. fal.ai has no cold start or polling — one request returns the image. Requires `FAL_KEY` (`npm i @fal-ai/client`).
+
+**SDK upgrade.** Native web search required upgrading `@anthropic-ai/sdk` 0.39.0 → 0.100.1 so the streaming accumulator handles the new server-tool block types. The codebase only uses stable SDK APIs (`messages.create/stream`, `Anthropic.Messages.*` types) — the upgrade produced **zero** type errors.
+
+**Clean-cut rationale.** No fallbacks, no env toggles, no dual-provider branching. A provider abstraction layer would be dead weight for a single-household app with one provider each; the direct integration is simpler to reason about and there is no migration window to straddle.
+
+**Admin usage.** Cost-tracking labels/keys were renamed off the old providers: `cost_breakdown.replicate`→`images` (fal.ai, ~$0.025/image) and `cost_breakdown.perplexity`→`web_search` (Anthropic, ~$0.01/search). The `web_searches` metric still reads `metadata.web_search_used`, which `streamHandler` still sets.
+
+**MANUAL FOLLOW-UP (Vercel dashboard):** remove `PERPLEXITY_API_KEY` and `REPLICATE_API_TOKEN` from the Vercel project environment, and add `FAL_KEY`. The two old keys were removed from `.env.local`; `FAL_KEY=` was added there (fill in the value locally to test image generation). No schema/migration changes.
+
+---
+
 ### Move to project — input "+" menu + breadcrumb topbar — 2026-06-01
 
 **Feature:** Standalone private chats can be moved into a project from the input bar, mirroring Claude.ai's "+" menu + breadcrumb pattern.

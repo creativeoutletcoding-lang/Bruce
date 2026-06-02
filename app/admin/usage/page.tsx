@@ -18,8 +18,8 @@ interface UsageData {
   web_searches: number;
   cost_breakdown: {
     chat_api: number;
-    replicate: number;
-    perplexity: number;
+    images: number;
+    web_search: number;
     total: number;
   };
 }
@@ -123,20 +123,20 @@ export default function UsagePage() {
             </tr>
             <tr>
               <td>
-                Replicate (images)
-                <span className="admin-table-note"> — {data.images_generated} images × $0.003</span>
+                fal.ai (images)
+                <span className="admin-table-note"> — {data.images_generated} images × $0.025</span>
               </td>
               <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                ${data.cost_breakdown.replicate.toFixed(2)}
+                ${data.cost_breakdown.images.toFixed(2)}
               </td>
             </tr>
             <tr>
               <td>
-                Perplexity (web search)
-                <span className="admin-table-note"> — {data.web_searches} searches × $0.005</span>
+                Web search
+                <span className="admin-table-note"> — {data.web_searches} searches × $0.01</span>
               </td>
               <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                ${data.cost_breakdown.perplexity.toFixed(2)}
+                ${data.cost_breakdown.web_search.toFixed(2)}
               </td>
             </tr>
           </tbody>
