@@ -10,6 +10,8 @@ export interface MoveToProjectConfig {
   projects: MovableProject[];
   onSelect: (projectId: string) => void;
   loading?: boolean;
+  /** Menu entry label. Defaults to "Move to project". */
+  label?: string;
 }
 
 interface InputPlusMenuProps {
@@ -89,7 +91,7 @@ export default function InputPlusMenu({ onAttachFile, moveToProject, disabled = 
           disabled={moveEmpty}
         >
           <FolderIcon />
-          <span style={styles.itemLabel}>{moveEmpty ? "No projects available" : "Move to project"}</span>
+          <span style={styles.itemLabel}>{moveEmpty ? "No projects available" : (moveToProject!.label ?? "Move to project")}</span>
           {!moveEmpty && <ChevronRight />}
         </button>
       )}
@@ -137,7 +139,7 @@ export default function InputPlusMenu({ onAttachFile, moveToProject, disabled = 
               <>
                 <button type="button" style={styles.sheetBack} onClick={() => setShowProjects(false)}>
                   <ChevronLeft />
-                  <span>Move to project</span>
+                  <span>{moveToProject.label ?? "Move to project"}</span>
                 </button>
                 <ProjectPickerList
                   projects={moveToProject.projects}

@@ -5,8 +5,7 @@ import { useChatContext } from "@/components/layout/ChatShell";
 import MessageInput from "./MessageInput";
 import type { FileAttachment } from "./MessageInput";
 import ModelPicker from "@/components/ui/ModelPicker";
-import ProjectAssignSelector from "./ProjectAssignSelector";
-import type { MovableProject } from "@/lib/types";
+import type { MoveToProjectConfig } from "./InputPlusMenu";
 
 interface WelcomeScreenProps {
   userName: string;
@@ -19,12 +18,8 @@ interface WelcomeScreenProps {
   onFileRemove?: (index: number) => void;
   model: string;
   onModelChange: (id: string) => void;
-  // Optional "assign new chat to a project" selector (hidden in incognito / when
-  // the user has no project memberships).
-  projects?: MovableProject[];
-  selectedProject?: { id: string; name: string } | null;
-  onSelectProject?: (project: { id: string; name: string }) => void;
-  onClearProject?: () => void;
+  // Optional "add to project" entry in the + menu (hidden in incognito / no memberships).
+  moveToProject?: MoveToProjectConfig;
 }
 
 function getGreeting(name: string): string {
@@ -45,13 +40,9 @@ export default function WelcomeScreen({
   onFileRemove,
   model,
   onModelChange,
-  projects,
-  selectedProject,
-  onSelectProject,
-  onClearProject,
+  moveToProject,
 }: WelcomeScreenProps) {
   const { incognito } = useChatContext();
-  const showProjectSelector = !incognito && Boolean(projects && projects.length > 0) && Boolean(onSelectProject && onClearProject);
   const firstName = userName.split(" ")[0];
   // Greeting is computed client-side only — getGreeting uses new Date().getHours()
   // which returns UTC on the server but local time in the browser, causing React
@@ -82,18 +73,11 @@ export default function WelcomeScreen({
               onFilesAttach={onFilesAttach}
               onFileRemove={onFileRemove}
               containerStyle={styles.inputContainer}
+              moveToProject={moveToProject}
               modelPicker={
                 <ModelPicker currentModel={model} onSelect={onModelChange} />
               }
             />
-            {showProjectSelector && (
-              <ProjectAssignSelector
-                projects={projects!}
-                selected={selectedProject ?? null}
-                onSelect={onSelectProject!}
-                onClear={onClearProject!}
-              />
-            )}
           </div>
         </div>
       </div>

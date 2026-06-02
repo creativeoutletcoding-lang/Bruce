@@ -46,9 +46,14 @@ export default function NewChatOrchestrator({
     if (stored) setModel(stored);
   }, []);
 
-  // Optional "assign new chat to a project" selector (welcome screen only).
+  // Optional "add to project" via the + menu (welcome screen only).
   const [movableProjects, setMovableProjects] = useState<MovableProject[]>([]);
   const [selectedProject, setSelectedProject] = useState<{ id: string; name: string } | null>(null);
+
+  const handleAssignProject = useCallback((projectId: string) => {
+    const project = movableProjects.find((p) => p.id === projectId);
+    if (project) setSelectedProject({ id: project.id, name: project.name });
+  }, [movableProjects]);
 
   useEffect(() => {
     if (incognito) return;
@@ -212,7 +217,7 @@ export default function NewChatOrchestrator({
   if (messages.length === 0) {
     return (
       <div style={styles.container}>
-        <TopBar title="New Chat" hasMessages={false} />
+        <TopBar title="New Chat" hasMessages={false} projectName={selectedProject?.name ?? undefined} />
         <WelcomeScreen
           userName={userName}
           inputValue={input}
@@ -224,10 +229,11 @@ export default function NewChatOrchestrator({
           onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
           model={model}
           onModelChange={handleModelChange}
-          projects={movableProjects}
-          selectedProject={selectedProject}
-          onSelectProject={setSelectedProject}
-          onClearProject={() => setSelectedProject(null)}
+          moveToProject={
+            !incognito && movableProjects.length > 0
+              ? { projects: movableProjects, onSelect: handleAssignProject, label: "Add to project" }
+              : undefined
+          }
         />
       </div>
     );
