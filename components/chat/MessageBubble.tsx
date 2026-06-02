@@ -69,7 +69,7 @@ const REACTION_PATHS: Record<string, string> = {
 // their own colored icon matching the reaction type they used.
 // marginBottom: -20px (8px gap + 12px overlap) + zIndex: 1 paints the row
 // on top of the bubble below it.
-function ReactionRow({ reactions }: { reactions: ReactionEntry[] }) {
+function ReactionRow({ reactions, isUser }: { reactions: ReactionEntry[]; isUser?: boolean }) {
   // Flatten reactors in type order, preserving per-type SVG
   const items: Array<{ colorHex: string | undefined; type: string; key: string }> = [];
   for (const entry of reactions) {
@@ -88,13 +88,14 @@ function ReactionRow({ reactions }: { reactions: ReactionEntry[] }) {
         width: "100%",
         height: `${ICON_SIZE}px`,
         marginBottom: "-20px",
-        marginRight: "-4px",
+        marginRight: isUser ? undefined : "-4px",
+        marginLeft: isUser ? "-4px" : undefined,
         position: "relative",
         zIndex: 1,
         display: "flex",
         flexDirection: "row",
         alignItems: "flex-end",
-        justifyContent: "flex-end",
+        justifyContent: isUser ? "flex-start" : "flex-end",
         pointerEvents: "none",
       }}
     >
@@ -439,7 +440,7 @@ export default function MessageBubble({
             absolute positioning is needed. The row overlaps the bubble's
             top corner via marginBottom: -22px + zIndex: 1. */}
         {hasReactions && (
-          <ReactionRow reactions={reactions!} />
+          <ReactionRow reactions={reactions!} isUser={isUser} />
         )}
 
         {/* Bubble */}
