@@ -35,9 +35,13 @@ export function parseStreamFrame(accumulated: string): StreamTick {
   const sentinelIdx = accumulated.indexOf("\x1f");
   const raw = sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated;
 
+  // The LAST status sentinel wins — the server emits a sequence ("Thinking…" →
+  // "Searching the web…" → "" to clear), and only the most recent reflects the
+  // current state. An empty payload ("") clears the indicator (renders hidden).
   let workingStatus: string | null = null;
-  const statusMatch = /\x1eSTATUS:([^\x1e]*)\x1e/.exec(raw);
-  if (statusMatch) workingStatus = statusMatch[1];
+  const statusRe = /\x1eSTATUS:([^\x1e]*)\x1e/g;
+  let statusMatch: RegExpExecArray | null;
+  while ((statusMatch = statusRe.exec(raw)) !== null) workingStatus = statusMatch[1];
 
   // Build live task progress from \x1eTASK_PROGRESS:{...}\x1e sentinels.
   // Each sentinel carries one step completion event; we accumulate them into a

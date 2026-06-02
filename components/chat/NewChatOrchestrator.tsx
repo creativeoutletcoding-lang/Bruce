@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useChatContext } from "@/components/layout/ChatShell";
 import WelcomeScreen from "./WelcomeScreen";
@@ -9,6 +9,7 @@ import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import type { FileAttachment } from "./MessageInput";
 import type { ChatMessage } from "./MessageList";
+import type { MovableProject } from "@/lib/types";
 import { DEFAULT_MODEL } from "@/lib/models";
 import {
   consumeStream,
@@ -40,6 +41,20 @@ export default function NewChatOrchestrator({
     if (typeof window === "undefined") return DEFAULT_MODEL;
     return localStorage.getItem("bruce:model") ?? DEFAULT_MODEL;
   });
+
+  // Optional "assign new chat to a project" selector (welcome screen only).
+  const [movableProjects, setMovableProjects] = useState<MovableProject[]>([]);
+  const [selectedProject, setSelectedProject] = useState<{ id: string; name: string } | null>(null);
+
+  useEffect(() => {
+    if (incognito) return;
+    let cancelled = false;
+    fetch("/api/projects/movable")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: MovableProject[]) => { if (!cancelled) setMovableProjects(data); })
+      .catch(() => { if (!cancelled) setMovableProjects([]); });
+    return () => { cancelled = true; };
+  }, [incognito]);
 
   async function handleModelChange(id: string) {
     setModel(id);
@@ -90,6 +105,7 @@ export default function NewChatOrchestrator({
           message: text,
           chatId: null,
           isIncognito: incognito,
+          projectId: selectedProject?.id ?? null,
           userTimestamp: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }),
           attachments: filesToSend.length > 0
             ? filesToSend.map((f) => ({ base64: f.base64, mediaType: f.mediaType, filename: f.filename, type: f.type }))
@@ -168,10 +184,15 @@ export default function NewChatOrchestrator({
         }
       }
 
-      // Navigate after image (if any) has been persisted
+      // Navigate after image (if any) has been persisted. A project-assigned chat
+      // lives at its project URL (mirrors a moved chat's canonical location).
       if (!incognito && newChatId) {
         refreshChats();
-        router.push(`/chat/${newChatId}`);
+        if (selectedProject) {
+          router.push(`/projects/${selectedProject.id}/chat/${newChatId}`);
+        } else {
+          router.push(`/chat/${newChatId}`);
+        }
       }
     } catch (err) {
       console.error("[NewChatOrchestrator] Send error:", err);
@@ -181,7 +202,7 @@ export default function NewChatOrchestrator({
       setIsStreaming(false);
       setWorkingStatus(null);
     }
-  }, [input, attachedFiles, isStreaming, incognito, router, refreshChats]);
+  }, [input, attachedFiles, isStreaming, incognito, router, refreshChats, selectedProject]);
 
   // Show welcome screen until the user sends their first message
   if (messages.length === 0) {
@@ -199,6 +220,10 @@ export default function NewChatOrchestrator({
           onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
           model={model}
           onModelChange={handleModelChange}
+          projects={movableProjects}
+          selectedProject={selectedProject}
+          onSelectProject={setSelectedProject}
+          onClearProject={() => setSelectedProject(null)}
         />
       </div>
     );
@@ -211,7 +236,7 @@ export default function NewChatOrchestrator({
         ...(incognito ? styles.incognitoFilter : {}),
       }}
     >
-      <TopBar title="New Chat" hasMessages={messages.length > 0} />
+      <TopBar title="New Chat" hasMessages={messages.length > 0} projectName={selectedProject?.name} />
 
       {incognito && (
         <div style={styles.incognitoNotice}>

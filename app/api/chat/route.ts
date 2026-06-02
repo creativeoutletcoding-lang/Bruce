@@ -32,6 +32,8 @@ export async function POST(request: NextRequest) {
     currentLocation?: string;
     userTimestamp?: string;
     attachments?: Array<{ file_id: string | null; url: string; type: "image" | "document"; filename: string }>;
+    /** When creating a new chat, assign it to this project (membership-validated). */
+    projectId?: string | null;
   };
   try {
     body = await request.json();
@@ -39,7 +41,7 @@ export async function POST(request: NextRequest) {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const { message, chatId, isIncognito, currentLocation, userTimestamp: rawTimestamp, attachments: rawAttachments } = body;
+  const { message, chatId, isIncognito, currentLocation, userTimestamp: rawTimestamp, attachments: rawAttachments, projectId: rawProjectId } = body;
   const attachments = rawAttachments ?? [];
   const userTimestamp = rawTimestamp ?? new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
@@ -175,12 +177,25 @@ export async function POST(request: NextRequest) {
 
   if (!isIncognito) {
     if (!currentChatId) {
+      // Optional project assignment at creation. The insert uses the service role
+      // (bypasses RLS), so membership must be verified here with the user client.
+      let assignedProjectId: string | null = null;
+      if (typeof rawProjectId === "string" && rawProjectId) {
+        const { data: membership } = await supabase
+          .from("project_members")
+          .select("id")
+          .eq("project_id", rawProjectId)
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (membership) assignedProjectId = rawProjectId;
+      }
+
       chatTitle = generateChatTitle(displayMessage);
       const { data: newChat, error: chatError } = await adminSupabase
         .from("chats")
         .insert({
           owner_id: user.id,
-          project_id: null,
+          project_id: assignedProjectId,
           type: "private",
           title: chatTitle,
           last_message_at: new Date().toISOString(),

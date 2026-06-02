@@ -195,7 +195,11 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 swipeOpen={openSwipeId === msg.id}
                 onSwipeOpen={() => setOpenSwipeId(msg.id)}
                 showBruceLabel={true}
-                reactions={msg.role === "assistant" ? reactionsMap?.[msg.id] : undefined}
+                // Reactions render on the message whose id === reactions.message_id,
+                // regardless of role: a member's 👍 on Bruce shows on Bruce's message;
+                // Bruce's react_to_message 👍 shows on the member's message. (The
+                // react *action* below stays gated to Bruce's messages.)
+                reactions={reactionsMap?.[msg.id]}
                 onReact={msg.role === "assistant" && onReact && !msg.id.startsWith("tmp-") ? (type) => onReact(msg.id, type) : undefined}
               />
               );

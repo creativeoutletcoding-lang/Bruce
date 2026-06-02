@@ -6,6 +6,22 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### CPS instructions, reaction mapping, "Thinking…" status, new-chat project assignment — 2026-06-02
+
+Four changes in one session.
+
+**1. CPS project instructions (migration 032, data update).** Appended two sections to the CPS project (`c0c4dcb3-…`) instructions: `## OUTPUT 2: SAASANT CSV` (the 8-column QBO/SaaSant import spec — two rows per sitter, Contract Labor positive + Workers' Comp negative, BillNo pattern, Spencer→Julia Stafford substitution) and `## VERIFICATION SUMMARY RULE` (read totals back from the just-written sheet via the Sheets API before summarizing; flag mismatches). Delivered as a numbered migration file with idempotent `NOT LIKE` guards — applied manually in the Supabase SQL editor (repo convention; not executed by the agent).
+
+**2. Reaction → bubble mapping.** `MessageList` rendered reactions with `msg.role === "assistant" ? reactionsMap?.[msg.id] : undefined` — coupling the display to role on top of the id match. Changed to `reactionsMap?.[msg.id]` so reactions render purely on the message whose `id === reactions.message_id`, regardless of role. This makes Bruce's `react_to_message` 👍 show on the member's message (previously dropped) and keeps member 👍 on Bruce's message. The react *action* (`onReact`) stays gated to assistant messages — members react to Bruce only. (If the reported "on the human bubble" symptom is instead purely visual overlap, that's a separate `MessageBubble` placement tweak — flagged.)
+
+**3. "Thinking…" status before web search.** A ~10s pre-search window showed only frozen dots. `streamHandler` now runs a status lifecycle via `\x1eSTATUS:text\x1e` sentinels (`parseStreamFrame` now takes the *last* sentinel, empty payload clears): a 1.5s timer emits "Thinking…" if nothing has streamed; the native web-search `server_tool_use` block switches to "Searching the web…"; the first text token clears it. `firstTextSeen` is response-wide so "Thinking…" only appears before the first text token of the whole reply — fast replies never flash it, and it never re-appears mid-reply. The browse/history/document tool statuses now also clear on the next text token (set `statusShown`). The thinking timer is cleared after each turn's `finalMessage` and in the catch, so a late fire can never enqueue onto a closed controller.
+
+**4. Assign a new chat to a project at creation.** Mirrors move-to-project for not-yet-created chats. The welcome screen shows a subtle `ProjectAssignSelector` ("+ Add to project" → the shared `ProjectPickerList`; collapses to a dismissible pill) — only with ≥1 project membership and not incognito. `NewChatOrchestrator` holds the selection and passes `projectId` to `POST /api/chat`, which validates membership (user-client RLS) before creating the chat with `project_id` set (the insert uses the service role, so membership is checked explicitly). The topbar shows the `[Project] / [Chat]` breadcrumb immediately, and after the first turn it navigates to `/projects/[id]/chat/[chatId]`. The selector is reused, not duplicated; an invalid/non-member `projectId` falls back to a standalone chat rather than erroring mid-send.
+
+**Verified:** `tsc --noEmit`, ESLint, full `next build` — all clean. No schema changes (032 is a data update).
+
+---
+
 ### Provider swaps — Perplexity→Anthropic web search, Replicate→fal.ai images + attach regression fix — 2026-06-01
 
 **Three changes in one session.**

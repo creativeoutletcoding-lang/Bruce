@@ -226,6 +226,24 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
       let fullResponse = "";
       let pendingTag = "";
 
+      // ── Streaming status lifecycle ("Thinking…" → "Searching the web…" → clear) ─
+      // STATUS sentinels are \x1eSTATUS:text\x1e; the client shows the latest and
+      // an empty payload clears it. statusShown tracks whether a label is visible
+      // so the first text token can clear it.
+      let statusShown = false;
+      let firstTextSeen = false;
+      let thinkingTimer: ReturnType<typeof setTimeout> | null = null;
+      function emitStatus(text: string) {
+        controller.enqueue(encoder.encode(`\x1eSTATUS:${text}\x1e`));
+        statusShown = text.length > 0;
+      }
+      function clearStatusIfShown() {
+        if (statusShown) emitStatus("");
+      }
+      function clearThinkingTimer() {
+        if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
+      }
+
       // The pendingTag buffer holds tail bytes that might be the start of an
       // <image_request> tag. We only buffer when image-gen is active; otherwise
       // everything is flushed immediately for smoothest streaming.
@@ -311,14 +329,25 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
             tools,
           }, { signal: clientAbort.signal });
 
+          // Arm "Thinking…": if nothing has streamed 1.5s into the response, show
+          // it so the typing dots don't feel frozen during the model's pre-search
+          // processing window. firstTextSeen is response-wide, so this only fires
+          // before the very first text token of the whole reply (no mid-reply flashes).
+          thinkingTimer = setTimeout(() => {
+            if (clientAbort.signal.aborted) return;
+            if (!firstTextSeen && !statusShown) emitStatus("Thinking…");
+          }, 1500);
+
           stream.on("text", (text) => {
+            if (!firstTextSeen) { firstTextSeen = true; clearThinkingTimer(); }
+            clearStatusIfShown(); // first real text clears Thinking…/Searching…
             fullResponse += text;
             handleText(text);
           });
 
           // Native web search runs server-side as a `server_tool_use` block — it
           // never appears as a client tool_use. Detect it from the raw stream so
-          // we can show the "Searching the web…" status while Anthropic searches.
+          // we can switch the status to "Searching the web…" while Anthropic searches.
           stream.on("streamEvent", (event) => {
             const e = event as { type?: string; content_block?: { type?: string; name?: string } };
             if (
@@ -326,14 +355,15 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
               e.content_block?.type === "server_tool_use" &&
               e.content_block?.name === "web_search"
             ) {
-              if (!webSearchUsed) {
-                webSearchUsed = true;
-                controller.enqueue(encoder.encode(SEARCH_STATUS_SENTINEL));
-              }
+              clearThinkingTimer();
+              webSearchUsed = true;
+              controller.enqueue(encoder.encode(SEARCH_STATUS_SENTINEL));
+              statusShown = true;
             }
           });
 
           const finalMsg = await stream.finalMessage();
+          clearThinkingTimer();
 
           // Extract tool calls first — a max_tokens truncation can still contain
           // a complete tool_use block if the tool call finished before the limit.
@@ -371,12 +401,15 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
           if (toolCalls.some((tc) => tc.name === "browse_url")) {
             browseUrlUsed = true;
             controller.enqueue(encoder.encode(BROWSE_STATUS_SENTINEL));
+            statusShown = true;
           }
           if (toolCalls.some((tc) => tc.name === "search_chat_history")) {
             controller.enqueue(encoder.encode(HISTORY_SEARCH_STATUS_SENTINEL));
+            statusShown = true;
           }
           if (toolCalls.some((tc) => DOCUMENT_TOOL_NAMES.has(tc.name))) {
             controller.enqueue(encoder.encode(DOCUMENT_STATUS_SENTINEL));
+            statusShown = true;
           }
 
           const toolResults = await Promise.all(
@@ -471,6 +504,7 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
 
         controller.close();
       } catch (err) {
+        clearThinkingTimer(); // never let a pending timer enqueue onto a closed controller
         if (clientAbort.signal.aborted) {
           // Client disconnected — persist whatever was generated and close cleanly.
           // Do NOT call controller.error() so the response closes without a noisy error.
