@@ -6,6 +6,24 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Move to project — input "+" menu + breadcrumb topbar — 2026-06-01
+
+**Feature:** Standalone private chats can be moved into a project from the input bar, mirroring Claude.ai's "+" menu + breadcrumb pattern.
+
+**Backend:** `PATCH /api/chats/[id]/move` ({ projectId }) validates (all via RLS, no service role): chat is visible to the requester, owned by them, standalone (`project_id IS NULL`, else 409), and type `private`; and that the requester is a member of the target project (`project_members` own-row RLS). Executes `UPDATE chats SET project_id` and returns the row plus `project_name`/`project_icon`. `GET /api/projects/movable` returns the user's active member projects with member pips — project visibility is RLS-gated, but member *profiles* are resolved with the service role because `users_select_own` only returns the requester's own row (same pattern as the project page).
+
+**Input "+" menu:** The paperclip attach button was replaced by a shared `InputPlusMenu` (the "+") rendered by `MessageInput` in **every** chat context — one component, props decide contents. It always offers "Attach file"; "Move to project" appears only when `MessageInput` is given a `moveToProject` config. Desktop opens an inline flyout to the side; mobile opens a second-level bottom sheet (bigger touch targets, not a nested flyout). Both render the shared `ProjectPickerList`. When the user belongs to no projects, the entry is shown disabled and relabeled "No projects available".
+
+**Topbar:** `TopBar` gained a `projectName` prop; when set it renders a non-interactive `[Project] / [Chat]` breadcrumb (muted project crumb + normal chat crumb). Not a dropdown — extendable later.
+
+**Eligibility + optimistic update:** `app/chat/[id]/page.tsx` computes `canMoveToProject = type === 'private' && owner === viewer` and passes it to `ChatWindow`, which also requires `!incognito && !alreadyMoved`. On a successful move `ChatWindow` sets a local `projectContext` (topbar breadcrumb appears, the menu entry disappears — no navigation/reload) and calls `refreshChats()` so the sidebar drops the chat from the standalone list (the chats query filters `project_id IS NULL`; the chats realtime subscription would also catch it).
+
+**Decisions:** (1) The "+" menu replaces the one-tap paperclip in *all* contexts, not just eligible ones — consistency with the Claude.ai pattern and the "shared, not duplicated" rule, at the cost of attach becoming a two-tap action everywhere. (2) Move is gated entirely by RLS rather than service role, keeping the privacy wall at the database. (3) No confirmation step — moving is reversible and the user is the sole member of a standalone chat. (4) The post-move chat stays on `/chat/[id]` for the session; a reload redirects to the canonical `/projects/[id]/chat/[id]` (existing behavior). (5) No schema/migration changes.
+
+**Verified:** `tsc --noEmit`, ESLint, and a full `next build` (both new routes registered) — all clean.
+
+---
+
 ### Shared chat hooks — useChatReactions + useChatSession — 2026-06-01
 
 **Problem:** The previous audit (same day, below) flagged ~150 lines of near-identical logic duplicated across `ChatWindow`, `ProjectChatView`, and `FamilyChatWindow`: `loadReactions`, `handleReact`, the initial-reactions seeding, `deleteMessage`, `handleRetry`, the device-geolocation effect, and the `/api/chats/mark-read` on-open effect. Three copies meant three drift surfaces (the stream-finalizer drift fixed earlier the same day was the same failure mode).

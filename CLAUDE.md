@@ -164,6 +164,8 @@ All three chat contexts (standalone, project, family) share the same code paths.
 | Bubble rendering | `components/chat/MessageBubble.tsx` |
 | Message list | `components/chat/MessageList.tsx` |
 | Input bar (send/stop/attach) | `components/chat/MessageInput.tsx` |
+| Input "+" menu (attach + move-to-project) | `components/chat/InputPlusMenu.tsx` |
+| Project picker list (icon + name + member pips) | `components/chat/ProjectPickerList.tsx` |
 | Top bar shell (back/title/right slot) | `components/chat/ChatTopBar.tsx` |
 | Server stream + tools + persistence | `lib/chat/streamHandler.ts` |
 | Client stream consumer + finalizer (flush, abort, image-req, final text/task) | `lib/chat/clientStream.ts` |
@@ -175,6 +177,8 @@ All three chat contexts (standalone, project, family) share the same code paths.
 **CHAT UI RULE:** Visual changes (bubble styling, list layout, input bar, top bar layout, dots, indicators) must always be made in the shared components above, never in the context wrappers. Context variations are handled via props — never by forking a component.
 
 **CHAT LOGIC RULE:** Cross-context chat behavior lives in shared hooks, never duplicated in the wrappers. `useChatReactions(chatId, currentUserId, userColorHex, colorMap, initialReactions)` owns the `reactionsMap` and returns `{ reactionsMap, setReactionsMap, loadReactions, handleReact }` — `setReactionsMap` is exposed so the project/family realtime subscriptions can apply INSERT/DELETE events into the same state. `useChatSession({ chatId, currentUserId, messages, setMessages, setInput, setError })` owns device-location lookup, the `/api/chats/mark-read` on-open call, `deleteMessage`, and `handleRetry`. Context-specific concerns stay in the wrapper (e.g. family's `/api/notifications/mark-read` + presence heartbeat, project's instructions-on-unmount, the per-context realtime channels and message subscriptions).
+
+**Move to project:** Standalone private chats the viewer owns can be moved into a project from the input bar. `MessageInput` renders the shared `InputPlusMenu` (the "+" button) in every context; it shows "Attach file" plus — only when a `moveToProject` config is passed — a "Move to project" entry. Desktop opens an inline flyout, mobile a second-level bottom sheet, both rendering the shared `ProjectPickerList`. Eligibility (`canMoveToProject`, computed in `app/chat/[id]/page.tsx` as `type === 'private' && owner === viewer`) and the move handler live in `ChatWindow`; the move is `PATCH /api/chats/[id]/move` ({ projectId }), gated by RLS (owner + project membership). On success `ChatWindow` sets a local `projectContext` (topbar shows a `[Project] / [Chat]` breadcrumb via `TopBar`'s `projectName` prop, and the menu entry disappears) and calls `refreshChats()` so the sidebar drops the chat from the standalone list. The picker's project list comes from `GET /api/projects/movable` (RLS-gated project visibility; member pips resolved via service role since `users` RLS is own-row-only).
 
 **MESSAGE MAPPING RULE:** All message field mapping from raw Supabase rows or realtime payloads goes through `normalizeMessage()` in `lib/chat/normalizeMessage.ts`. Never build a `Message` / `NormalizedMessage` object from raw DB data inline in a component, subscription handler, or page loader — call `normalizeMessage(row)` and consume the typed result. Shared chat types (`NormalizedMessage`, `ChatMessage`, `MessageAttachment`) live in `lib/chat/types.ts`.
 

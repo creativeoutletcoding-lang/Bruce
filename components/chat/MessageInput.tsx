@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, type ReactNode } from "react";
 import { lightHaptic } from "@/lib/utils/haptics";
+import InputPlusMenu, { type MoveToProjectConfig } from "./InputPlusMenu";
 
 export interface FileAttachment {
   type: "image" | "document";
@@ -128,6 +129,8 @@ interface MessageInputProps {
   onFileRemove?: (index: number) => void;
   containerStyle?: React.CSSProperties;
   modelPicker?: ReactNode;
+  /** When set, the "+" menu shows a "Move to project" entry (standalone private chats). */
+  moveToProject?: MoveToProjectConfig;
 }
 
 export default function MessageInput({
@@ -143,6 +146,7 @@ export default function MessageInput({
   onFileRemove,
   containerStyle,
   modelPicker,
+  moveToProject,
 }: MessageInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -317,27 +321,23 @@ export default function MessageInput({
       )}
 
       <div className="msg-input-row" style={{ ...styles.inputRow, ...(isFocused ? styles.inputRowFocused : {}) }}>
-        {onFilesAttach && (
+        {(onFilesAttach || moveToProject) && (
           <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".pdf,.txt,.md,.csv,image/*"
-              style={{ display: "none" }}
-              onChange={handleFileChange}
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              style={styles.attachButton}
-              aria-label="Attach file"
-              type="button"
+            {onFilesAttach && (
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.txt,.md,.csv,image/*"
+                style={{ display: "none" }}
+                onChange={handleFileChange}
+              />
+            )}
+            <InputPlusMenu
+              onAttachFile={onFilesAttach ? () => fileInputRef.current?.click() : undefined}
+              moveToProject={moveToProject}
               disabled={disabled}
-            >
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-                <path d="M15 9.5l-5.5 5.5a4 4 0 0 1-5.657-5.657l6-6a2.5 2.5 0 0 1 3.535 3.535L7.5 12.5a1 1 0 0 1-1.414-1.414L11.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
+            />
           </>
         )}
         <textarea

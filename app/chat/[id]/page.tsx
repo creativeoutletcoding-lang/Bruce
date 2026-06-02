@@ -20,7 +20,7 @@ export default async function ChatIdPage({ params }: Props) {
   // Verify the chat exists and belongs to this user (RLS enforces ownership)
   const { data: chat } = await supabase
     .from("chats")
-    .select("id, title, type, project_id")
+    .select("id, title, type, project_id, owner_id")
     .eq("id", id)
     .neq("type", "incognito")
     .single();
@@ -31,6 +31,9 @@ export default async function ChatIdPage({ params }: Props) {
   if (chat.project_id) {
     redirect(`/projects/${chat.project_id}/chat/${id}`);
   }
+
+  // "Move to project" is only offered on standalone private chats the viewer owns.
+  const canMoveToProject = chat.type === "private" && chat.owner_id === user.id;
 
   // Load messages
   const { data: messages } = await supabase
@@ -65,6 +68,7 @@ export default async function ChatIdPage({ params }: Props) {
       initialModel={preferredModel}
       currentUserId={user.id}
       initialReactions={(reactionRows ?? []) as Array<{ message_id: string; user_id: string | null; type: string }>}
+      canMoveToProject={canMoveToProject}
     />
   );
 }

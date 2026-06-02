@@ -233,6 +233,21 @@ export interface ProjectMemberDetail {
   role: ProjectMemberRole;
 }
 
+// Lightweight project shape for the "Move to project" picker — the projects the
+// current user is a member of, with member pips. Served by GET /api/projects/movable.
+export interface MovableProjectMember {
+  id: string;
+  name: string;
+  color_hex: string;
+}
+
+export interface MovableProject {
+  id: string;
+  name: string;
+  icon: string;
+  members: MovableProjectMember[];
+}
+
 export interface ProjectDetail extends Project {
   members: ProjectMemberDetail[];
   files: File[];

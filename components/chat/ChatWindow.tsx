@@ -11,7 +11,7 @@ import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import type { FileAttachment } from "./MessageInput";
 import type { ChatMessage, MessageAttachment, NormalizedMessage } from "@/lib/chat/types";
-import type { MessageRole } from "@/lib/types";
+import type { MessageRole, MovableProject } from "@/lib/types";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 import { modelLabel } from "@/lib/models";
 import {
@@ -34,6 +34,8 @@ interface ChatWindowProps {
   initialModel?: string;
   currentUserId?: string;
   initialReactions?: ReactionRow[];
+  /** True when this is a standalone private chat owned by the viewer — gates "Move to project". */
+  canMoveToProject?: boolean;
 }
 
 function toChatMessage(n: NormalizedMessage): ChatMessage {
@@ -59,10 +61,11 @@ export default function ChatWindow({
   initialModel,
   currentUserId,
   initialReactions,
+  canMoveToProject = false,
 }: ChatWindowProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { incognito } = useChatContext();
+  const { incognito, refreshChats } = useChatContext();
   const [isClient, setIsClient] = useState(() => typeof window !== "undefined");
   const [messages, setMessages] = useState<ChatMessage[]>(
     initialMessages.map((n) => toChatMessage(n))
@@ -87,6 +90,45 @@ export default function ChatWindow({
   const { currentLocation, deleteMessage, handleRetry } = useChatSession({
     chatId, currentUserId, messages, setMessages, setInput, setError,
   });
+
+  // ── Move to project ──────────────────────────────────────────────────────
+  // Once moved, projectContext is set and the topbar shows a breadcrumb; the
+  // "Move to project" menu item disappears (the chat is no longer standalone).
+  const [projectContext, setProjectContext] = useState<{ id: string; name: string } | null>(null);
+  const [movableProjects, setMovableProjects] = useState<MovableProject[]>([]);
+  const [movableLoading, setMovableLoading] = useState(false);
+  const moveEligible = canMoveToProject && !incognito && !projectContext;
+
+  useEffect(() => {
+    if (!moveEligible) return;
+    let cancelled = false;
+    setMovableLoading(true);
+    fetch("/api/projects/movable")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: MovableProject[]) => { if (!cancelled) setMovableProjects(data); })
+      .catch(() => { if (!cancelled) setMovableProjects([]); })
+      .finally(() => { if (!cancelled) setMovableLoading(false); });
+    return () => { cancelled = true; };
+  }, [moveEligible]);
+
+  const handleMoveToProject = useCallback(async (projectId: string) => {
+    try {
+      const res = await fetch(`/api/chats/${chatId}/move`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      if (!res.ok) {
+        console.error("[ChatWindow] move failed: status=%d", res.status);
+        return;
+      }
+      const data = await res.json() as { project_id: string; project_name: string };
+      setProjectContext({ id: data.project_id, name: data.project_name });
+      refreshChats(); // drop the chat from the standalone sidebar list immediately
+    } catch (err) {
+      console.error("[ChatWindow] move error:", err);
+    }
+  }, [chatId, refreshChats]);
 
   const loadMessages = useCallback(async () => {
     const supabase = createClient();
@@ -364,7 +406,7 @@ export default function ChatWindow({
         ...(incognito ? styles.incognitoFilter : {}),
       }}
     >
-      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} model={model} onModelChange={handleModelChange} />
+      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} model={model} onModelChange={handleModelChange} projectName={projectContext?.name} />
 
       {incognito && (
         <div style={styles.incognitoNotice}>
@@ -392,6 +434,11 @@ export default function ChatWindow({
         attachedFiles={attachedFiles}
         onFilesAttach={(files) => setAttachedFiles((prev) => [...prev, ...files])}
         onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
+        moveToProject={
+          moveEligible
+            ? { projects: movableProjects, onSelect: handleMoveToProject, loading: movableLoading }
+            : undefined
+        }
       />
     </div>
   );

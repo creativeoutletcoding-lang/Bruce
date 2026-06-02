@@ -11,9 +11,11 @@ interface TopBarProps {
   onRefresh?: () => void | Promise<void>;
   model?: string;
   onModelChange?: (id: string) => void;
+  /** When the chat belongs to a project, renders a "[Project] / [Chat]" breadcrumb. */
+  projectName?: string | null;
 }
 
-export default function TopBar({ title, hasMessages, onRefresh, model, onModelChange }: TopBarProps) {
+export default function TopBar({ title, hasMessages, onRefresh, model, onModelChange, projectName }: TopBarProps) {
   const router = useRouter();
   const { openDrawer, incognito, setIncognito } = useChatContext();
 
@@ -86,10 +88,20 @@ export default function TopBar({ title, hasMessages, onRefresh, model, onModelCh
     </div>
   );
 
+  const titleNode = projectName ? (
+    <span style={styles.breadcrumb}>
+      <span style={styles.crumbProject}>{projectName}</span>
+      <span style={styles.crumbSep}>/</span>
+      <span style={styles.crumbChat}>{title}</span>
+    </span>
+  ) : (
+    title
+  );
+
   return (
     <ChatTopBar
       left={leftButton}
-      title={title}
+      title={titleNode}
       right={rightCluster}
     />
   );
@@ -136,6 +148,32 @@ function EyeSlashIcon() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  breadcrumb: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    minWidth: 0,
+    overflow: "hidden",
+  },
+  crumbProject: {
+    color: "var(--text-tertiary)",
+    fontWeight: 500,
+    flexShrink: 0,
+    maxWidth: "45%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  crumbSep: {
+    color: "var(--text-tertiary)",
+    flexShrink: 0,
+  },
+  crumbChat: {
+    color: "var(--text-primary)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   iconButton: {
     display: "none", // shown via CSS in globals for mobile-only
     flexShrink: 0,
