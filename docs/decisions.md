@@ -6,6 +6,26 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Shared chat hooks — useChatReactions + useChatSession — 2026-06-01
+
+**Problem:** The previous audit (same day, below) flagged ~150 lines of near-identical logic duplicated across `ChatWindow`, `ProjectChatView`, and `FamilyChatWindow`: `loadReactions`, `handleReact`, the initial-reactions seeding, `deleteMessage`, `handleRetry`, the device-geolocation effect, and the `/api/chats/mark-read` on-open effect. Three copies meant three drift surfaces (the stream-finalizer drift fixed earlier the same day was the same failure mode).
+
+**Fix:** Extracted two hooks under a new top-level `hooks/` directory:
+- `useChatReactions({ chatId, currentUserId, userColorHex, colorMap, initialReactions })` → `{ reactionsMap, setReactionsMap, loadReactions, handleReact }`. Owns the reaction state, seeds it from server-rendered `initialReactions`, reloads after streaming, and applies the optimistic toggle. `colorMap` is held in a ref so `loadReactions` stays referentially stable (safe in effect deps) while always aggregating with current member colors. `setReactionsMap` is returned so the project/family realtime subscriptions can keep applying INSERT/DELETE events into the hook-owned state (those subscriptions stay in the wrappers — they're per-context).
+- `useChatSession({ chatId, currentUserId, messages, setMessages, setInput, setError })` → `{ currentLocation, deleteMessage, handleRetry }`. Owns the device-location reverse-geocode, the `/api/chats/mark-read` on-open call, message deletion, and retry-last-message.
+
+All three wrappers now call both hooks instead of carrying their own copies. `NewChatOrchestrator` (new-chat welcome screen) was intentionally left out — it has no persisted chat id, reactions, or deletable history yet.
+
+**Reason:** Same principle as the Chat UI Universal Component Rule (2026-05-09), applied to behavior rather than visuals. Cross-context logic in one place can't drift.
+
+**Behavior:** Pure refactor. Two cosmetic deltas: `ChatWindow`'s geolocation `catch` previously logged `console.error('[geolocation]', err)` and is now silent like the other two (aligns with the no-console rule); `deleteMessage`'s error log label is now `[useChatSession]` instead of the per-component tag. The realtime reaction-subscription effects in project/family had their dependency arrays changed from the (unused-in-body) `loadReactions` to the hook-stable `setReactionsMap` — identical re-subscription behavior.
+
+**Context kept in the wrappers (not extracted):** family's `/api/notifications/mark-read` + presence heartbeat, project's instructions-update-on-unmount, and every per-context realtime channel + message subscription. These are genuinely context-specific.
+
+**Notes:** New CHAT LOGIC RULE in CLAUDE.md. No schema/migration changes. Verified via `tsc --noEmit`, ESLint, and a full `next build` — all clean.
+
+---
+
 ### Chat UI consistency audit — shared stream finalizer + shared status strip — 2026-06-01
 
 **Problem:** A code-quality/UI-consistency audit found that long-form response finalization (the post-stream computation of final text + task-progress data) was copy-pasted into all four chat contexts (`ChatWindow`, `ProjectChatView`, `FamilyChatWindow`, `NewChatOrchestrator`) and had drifted:

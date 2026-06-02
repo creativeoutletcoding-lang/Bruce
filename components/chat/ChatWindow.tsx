@@ -10,9 +10,8 @@ import TopBar from "./TopBar";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import type { FileAttachment } from "./MessageInput";
-import type { ChatMessage, MessageAttachment, NormalizedMessage, ReactionEntry } from "@/lib/chat/types";
+import type { ChatMessage, MessageAttachment, NormalizedMessage } from "@/lib/chat/types";
 import type { MessageRole } from "@/lib/types";
-import { aggregateReactions } from "@/lib/chat/reactionUtils";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 import { modelLabel } from "@/lib/models";
 import {
@@ -22,6 +21,8 @@ import {
   resolveAbandonedTaskSteps,
 } from "@/lib/chat/clientStream";
 import { useChatMemory } from "@/lib/chat/useChatMemory";
+import { useChatReactions } from "@/hooks/useChatReactions";
+import { useChatSession } from "@/hooks/useChatSession";
 
 type ReactionRow = { message_id: string; user_id: string | null; type: string };
 
@@ -71,35 +72,21 @@ export default function ChatWindow({
   const [isStreaming, setIsStreaming] = useState(false);
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
   const [model, setModel] = useState(initialModel ?? "claude-sonnet-4-6");
-  const [reactionsMap, setReactionsMap] = useState<Record<string, ReactionEntry[]>>(() => {
-    if (!initialReactions?.length) return {};
-    const colorMap: Record<string, string | undefined> = currentUserId ? { [currentUserId]: userColorHex } : {};
-    return aggregateReactions(initialReactions, currentUserId, colorMap);
-  });
   const abortRef = useRef<AbortController | null>(null);
   const pendingBlobAttachmentsRef = useRef<MessageAttachment[]>([]);
 
   useChatMemory({ chatId, messageCount: messages.length, disabled: incognito });
 
-  const loadReactions = useCallback(async (msgIds: string[]) => {
-    const filtered = msgIds.filter((id) => !id.startsWith("tmp-"));
-    if (filtered.length === 0) { setReactionsMap({}); return; }
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("reactions")
-      .select("message_id, user_id, type")
-      .in("message_id", filtered);
-    if (!data) return;
-    const colorMap: Record<string, string | undefined> = currentUserId ? { [currentUserId]: userColorHex } : {};
-    setReactionsMap(aggregateReactions(
-      data as Array<{ message_id: string; user_id: string | null; type: string }>,
-      currentUserId,
-      colorMap,
-    ));
-  }, [currentUserId, userColorHex]);
+  // Standalone chat is one member + Bruce, so the only member color is the user's.
+  const colorMap: Record<string, string | undefined> = currentUserId ? { [currentUserId]: userColorHex } : {};
+  const { reactionsMap, loadReactions, handleReact } = useChatReactions({
+    chatId, currentUserId, userColorHex, colorMap, initialReactions,
+  });
+  const { currentLocation, deleteMessage, handleRetry } = useChatSession({
+    chatId, currentUserId, messages, setMessages, setInput, setError,
+  });
 
   const loadMessages = useCallback(async () => {
     const supabase = createClient();
@@ -117,78 +104,7 @@ export default function ChatWindow({
     await loadReactions(ids);
   }, [chatId, loadReactions]);
 
-  const handleReact = useCallback(async (messageId: string, type: string) => {
-    // Optimistic update
-    setReactionsMap((prev) => {
-      const entries = prev[messageId] ? [...prev[messageId]] : [];
-      const idx = entries.findIndex((e) => e.type === type);
-      if (idx !== -1) {
-        const entry = { ...entries[idx] };
-        if (entry.hasCurrentUser) {
-          entry.count = Math.max(0, entry.count - 1);
-          entry.hasCurrentUser = false;
-          entry.reactors = entry.reactors.filter((r) => r.userId !== currentUserId);
-          entries[idx] = entry;
-          if (entry.count === 0) entries.splice(idx, 1);
-        } else {
-          entry.count += 1;
-          entry.hasCurrentUser = true;
-          entry.reactors = [...entry.reactors, { userId: currentUserId ?? null, colorHex: userColorHex }];
-          entries[idx] = entry;
-        }
-      } else {
-        entries.push({
-          type,
-          count: 1,
-          hasCurrentUser: true,
-          reactors: [{ userId: currentUserId ?? null, colorHex: userColorHex }],
-        });
-      }
-      return { ...prev, [messageId]: entries };
-    });
-    // Await so the write commits before the user can navigate away.
-    // No reload after — optimistic update is authoritative.
-    await fetch(`/api/messages/${messageId}/reaction`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type }),
-    });
-  }, [currentUserId, userColorHex]);
-
   useEffect(() => { setIsClient(true); }, []);
-
-  // Initial reactions hydrated from server props; loadReactions used after streaming.
-
-  useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
-            { headers: { "User-Agent": "BruceHouseholdAI/1.0" } }
-          );
-          const data = await res.json() as { address?: { city?: string; town?: string; village?: string; state?: string } };
-          const city = data.address?.city ?? data.address?.town ?? data.address?.village;
-          const state = data.address?.state;
-          if (city && state) setCurrentLocation(`${city}, ${state}`);
-          else if (state) setCurrentLocation(state);
-        } catch (err) { console.error('[geolocation]', err); }
-      },
-      () => {},
-      { timeout: 5000 }
-    );
-  }, []);
-
-  // Mark chat as read on open (clears sidebar unread dot).
-  useEffect(() => {
-    fetch("/api/chats/mark-read", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId }),
-      keepalive: true,
-    }).catch(() => {});
-  }, [chatId]);
 
   async function handleModelChange(newModel: string) {
     setModel(newModel);
@@ -439,23 +355,6 @@ export default function ChatWindow({
         }
       }
     }
-  }
-
-  function handleRetry() {
-    setError(null);
-    const lastUser = [...messages].reverse().find((m) => m.role === "user");
-    if (lastUser) {
-      setInput(lastUser.content);
-      setMessages((prev) => prev.filter((m) => m.id !== lastUser.id));
-    }
-  }
-
-  async function deleteMessage(msgId: string) {
-    if (msgId.startsWith("tmp-")) return;
-    setMessages((prev) => prev.filter((m) => m.id !== msgId));
-    const supabase = createClient();
-    const { error } = await supabase.from("messages").delete().eq("id", msgId);
-    if (error) console.error("[ChatWindow] deleteMessage failed:", error);
   }
 
   return (

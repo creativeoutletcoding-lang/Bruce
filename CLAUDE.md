@@ -168,9 +168,13 @@ All three chat contexts (standalone, project, family) share the same code paths.
 | Server stream + tools + persistence | `lib/chat/streamHandler.ts` |
 | Client stream consumer + finalizer (flush, abort, image-req, final text/task) | `lib/chat/clientStream.ts` |
 | Memory generation on unmount | `lib/chat/useChatMemory.ts` |
+| Reaction state (initial seed, post-stream reload, optimistic toggle) | `hooks/useChatReactions.ts` |
+| Per-chat session (device location, mark-read, delete message, retry) | `hooks/useChatSession.ts` |
 | Sender display name + color resolution | `lib/chat/senderProfile.ts` |
 
 **CHAT UI RULE:** Visual changes (bubble styling, list layout, input bar, top bar layout, dots, indicators) must always be made in the shared components above, never in the context wrappers. Context variations are handled via props — never by forking a component.
+
+**CHAT LOGIC RULE:** Cross-context chat behavior lives in shared hooks, never duplicated in the wrappers. `useChatReactions(chatId, currentUserId, userColorHex, colorMap, initialReactions)` owns the `reactionsMap` and returns `{ reactionsMap, setReactionsMap, loadReactions, handleReact }` — `setReactionsMap` is exposed so the project/family realtime subscriptions can apply INSERT/DELETE events into the same state. `useChatSession({ chatId, currentUserId, messages, setMessages, setInput, setError })` owns device-location lookup, the `/api/chats/mark-read` on-open call, `deleteMessage`, and `handleRetry`. Context-specific concerns stay in the wrapper (e.g. family's `/api/notifications/mark-read` + presence heartbeat, project's instructions-on-unmount, the per-context realtime channels and message subscriptions).
 
 **MESSAGE MAPPING RULE:** All message field mapping from raw Supabase rows or realtime payloads goes through `normalizeMessage()` in `lib/chat/normalizeMessage.ts`. Never build a `Message` / `NormalizedMessage` object from raw DB data inline in a component, subscription handler, or page loader — call `normalizeMessage(row)` and consume the typed result. Shared chat types (`NormalizedMessage`, `ChatMessage`, `MessageAttachment`) live in `lib/chat/types.ts`.
 

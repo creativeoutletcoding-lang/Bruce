@@ -9,8 +9,7 @@ import ProjectTopBar from "./ProjectTopBar";
 import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
 import type { FileAttachment } from "@/components/chat/MessageInput";
-import type { ChatMessage, MessageAttachment, NormalizedMessage, ReactionEntry } from "@/lib/chat/types";
-import { aggregateReactions } from "@/lib/chat/reactionUtils";
+import type { ChatMessage, MessageAttachment, NormalizedMessage } from "@/lib/chat/types";
 import type { ProjectMemberDetail } from "@/lib/types";
 import {
   consumeStream,
@@ -19,6 +18,8 @@ import {
   resolveAbandonedTaskSteps,
 } from "@/lib/chat/clientStream";
 import { useChatMemory } from "@/lib/chat/useChatMemory";
+import { useChatReactions } from "@/hooks/useChatReactions";
+import { useChatSession } from "@/hooks/useChatSession";
 import { getDisplayName } from "@/lib/chat/senderProfile";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 
@@ -91,7 +92,6 @@ export default function ProjectChatView({
   const [isStreaming, setIsStreaming] = useState(false);
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -108,13 +108,18 @@ export default function ProjectChatView({
   const instructionsFiredRef = useRef(false);
   const initialSentRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
-  const [reactionsMap, setReactionsMap] = useState<Record<string, ReactionEntry[]>>(() => {
-    if (!initialReactions?.length) return {};
-    const colorMap = Object.fromEntries(members.map((m) => [m.id, m.color_hex]));
-    return aggregateReactions(initialReactions, currentUserId, colorMap);
-  });
 
   useChatMemory({ chatId, messageCount: messages.length });
+
+  const colorMap: Record<string, string | undefined> = Object.fromEntries(
+    members.map((m) => [m.id, m.color_hex])
+  );
+  const { reactionsMap, setReactionsMap, loadReactions, handleReact } = useChatReactions({
+    chatId, currentUserId, userColorHex, colorMap, initialReactions,
+  });
+  const { currentLocation, deleteMessage, handleRetry } = useChatSession({
+    chatId, currentUserId, messages, setMessages, setInput, setError,
+  });
 
   useEffect(() => { setIsClient(true); }, []);
   useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
@@ -136,58 +141,6 @@ export default function ProjectChatView({
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
-            { headers: { "User-Agent": "BruceHouseholdAI/1.0" } }
-          );
-          const data = await res.json() as { address?: { city?: string; town?: string; village?: string; state?: string } };
-          const city = data.address?.city ?? data.address?.town ?? data.address?.village;
-          const state = data.address?.state;
-          if (city && state) setCurrentLocation(`${city}, ${state}`);
-          else if (state) setCurrentLocation(state);
-        } catch { /* silent */ }
-      },
-      () => {},
-      { timeout: 5000 }
-    );
-  }, []);
-
-  // Mark chat as read on open.
-  useEffect(() => {
-    fetch("/api/chats/mark-read", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId }),
-      keepalive: true,
-    }).catch(() => {});
-  }, [chatId]);
-
-  // ── Callbacks declared before the realtime useEffect that references them ────
-
-  const loadReactionsPC = useCallback(async (msgIds: string[]) => {
-    const filtered = msgIds.filter((id) => !id.startsWith("tmp-"));
-    if (filtered.length === 0) { setReactionsMap({}); return; }
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("reactions")
-      .select("message_id, user_id, type")
-      .in("message_id", filtered);
-    const colorMap: Record<string, string | undefined> = Object.fromEntries(
-      Object.entries(memberMapRef.current).map(([id, info]) => [id, info.color_hex])
-    );
-    if (!data) return;
-    setReactionsMap(aggregateReactions(
-      data as Array<{ message_id: string; user_id: string | null; type: string }>,
-      currentUserId,
-      colorMap,
-    ));
-  }, [currentUserId]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -265,10 +218,10 @@ export default function ProjectChatView({
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [chatId, currentUserId, loadReactionsPC]);
+  }, [chatId, currentUserId, setReactionsMap]);
 
   // Initial reactions are hydrated from server-rendered props; no async
-  // mount load needed. loadReactionsPC is still used after streaming.
+  // mount load needed. loadReactions (from useChatReactions) runs after streaming.
 
   useEffect(() => {
     const hasInitialFiles = attachedFiles.length > 0;
@@ -295,39 +248,8 @@ export default function ProjectChatView({
       )
     );
     const ids = (data as Array<{ id: string }>).map((r) => r.id);
-    await loadReactionsPC(ids);
-  }, [chatId, loadReactionsPC]);
-
-  const handleReact = useCallback(async (messageId: string, type: string) => {
-    setReactionsMap((prev) => {
-      const entries = prev[messageId] ? [...prev[messageId]] : [];
-      const idx = entries.findIndex((e) => e.type === type);
-      if (idx !== -1) {
-        const entry = { ...entries[idx] };
-        if (entry.hasCurrentUser) {
-          entry.count = Math.max(0, entry.count - 1);
-          entry.hasCurrentUser = false;
-          entry.reactors = entry.reactors.filter((r) => r.userId !== currentUserId);
-          entries[idx] = entry;
-          if (entry.count === 0) entries.splice(idx, 1);
-        } else {
-          entry.count += 1;
-          entry.hasCurrentUser = true;
-          entry.reactors = [...entry.reactors, { userId: currentUserId, colorHex: userColorHex }];
-          entries[idx] = entry;
-        }
-      } else {
-        entries.push({ type, count: 1, hasCurrentUser: true, reactors: [{ userId: currentUserId, colorHex: userColorHex }] });
-      }
-      return { ...prev, [messageId]: entries };
-    });
-    // Await so the write commits before the user can navigate away.
-    await fetch(`/api/messages/${messageId}/reaction`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type }),
-    });
-  }, [currentUserId, userColorHex]);
+    await loadReactions(ids);
+  }, [chatId, loadReactions]);
 
   function handleStop() {
     abortRef.current?.abort();
@@ -525,23 +447,6 @@ export default function ProjectChatView({
   }
 
   function handleSend() { sendMessage(input.trim()); }
-
-  async function deleteMessage(msgId: string) {
-    if (msgId.startsWith("tmp-")) return;
-    setMessages((prev) => prev.filter((m) => m.id !== msgId));
-    const supabase = createClient();
-    const { error } = await supabase.from("messages").delete().eq("id", msgId);
-    if (error) console.error("[ProjectChatView] deleteMessage failed:", error);
-  }
-
-  function handleRetry() {
-    setError(null);
-    const lastUser = [...messages].reverse().find((m) => m.role === "user");
-    if (lastUser) {
-      setInput(lastUser.content);
-      setMessages((prev) => prev.filter((m) => m.id !== lastUser.id));
-    }
-  }
 
   return (
     <div style={styles.container}>

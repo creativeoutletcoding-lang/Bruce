@@ -7,8 +7,7 @@ import type { PastedAttachmentData } from "@/lib/chat/types";
 import { createClient } from "@/lib/supabase/client";
 import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
-import type { ChatMessage, MessageAttachment, NormalizedMessage, ReactionEntry } from "@/lib/chat/types";
-import { aggregateReactions } from "@/lib/chat/reactionUtils";
+import type { ChatMessage, MessageAttachment, NormalizedMessage } from "@/lib/chat/types";
 import type { FileAttachment } from "@/components/chat/MessageInput";
 import type { UserSummary } from "@/lib/types";
 import {
@@ -17,6 +16,8 @@ import {
   resolveAbandonedTaskSteps,
 } from "@/lib/chat/clientStream";
 import { useChatMemory } from "@/lib/chat/useChatMemory";
+import { useChatReactions } from "@/hooks/useChatReactions";
+import { useChatSession } from "@/hooks/useChatSession";
 import { getDisplayName } from "@/lib/chat/senderProfile";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 
@@ -83,19 +84,23 @@ export default function FamilyChatWindow({
   const [isStreaming, setIsStreaming] = useState(false);
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [currentLocation, setCurrentLocation] = useState<string | undefined>(undefined);
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
 
   const isStreamingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const userColorHex = memberMapRef.current[currentUserId]?.color_hex;
-  const [reactionsMap, setReactionsMap] = useState<Record<string, ReactionEntry[]>>(() => {
-    if (!initialReactions?.length) return {};
-    const colorMap = Object.fromEntries(members.map((m) => [m.id, m.color_hex]));
-    return aggregateReactions(initialReactions, currentUserId, colorMap);
-  });
 
   useChatMemory({ chatId, messageCount: messages.length });
+
+  const colorMap: Record<string, string | undefined> = Object.fromEntries(
+    members.map((m) => [m.id, m.color_hex])
+  );
+  const { reactionsMap, setReactionsMap, loadReactions, handleReact } = useChatReactions({
+    chatId, currentUserId, userColorHex, colorMap, initialReactions,
+  });
+  const { currentLocation, deleteMessage, handleRetry } = useChatSession({
+    chatId, currentUserId, messages, setMessages, setInput, setError,
+  });
 
   useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
   useEffect(() => {
@@ -117,7 +122,8 @@ export default function FamilyChatWindow({
     return () => clearInterval(interval);
   }, [chatId]);
 
-  // Mark this chat as read on open (clears sidebar unread dot and notifications).
+  // Mark family notifications read on open. The shared sidebar-dot mark-read
+  // (/api/chats/mark-read) is handled by useChatSession.
   useEffect(() => {
     fetch("/api/notifications/mark-read", {
       method: "POST",
@@ -125,53 +131,7 @@ export default function FamilyChatWindow({
       body: JSON.stringify({ chatId }),
       keepalive: true,
     }).catch(() => {});
-    fetch("/api/chats/mark-read", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId }),
-      keepalive: true,
-    }).catch(() => {});
   }, [chatId]);
-
-  useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
-            { headers: { "User-Agent": "BruceHouseholdAI/1.0" } }
-          );
-          const data = await res.json() as { address?: { city?: string; town?: string; village?: string; state?: string } };
-          const city = data.address?.city ?? data.address?.town ?? data.address?.village;
-          const state = data.address?.state;
-          if (city && state) setCurrentLocation(`${city}, ${state}`);
-          else if (state) setCurrentLocation(state);
-        } catch { /* silent */ }
-      },
-      () => {},
-      { timeout: 5000 }
-    );
-  }, []);
-
-  const loadReactions = useCallback(async (msgIds: string[]) => {
-    const filtered = msgIds.filter((id) => !id.startsWith("tmp-"));
-    if (filtered.length === 0) { setReactionsMap({}); return; }
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("reactions")
-      .select("message_id, user_id, type")
-      .in("message_id", filtered);
-    const colorMap: Record<string, string | undefined> = Object.fromEntries(
-      Object.entries(memberMapRef.current).map(([id, info]) => [id, info.color_hex])
-    );
-    if (!data) return;
-    setReactionsMap(aggregateReactions(
-      data as Array<{ message_id: string; user_id: string | null; type: string }>,
-      currentUserId,
-      colorMap,
-    ));
-  }, [currentUserId]);
 
   const loadMessages = useCallback(async () => {
     const supabase = createClient();
@@ -191,37 +151,6 @@ export default function FamilyChatWindow({
     const ids = (data as Array<{ id: string }>).map((r) => r.id);
     await loadReactions(ids);
   }, [chatId, loadReactions]);
-
-  const handleReact = useCallback(async (messageId: string, type: string) => {
-    setReactionsMap((prev) => {
-      const entries = prev[messageId] ? [...prev[messageId]] : [];
-      const idx = entries.findIndex((e) => e.type === type);
-      if (idx !== -1) {
-        const entry = { ...entries[idx] };
-        if (entry.hasCurrentUser) {
-          entry.count = Math.max(0, entry.count - 1);
-          entry.hasCurrentUser = false;
-          entry.reactors = entry.reactors.filter((r) => r.userId !== currentUserId);
-          entries[idx] = entry;
-          if (entry.count === 0) entries.splice(idx, 1);
-        } else {
-          entry.count += 1;
-          entry.hasCurrentUser = true;
-          entry.reactors = [...entry.reactors, { userId: currentUserId, colorHex: userColorHex }];
-          entries[idx] = entry;
-        }
-      } else {
-        entries.push({ type, count: 1, hasCurrentUser: true, reactors: [{ userId: currentUserId, colorHex: userColorHex }] });
-      }
-      return { ...prev, [messageId]: entries };
-    });
-    // Await so the write commits before the user can navigate away.
-    await fetch(`/api/messages/${messageId}/reaction`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type }),
-    });
-  }, [currentUserId, userColorHex]);
 
   // Initial reactions hydrated from server props; loadReactions used after streaming.
 
@@ -301,7 +230,7 @@ export default function FamilyChatWindow({
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [chatId, currentUserId, loadReactions]);
+  }, [chatId, currentUserId, setReactionsMap]);
 
   function handleStop() {
     abortRef.current?.abort();
@@ -439,23 +368,6 @@ export default function FamilyChatWindow({
   }
 
   function handleSend() { sendMessage(input.trim()); }
-
-  function handleRetry() {
-    setError(null);
-    const lastUser = [...messages].reverse().find((m) => m.role === "user");
-    if (lastUser) {
-      setInput(lastUser.content);
-      setMessages((prev) => prev.filter((m) => m.id !== lastUser.id));
-    }
-  }
-
-  async function deleteMessage(msgId: string) {
-    if (msgId.startsWith("tmp-")) return;
-    setMessages((prev) => prev.filter((m) => m.id !== msgId));
-    const supabase = createClient();
-    const { error } = await supabase.from("messages").delete().eq("id", msgId);
-    if (error) console.error("[FamilyChatWindow] deleteMessage failed:", error);
-  }
 
   return (
     <div style={styles.container}>
