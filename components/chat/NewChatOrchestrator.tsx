@@ -37,10 +37,14 @@ export default function NewChatOrchestrator({
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
-  const [model, setModel] = useState<string>(() => {
-    if (typeof window === "undefined") return DEFAULT_MODEL;
-    return localStorage.getItem("bruce:model") ?? DEFAULT_MODEL;
-  });
+  // Initialize from DEFAULT_MODEL so server and client render the same HTML
+  // (reading localStorage during useState init causes React hydration error #418
+  // because the server always sees typeof window === "undefined").
+  const [model, setModel] = useState<string>(DEFAULT_MODEL);
+  useEffect(() => {
+    const stored = localStorage.getItem("bruce:model");
+    if (stored) setModel(stored);
+  }, []);
 
   // Optional "assign new chat to a project" selector (welcome screen only).
   const [movableProjects, setMovableProjects] = useState<MovableProject[]>([]);

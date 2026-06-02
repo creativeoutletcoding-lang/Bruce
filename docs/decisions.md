@@ -6,6 +6,18 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Fix React hydration error #418 — ProjectAssignSelector not rendering — 2026-06-02
+
+Two hydration mismatches were causing React error #418. When React 18 detects a hydration mismatch it tears down and re-renders the affected subtree; if this recovery render fires before the `useEffect` that fetches projects resolves, `movableProjects` is still `[]` and `showProjectSelector` stays `false` — so the pill never appears in the re-rendered tree, even though the API returns data correctly.
+
+**Fix 1 — `WelcomeScreen` greeting:** `getGreeting()` calls `new Date().getHours()`, which is UTC on Vercel's servers but local time in the browser. For Jake in CDT (UTC-5) at 8am, the server emits "Good afternoon" while the client renders "Good morning" — mismatch. Fix: initialize `greeting` state as `"Hi, ${firstName}"` (safe stable value, same on server and client), then update to the time-of-day greeting in a `useEffect` after mount.
+
+**Fix 2 — `NewChatOrchestrator` model state:** The `useState` lazy initializer read `localStorage.getItem("bruce:model")`, which is unavailable on the server (`typeof window === "undefined"`), so the server always produced `DEFAULT_MODEL`. On the client, the lazy initializer re-runs and may return a different stored model — another mismatch. Fix: initialize `model` state with `DEFAULT_MODEL` unconditionally, then sync from `localStorage` in a `useEffect`.
+
+Both fixes are minimal (no refactors). `tsc --noEmit` clean.
+
+---
+
 ### CPS instructions, reaction mapping, "Thinking…" status, new-chat project assignment — 2026-06-02
 
 Four changes in one session.

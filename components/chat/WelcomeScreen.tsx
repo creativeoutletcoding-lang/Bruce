@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useChatContext } from "@/components/layout/ChatShell";
 import MessageInput from "./MessageInput";
 import type { FileAttachment } from "./MessageInput";
@@ -52,7 +53,13 @@ export default function WelcomeScreen({
   const { incognito } = useChatContext();
   const showProjectSelector = !incognito && Boolean(projects && projects.length > 0) && Boolean(onSelectProject && onClearProject);
   const firstName = userName.split(" ")[0];
-  const greeting = getGreeting(firstName);
+  // Greeting is computed client-side only — getGreeting uses new Date().getHours()
+  // which returns UTC on the server but local time in the browser, causing React
+  // hydration error #418 if computed during SSR.
+  const [greeting, setGreeting] = useState(`Hi, ${firstName}`);
+  useEffect(() => {
+    setGreeting(getGreeting(firstName));
+  }, [firstName]);
 
   return (
     <div style={{ ...styles.container, ...(incognito ? styles.incognitoFilter : {}) }}>
