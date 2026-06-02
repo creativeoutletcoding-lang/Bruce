@@ -166,7 +166,7 @@ All three chat contexts (standalone, project, family) share the same code paths.
 | Input bar (send/stop/attach) | `components/chat/MessageInput.tsx` |
 | Top bar shell (back/title/right slot) | `components/chat/ChatTopBar.tsx` |
 | Server stream + tools + persistence | `lib/chat/streamHandler.ts` |
-| Client stream consumer (flush, abort, image-req) | `lib/chat/clientStream.ts` |
+| Client stream consumer + finalizer (flush, abort, image-req, final text/task) | `lib/chat/clientStream.ts` |
 | Memory generation on unmount | `lib/chat/useChatMemory.ts` |
 | Sender display name + color resolution | `lib/chat/senderProfile.ts` |
 
@@ -176,7 +176,11 @@ All three chat contexts (standalone, project, family) share the same code paths.
 
 **SYSTEM PROMPT RULE:** All system prompt construction goes through `buildSystemPrompt()` in `lib/chat/buildSystemPrompt.ts`. Routes pass a `SystemPromptContext` (mode, user, memory, location, project metadata, dev extras) — they do not concatenate prompt strings, append tool blocks, or assemble identity/household/member layers themselves. Bruce's core identity, household context, formatting rules, participation rule, and three-tier rule are written once inside `buildSystemPrompt`.
 
-**Streaming model:** the server emits one consolidated assistant message per turn even when tools interleave (no per-turn DB rows). The client consumes the stream through `consumeStream()` with a 24ms flush tick so partial markdown renders progressively. An `AbortController` from `ChatWindow`/`ProjectChatView`/`FamilyChatWindow` is passed both to `fetch` and `consumeStream` — pressing Stop in `MessageInput` cancels both, preserves whatever text has been emitted, and marks any in-flight task steps as cancelled.
+**Streaming model:** the server emits one consolidated assistant message per turn even when tools interleave (no per-turn DB rows). The client consumes the stream through `consumeStream()` with a RAF flush tick so partial markdown renders progressively. An `AbortController` from `ChatWindow`/`ProjectChatView`/`FamilyChatWindow` is passed both to `fetch` and `consumeStream` — pressing Stop in `MessageInput` cancels both, preserves whatever text has been emitted, and marks any in-flight task steps as cancelled.
+
+**STREAM FINALIZER RULE:** When a stream completes, every context computes the final user-visible text and task-progress data through the single `finalizeStream(accumulated)` helper in `lib/chat/clientStream.ts` — never by re-implementing the sentinel/tag stripping inline. `finalizeStream` reuses `parseStreamFrame`'s canonical stripping (task XML tags incl. unclosed, `STATUS` sentinels, `TASK_PROGRESS` sentinels, `image_request` blocks, `\x1f` IMAGE_REQ terminator). All four contexts (`ChatWindow`, `ProjectChatView`, `FamilyChatWindow`, `NewChatOrchestrator`) call it; inline copies had previously drifted (project chat flashed raw `TASK_PROGRESS` sentinels; family chat leaked `STATUS` sentinels).
+
+**Streaming status indicator:** the "Searching the web…"/working-status strip is rendered once, in the shared `MessageList` (driven by its `streamingStatus` prop), so it appears identically in standalone, project, and family chat. It is NOT a top-bar concern — `TopBar` no longer carries a `statusText` prop, and `MessageBubble` does not render status.
 
 **Unread indicators:** `chat_members.last_read_at` (migration 024) is updated to `now()` whenever a chat is opened via `POST /api/chats/mark-read`. The sidebar queries `chat_members` on mount and renders an 8px `#0F6E56` dot when `chats.last_message_at > last_read_at` and the latest message wasn't sent by the current user.
 

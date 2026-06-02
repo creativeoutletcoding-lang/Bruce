@@ -21,7 +21,6 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   /** Set when the message was interrupted by the user; renders a muted note. */
   interrupted?: boolean;
-  workingStatus?: string | null;
   bubbleColorHex?: string;
   isOwn?: boolean;
   senderName?: string;
@@ -129,7 +128,6 @@ export default function MessageBubble({
   timestamp,
   isStreaming = false,
   interrupted = false,
-  workingStatus,
   bubbleColorHex,
   isOwn,
   senderName,
@@ -657,11 +655,6 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "var(--text-tertiary)",
     animation: "dotFade 1.2s ease-in-out infinite",
     animationDelay: "300ms",
-  },
-  indicatorStatus: {
-    fontSize: "0.6875rem",
-    color: "var(--text-tertiary)",
-    lineHeight: 1.3,
   },
   interruptedNote: {
     marginTop: "6px",

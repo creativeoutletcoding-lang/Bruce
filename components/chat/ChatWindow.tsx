@@ -18,6 +18,7 @@ import { modelLabel } from "@/lib/models";
 import {
   consumeStream,
   extractImageRequest,
+  finalizeStream,
   resolveAbandonedTaskSteps,
 } from "@/lib/chat/clientStream";
 import { useChatMemory } from "@/lib/chat/useChatMemory";
@@ -319,28 +320,7 @@ export default function ChatWindow({
 
       setWorkingStatus(null);
 
-      const { display: finalText, task: finalTask } = (() => {
-        const idx = accumulated.indexOf("\x1f");
-        const raw = idx !== -1 ? accumulated.slice(0, idx) : accumulated;
-        return {
-          display: raw
-            .replace(/\x1eSTATUS:[^\x1e]*\x1e/g, "")
-            .replace(/\x1eTASK_PROGRESS:[^\x1e]*\x1e/g, "")
-            .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-            .replace(/<task_progress>[\s\S]*?<\/task_progress>/g, "")
-            .replace(/<task_progress>[\s\S]*/g, "")
-            .trim(),
-          task: (() => {
-            const re = /<task_progress>([\s\S]*?)<\/task_progress>/g;
-            let latest = null;
-            let m;
-            while ((m = re.exec(raw)) !== null) {
-              try { latest = JSON.parse(m[1]); } catch { /* skip */ }
-            }
-            return latest;
-          })(),
-        };
-      })();
+      const { display: finalText, task: finalTask } = finalizeStream(accumulated);
 
       const imageReq = !aborted ? extractImageRequest(accumulated) : null;
 
@@ -485,7 +465,7 @@ export default function ChatWindow({
         ...(incognito ? styles.incognitoFilter : {}),
       }}
     >
-      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} model={model} onModelChange={handleModelChange} statusText={workingStatus} />
+      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} model={model} onModelChange={handleModelChange} />
 
       {incognito && (
         <div style={styles.incognitoNotice}>

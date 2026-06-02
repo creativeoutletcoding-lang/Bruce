@@ -13,12 +13,12 @@ import type { FileAttachment } from "@/components/chat/MessageInput";
 import type { UserSummary } from "@/lib/types";
 import {
   consumeStream,
+  finalizeStream,
   resolveAbandonedTaskSteps,
 } from "@/lib/chat/clientStream";
 import { useChatMemory } from "@/lib/chat/useChatMemory";
 import { getDisplayName } from "@/lib/chat/senderProfile";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
-import { extractLatestTaskProgress, stripTaskProgressTags } from "@/lib/chat/taskProgress";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -393,8 +393,7 @@ export default function FamilyChatWindow({
 
       setWorkingStatus(null);
 
-      const finalTask = extractLatestTaskProgress(accumulated);
-      const finalDisplay = stripTaskProgressTags(accumulated).trim();
+      const { display: finalDisplay, task: finalTask } = finalizeStream(accumulated);
 
       if (finalTask) {
         const resolved = resolveAbandonedTaskSteps(finalTask, aborted ? "interrupted" : "incomplete");

@@ -15,6 +15,7 @@ import type { ProjectMemberDetail } from "@/lib/types";
 import {
   consumeStream,
   extractImageRequest,
+  finalizeStream,
   resolveAbandonedTaskSteps,
 } from "@/lib/chat/clientStream";
 import { useChatMemory } from "@/lib/chat/useChatMemory";
@@ -423,25 +424,7 @@ export default function ProjectChatView({
 
       setWorkingStatus(null);
 
-      const idx = accumulated.indexOf("\x1f");
-      const raw = idx !== -1 ? accumulated.slice(0, idx) : accumulated;
-      const finalText = raw
-        .replace(/\x1eSTATUS:[^\x1e]*\x1e/g, "")
-        .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-        .replace(/<task_progress>[\s\S]*?<\/task_progress>/g, "")
-        .replace(/<task_progress>[\s\S]*/g, "")
-        .trim();
-
-      let finalTask = null as ReturnType<typeof resolveAbandonedTaskSteps> | null;
-      {
-        const re = /<task_progress>([\s\S]*?)<\/task_progress>/g;
-        let m: RegExpExecArray | null;
-        let latest = null;
-        while ((m = re.exec(raw)) !== null) {
-          try { latest = JSON.parse(m[1]); } catch { /* skip */ }
-        }
-        finalTask = latest;
-      }
+      const { display: finalText, task: finalTask } = finalizeStream(accumulated);
 
       const imageReq = !aborted ? extractImageRequest(accumulated) : null;
 

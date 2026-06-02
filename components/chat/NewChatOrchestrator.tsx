@@ -10,6 +10,12 @@ import MessageInput from "./MessageInput";
 import type { FileAttachment } from "./MessageInput";
 import type { ChatMessage } from "./MessageList";
 import { DEFAULT_MODEL } from "@/lib/models";
+import {
+  consumeStream,
+  extractImageRequest,
+  finalizeStream,
+  resolveAbandonedTaskSteps,
+} from "@/lib/chat/clientStream";
 
 interface NewChatOrchestratorProps {
   userName: string;
@@ -95,46 +101,37 @@ export default function NewChatOrchestrator({
 
       const newChatId = res.headers.get("X-Chat-Id");
 
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let accumulated = "";
-      const STATUS_RE = /\x1eSTATUS:[^\x1e]*\x1e/g;
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
-
-        const statusMatch = /\x1eSTATUS:([^\x1e]*)\x1e/.exec(accumulated);
-        if (statusMatch) setWorkingStatus(statusMatch[1]);
-
-        const sentinelIdx = accumulated.indexOf("\x1f");
-        const displayText = (sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated)
-          .replace(STATUS_RE, "")
-          .replace(/\x1eTASK_PROGRESS:[^\x1e]*\x1e/g, "")
-          .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-          .trimStart();
-        if (displayText.trim()) setWorkingStatus(null);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === streamMsgId ? { ...m, content: displayText } : m
-          )
-        );
-      }
+      const { accumulated } = await consumeStream({
+        response: res,
+        onTick: ({ display, task, workingStatus: ws }) => {
+          if (ws !== null) setWorkingStatus(ws);
+          if (display.trim()) setWorkingStatus(null);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === streamMsgId
+                ? { ...m, content: display, ...(task !== null ? { taskData: task } : {}) }
+                : m
+            )
+          );
+        },
+      });
 
       setWorkingStatus(null);
 
-      // Parse sentinel
-      const sentinelParts = accumulated.split("\x1f");
-      const imageReqSentinel = sentinelParts.find((p) => p.startsWith("IMAGE_REQ:"));
-      const finalText = sentinelParts[0]
-        .replace(STATUS_RE, "")
-        .replace(/\x1eTASK_PROGRESS:[^\x1e]*\x1e/g, "")
-        .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-        .trim();
+      const { display: finalText, task: finalTask } = finalizeStream(accumulated);
+      const imageReq = extractImageRequest(accumulated);
 
       // Finalize stream placeholder
-      if (finalText) {
+      if (finalTask) {
+        const resolved = resolveAbandonedTaskSteps(finalTask, "incomplete");
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamMsgId
+              ? { ...m, content: finalText, isStreaming: false, taskData: resolved, created_at: new Date().toISOString() }
+              : m
+          )
+        );
+      } else if (finalText) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
@@ -148,13 +145,8 @@ export default function NewChatOrchestrator({
 
       // If image requested, await generation before navigating so ChatWindow
       // loads with the image already persisted in the DB
-      if (!incognito && newChatId && imageReqSentinel) {
+      if (!incognito && newChatId && imageReq) {
         try {
-          const reqData = JSON.parse(imageReqSentinel.slice("IMAGE_REQ:".length)) as {
-            prompt: string;
-            quality: string;
-            chatId: string;
-          };
           const skeletonId = `skeleton-${Date.now()}`;
           setMessages((prev) => [
             ...prev,
@@ -163,13 +155,13 @@ export default function NewChatOrchestrator({
               role: "assistant" as const,
               content: "",
               created_at: new Date().toISOString(),
-              metadata: { content_type: "image", image_url: "", prompt: reqData.prompt, quality: reqData.quality },
+              metadata: { content_type: "image", image_url: "", prompt: imageReq.prompt, quality: imageReq.quality },
             },
           ]);
           await fetch("/api/images/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: reqData.prompt, chatId: reqData.chatId, quality: reqData.quality }),
+            body: JSON.stringify({ prompt: imageReq.prompt, chatId: imageReq.chatId, quality: imageReq.quality }),
           });
         } catch {
           // swallow — navigate regardless, ChatWindow loads whatever is in DB
@@ -219,7 +211,7 @@ export default function NewChatOrchestrator({
         ...(incognito ? styles.incognitoFilter : {}),
       }}
     >
-      <TopBar title="New Chat" hasMessages={messages.length > 0} statusText={workingStatus} />
+      <TopBar title="New Chat" hasMessages={messages.length > 0} />
 
       {incognito && (
         <div style={styles.incognitoNotice}>

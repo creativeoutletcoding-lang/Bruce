@@ -85,6 +85,21 @@ export function parseStreamFrame(accumulated: string): StreamTick {
   return { display, task, workingStatus };
 }
 
+export interface FinalizedStream {
+  display: string;
+  task: TaskProgressData | null;
+}
+
+// Compute the final user-visible text and task-progress data once the stream
+// has fully accumulated. Reuses parseStreamFrame's canonical stripping (task
+// XML tags incl. unclosed, STATUS sentinels, TASK_PROGRESS sentinels, and the
+// image_request block) so every chat context finalizes identically. The only
+// difference from a live tick is a full trim() rather than trimStart().
+export function finalizeStream(accumulated: string): FinalizedStream {
+  const { display, task } = parseStreamFrame(accumulated);
+  return { display: display.trim(), task };
+}
+
 export interface ImageReqPayload {
   prompt: string;
   quality: "standard" | "hd";

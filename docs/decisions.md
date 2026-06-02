@@ -6,6 +6,28 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Chat UI consistency audit — shared stream finalizer + shared status strip — 2026-06-01
+
+**Problem:** A code-quality/UI-consistency audit found that long-form response finalization (the post-stream computation of final text + task-progress data) was copy-pasted into all four chat contexts (`ChatWindow`, `ProjectChatView`, `FamilyChatWindow`, `NewChatOrchestrator`) and had drifted:
+- `ProjectChatView` was missing the `\x1eTASK_PROGRESS:` sentinel strip → raw sentinel JSON could flash in the final bubble after a multi-step task (the same bug fixed for standalone on 2026-05-18, never ported to project).
+- `FamilyChatWindow` stripped only task XML tags → a raw `\x1eSTATUS:…\x1e` sentinel could leak into the final bubble when web search ran.
+- `NewChatOrchestrator` hand-rolled its own reader loop instead of the shared `consumeStream`.
+
+Separately, the streaming status indicator ("Searching the web…") rendered only in standalone: it lived in `TopBar`'s `statusText` strip. `ProjectTopBar` and the family topbar never received it, and the only other display path — `MessageBubble.workingStatus` — was dead code left over from the 2026-05-18 "status moved below topbar" change. So project and family chats computed `workingStatus` but never displayed it.
+
+**Fix:**
+- Added `finalizeStream(accumulated)` to `lib/chat/clientStream.ts`. It delegates to `parseStreamFrame` (the canonical streaming-frame parser) and full-trims, so finalization uses the exact same stripping as live ticks. All four contexts now call it; ~25 lines of drift-prone duplication removed from each.
+- Refactored `NewChatOrchestrator` onto the shared `consumeStream` + `finalizeStream` + `extractImageRequest`, and gave it task-card parity (it previously ignored task data entirely on the first turn).
+- Moved the streaming status strip into the shared `MessageList` (it already received `streamingStatus`). Removed the `statusText` prop + strip from `TopBar`, and removed the dead `workingStatus` prop from `MessageBubble` (+ its unused `indicatorStatus` style) and the dead forward in `MessageList`. The indicator now appears identically in standalone, project, and family chat.
+
+**Reason:** This is the Chat UI Universal Component Rule (2026-05-09) applied to behavior, not just visuals. The finalizer and the status indicator are cross-cutting concerns; keeping per-context copies guaranteed they would drift, and they had. One finalizer + one status-render site means a fix propagates everywhere automatically.
+
+**Alternatives considered:** Threading `statusText` through each context's distinct top bar (`TopBar`, `ProjectTopBar`, family topbar-as-prop). Rejected — three pass-through paths to maintain, and the family topbar is injected as an opaque `ReactNode` from the server page, so it can't see `workingStatus`. Rendering in the shared `MessageList` is the single home that all contexts already feed.
+
+**Notes:** No schema or migration changes. New enforcement rule in CLAUDE.md: STREAM FINALIZER RULE. Verified via `tsc --noEmit`, ESLint, and a full `next build` — all clean.
+
+---
+
 ### Member exclusions — 2026-05-31
 
 **Problem:** Grampy (new household member) and Nana have a relationship that makes it inappropriate for them to share chats or projects together. Needed a hard constraint, not just a UI convention.

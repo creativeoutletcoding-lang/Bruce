@@ -108,6 +108,9 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
   return (
     <div style={styles.wrapper}>
       <PullProgressBar pullProgress={Math.min(pullDistance / 56, 1)} refreshing={isRefreshing} />
+      {streamingStatus && (
+        <div style={styles.statusStrip}>{streamingStatus}</div>
+      )}
       <div
         ref={containerRef}
         onScroll={handleScroll}
@@ -171,7 +174,6 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 timestamp={msg.created_at}
                 isStreaming={msg.isStreaming}
                 interrupted={msg.interrupted}
-                workingStatus={msg.isStreaming ? streamingStatus : undefined}
                 bubbleColorHex={userColorHex}
                 isOwn={
                   currentUserId !== undefined && msg.sender_id !== undefined
@@ -234,9 +236,20 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 0,
     position: "relative",
     overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+  },
+  statusStrip: {
+    padding: "4px 16px",
+    fontSize: "0.75rem",
+    color: "var(--text-tertiary)",
+    borderBottom: "1px solid var(--border)",
+    backgroundColor: "var(--bg-primary)",
+    flexShrink: 0,
   },
   container: {
-    height: "100%",
+    flex: 1,
+    minHeight: 0,
     overflowY: "auto",
     display: "flex",
     flexDirection: "column",
