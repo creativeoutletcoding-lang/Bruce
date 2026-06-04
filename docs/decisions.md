@@ -6,6 +6,20 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Mobile long-press context menu for messages — 2026-06-04
+
+Replaced the conflict between the old mobile long-press reaction hint and native iOS text selection with a unified `MessageContextMenu` component. The old mechanism (touch-based long-press timer in `handleSwipeTouchStart` → floating emoji picker portal) is removed entirely.
+
+**Architecture:** Long-press detection is now pointer-event based (`onPointerDown / onPointerMove / onPointerUp / onPointerCancel`) on the content row div, gated by `isTouchDevice = window.matchMedia("(pointer: coarse)").matches`. A 500ms timer starts on `pointerdown`; movement >10px cancels it. When the timer fires, `getBoundingClientRect()` on the `msgGroupRef` provides an anchor for the menu. The swipe-to-delete gesture remains on `onTouchStart/Move/End/Cancel` — the two systems share the `longPressTimer` ref (touchend/cancel still cancel it as belt-and-suspenders).
+
+**Menu (`MessageContextMenu.tsx`):** Portal to `document.body`. Contains 👍 Like / Remove (toggle, reads `ReactionEntry.hasCurrentUser`) and Copy (strips markdown via `stripMarkdown()` before writing to clipboard). Backdrop div (`z-index: 9998`) at full-screen below the menu (`z-index: 9999`) dismisses on `pointerDown`. Menu is positioned above the bubble when there is room (anchor.top > menuHeight + 24), below otherwise. `onReact` still only flows to assistant messages — the gate is unchanged (CLAUDE.md: "members only react to Bruce"). Copy is available on all bubble types.
+
+**Desktop unchanged:** `handleContextMenu` checks `isTouchDevice` and returns early on touch devices. Desktop right-click menu (👍, ❤️, Delete) is completely unaffected.
+
+**CSS:** `.message-bubble { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }` added under `@media (pointer: coarse)` in `globals.css`. No effect on desktop/mouse devices.
+
+---
+
 ### Three UI fixes — streaming status bar, mobile scroll, model picker — 2026-06-03
 
 **Fix 1 — Unified streaming status bar.** Replaced two separate streaming indicators (a top status strip in `MessageList` and a 3-dot animated bubble in `MessageBubble`) with a single `StreamingStatusBar` component anchored below the scroll area. The bar has four states in priority order: idle (null), thinking (pulsed status text), task card (in-progress `TaskCard`), gone (unmount when streaming ends). During streaming, task-card and empty messages are skipped from the list (`return null` in the map) so the bar is the sole live view. Completed task messages reappear in the list normally after streaming ends. The `pulse` keyframe from `globals.css` drives the opacity animation — no new keyframe needed. `liveTaskProgress` and `isStreamingNow` are derived inside `MessageList` from the existing `messages` array; no new props propagated to context wrappers.
