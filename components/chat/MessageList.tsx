@@ -157,8 +157,18 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                   );
                 }
               }
-              // Empty streaming message (no content, no task): shown in StreamingStatusBar.
-              if (msg.isStreaming && !msg.content) return null;
+              // Hide only the actively streaming message while it has no content yet
+              // (shown in StreamingStatusBar instead). Scoped to the active stream ID
+              // so interrupted/completed messages with no content still fall through to
+              // normal rendering. Reaction-only responses (no content by design) are
+              // also hidden while streaming; they get removed from the array by the
+              // finalizer after the stream ends.
+              if (
+                msg.isStreaming &&
+                !msg.content &&
+                streamingMsg?.id === msg.id &&
+                !(reactionsMap?.[msg.id]?.length)
+              ) return null;
               {
                 // Resolve attachment list: prefer explicit array, then metadata.attachments, then single legacy fields
                 const resolvedAttachments: MessageAttachment[] | undefined =
