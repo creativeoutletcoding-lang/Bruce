@@ -6,6 +6,16 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Three UI fixes — streaming status bar, mobile scroll, model picker — 2026-06-03
+
+**Fix 1 — Unified streaming status bar.** Replaced two separate streaming indicators (a top status strip in `MessageList` and a 3-dot animated bubble in `MessageBubble`) with a single `StreamingStatusBar` component anchored below the scroll area. The bar has four states in priority order: idle (null), thinking (pulsed status text), task card (in-progress `TaskCard`), gone (unmount when streaming ends). During streaming, task-card and empty messages are skipped from the list (`return null` in the map) so the bar is the sole live view. Completed task messages reappear in the list normally after streaming ends. The `pulse` keyframe from `globals.css` drives the opacity animation — no new keyframe needed. `liveTaskProgress` and `isStreamingNow` are derived inside `MessageList` from the existing `messages` array; no new props propagated to context wrappers.
+
+**Fix 2 — Mobile scroll jump on input focus.** Root cause was the scroll container missing `overscroll-behavior: contain`. The existing `visualViewport.resize` handler (calls `scrollToBottom("instant")` when viewport height decreases) was already correct and not re-added. Fixed by adding `overscrollBehavior: "contain"` to `styles.container` in `MessageList`. Scroll button moved inside a new `scrollArea` wrapper div so its `position: absolute; bottom: 16px` is measured from the scroll area edge rather than the full `MessageList` height, preventing overlap with `StreamingStatusBar`.
+
+**Fix 3 — Model picker pill compresses input text.** The `modelPicker` ReactNode was rendered inside the `inputRow` flex container in `MessageInput`, taking horizontal space and compressing the textarea. Moved it to its own `msg-input-picker-row` div rendered below the input row. Left-aligned on desktop, centered on mobile via a CSS media query in `globals.css`. Active chats where `modelPicker` is null are unaffected — the picker row renders conditionally.
+
+---
+
 ### Fix React hydration error #418 — ProjectAssignSelector not rendering — 2026-06-02
 
 Two hydration mismatches were causing React error #418. When React 18 detects a hydration mismatch it tears down and re-renders the affected subtree; if this recovery render fires before the `useEffect` that fetches projects resolves, `movableProjects` is still `[]` and `showProjectSelector` stays `false` — so the pill never appears in the re-rendered tree, even though the API returns data correctly.

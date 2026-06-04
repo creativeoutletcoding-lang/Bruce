@@ -253,6 +253,6 @@ Summary of key decisions recorded:
 | 5 — Connectors + Admin | ✅ Complete (2026-05-01) |
 | 6 — Polish | 🔄 In progress |
 
-Phase 6 complete: image generation, web search, browse_url, mobile UI fixes, family thread navigation, admin memory panel, unread dot indicators, TASK_PROGRESS system (multi-step task cards), document tools (Sheets/Docs/Drive), search_chat_history + full-text search index, manage_reminders tool + FCM delivery + Vercel cron, multi-device FCM (user_fcm_tokens), Group Chat Awareness (unified participation rule), Settings page (tab layout, desktop panel, Back button), PWA icon refresh (all slots, iOS apple-touch-icon versioning), MARKET_INTELLIGENCE research layer.
+Phase 6 complete: image generation, web search, browse_url, mobile UI fixes, family thread navigation, admin memory panel, unread dot indicators, TASK_PROGRESS system (multi-step task cards), document tools (Sheets/Docs/Drive), search_chat_history + full-text search index, manage_reminders tool + FCM delivery + Vercel cron, multi-device FCM (user_fcm_tokens), Group Chat Awareness (unified participation rule), Settings page (tab layout, desktop panel, Back button), PWA icon refresh (all slots, iOS apple-touch-icon versioning), MARKET_INTELLIGENCE research layer, unified streaming status bar (StreamingStatusBar replaces top strip + 3-dot bubble), mobile scroll-jump fix (overscroll-behavior: contain), model picker pill below input row.
 
 Phase 6 planned: user-facing chat deletion, "continue in group chat" feature.
