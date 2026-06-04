@@ -11,6 +11,7 @@ import type { PastedAttachmentData } from "@/lib/chat/pastedText";
 import { stripPastedSummaries } from "@/lib/chat/pastedText";
 import AttachmentBlock from "./AttachmentBlock";
 import AttachmentViewer, { type ViewerContent } from "./AttachmentViewer";
+import MessageContextMenu, { type MenuAnchor } from "./MessageContextMenu";
 
 export type { MessageAttachment };
 
@@ -48,7 +49,7 @@ const REVEAL_WIDTH = 80;
 const SWIPE_THRESHOLD = 56;
 const LONG_PRESS_MS = 500;
 const MOVE_THRESHOLD_PX = 4;
-const REACTION_HINT_TTL_MS = 3000;
+const MENU_MOVE_THRESHOLD_PX = 10;
 
 function formatTimestamp(dateStr: string): string {
   return new Date(dateStr).toLocaleTimeString("en-US", {
@@ -150,10 +151,10 @@ export default function MessageBubble({
   const [hovered, setHovered] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [viewer, setViewer] = useState<ViewerContent | null>(null);
-  const [showReactionHint, setShowReactionHint] = useState(false);
-  const [reactionHintPos, setReactionHintPos] = useState({ x: 0, y: 0 });
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<MenuAnchor | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
-  const reactionHintRef = useRef<HTMLDivElement>(null);
+  const msgGroupRef = useRef<HTMLDivElement>(null);
 
   // ── Swipe state ──────────────────────────────────────────────────────────────
   const [swipeOffset, setSwipeOffset] = useState(0);
@@ -165,7 +166,10 @@ export default function MessageBubble({
   const isDragging = useRef(false);
   const gestureAborted = useRef(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reactionHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerStartX = useRef(0);
+  const pointerStartY = useRef(0);
+
+  const isTouchDevice = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
 
   useEffect(() => { swipeOffsetRef.current = swipeOffset; }, [swipeOffset]);
 
@@ -193,36 +197,16 @@ export default function MessageBubble({
     };
   }, [ctxMenu]);
 
-  // Dismiss reaction hint on outside click/tap (with delay so the long-press
-  // touchend doesn't immediately close it)
-  useEffect(() => {
-    if (!showReactionHint) return;
-    function dismiss(e: Event) {
-      if (reactionHintRef.current?.contains(e.target as Node)) return;
-      setShowReactionHint(false);
-    }
-    const timerId = setTimeout(() => {
-      document.addEventListener("mousedown", dismiss);
-      document.addEventListener("touchstart", dismiss);
-    }, 300);
-    return () => {
-      clearTimeout(timerId);
-      document.removeEventListener("mousedown", dismiss);
-      document.removeEventListener("touchstart", dismiss);
-    };
-  }, [showReactionHint]);
-
-  // Desktop right-click — on touch devices native text selection proceeds.
+  // Desktop right-click — on touch devices the long-press menu is used instead.
   function handleContextMenu(e: React.MouseEvent) {
+    if (isTouchDevice) return;
     const hasActions = canDelete || !!onReact;
     if (!hasActions) return;
-    const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
-    if (isTouchDevice) return;
     e.preventDefault();
     setCtxMenu({ x: e.clientX, y: e.clientY });
   }
 
-  // ── Swipe + long-press touch handlers ────────────────────────────────────────
+  // ── Swipe touch handlers (delete reveal) ────────────────────────────────────
   function handleSwipeTouchStart(e: React.TouchEvent) {
     const t = e.touches[0];
     touchStartX.current = t.clientX;
@@ -233,17 +217,7 @@ export default function MessageBubble({
     if (canDelete) {
       startOffset.current = swipeOffsetRef.current;
     }
-
-    // Long-press fires after LONG_PRESS_MS if no significant movement
-    longPressTimer.current = setTimeout(() => {
-      longPressTimer.current = null;
-      if (!isDragging.current && !gestureAborted.current && onReact) {
-        lightHaptic();
-        setReactionHintPos({ x: touchStartX.current, y: touchStartY.current });
-        setShowReactionHint(true);
-        reactionHintTimer.current = setTimeout(() => setShowReactionHint(false), REACTION_HINT_TTL_MS);
-      }
-    }, LONG_PRESS_MS);
+    // Long-press is handled by pointer event handlers below.
   }
 
   function handleSwipeTouchMove(e: React.TouchEvent) {
@@ -251,12 +225,6 @@ export default function MessageBubble({
     const t = e.touches[0];
     const totalDx = t.clientX - touchStartX.current;
     const totalDy = t.clientY - touchStartY.current;
-    const totalMovement = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
-
-    if (longPressTimer.current !== null && totalMovement > MOVE_THRESHOLD_PX) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
 
     if (!canDelete) return;
 
@@ -309,6 +277,46 @@ export default function MessageBubble({
     setSwipeOffset(0);
   }
 
+  // ── Long-press pointer handlers (touch-only, opens context menu) ─────────────
+  function handlePointerDown(e: React.PointerEvent) {
+    if (!isTouchDevice || e.pointerType !== "touch") return;
+    pointerStartX.current = e.clientX;
+    pointerStartY.current = e.clientY;
+    longPressTimer.current = setTimeout(() => {
+      longPressTimer.current = null;
+      const el = msgGroupRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      lightHaptic();
+      setMenuAnchor({ top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, width: rect.width });
+      setMenuOpen(true);
+    }, LONG_PRESS_MS);
+  }
+
+  function handlePointerMove(e: React.PointerEvent) {
+    if (!longPressTimer.current) return;
+    const dx = e.clientX - pointerStartX.current;
+    const dy = e.clientY - pointerStartY.current;
+    if (Math.sqrt(dx * dx + dy * dy) > MENU_MOVE_THRESHOLD_PX) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
+  function handlePointerUp() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
+  function handlePointerCancel() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
   const isUser = isOwn !== undefined ? isOwn : role === "user";
   const isHumanMessage = role === "user";
   const showSenderLabel = isOwn === false && isHumanMessage && Boolean(senderName);
@@ -342,6 +350,7 @@ export default function MessageBubble({
 
       {/* Content row — translates left to reveal delete button */}
       <div
+        className="message-bubble"
         style={{
           ...styles.wrapper,
           justifyContent: isUser ? "flex-end" : "flex-start",
@@ -358,8 +367,12 @@ export default function MessageBubble({
         onTouchEnd={handleSwipeTouchEnd}
         onTouchCancel={handleSwipeTouchCancel}
         onContextMenu={handleContextMenu}
+        onPointerDown={isTouchDevice ? handlePointerDown : undefined}
+        onPointerMove={isTouchDevice ? handlePointerMove : undefined}
+        onPointerUp={isTouchDevice ? handlePointerUp : undefined}
+        onPointerCancel={isTouchDevice ? handlePointerCancel : undefined}
       >
-      <div className="msg-group" data-role={role} style={{ ...styles.messageGroup, ...(isHumanMessage ? { maxWidth: "85%", alignItems: isUser ? "flex-end" : "flex-start" } : { width: "100%" }) }}>
+      <div ref={msgGroupRef} className="msg-group" data-role={role} style={{ ...styles.messageGroup, ...(isHumanMessage ? { maxWidth: "85%", alignItems: isUser ? "flex-end" : "flex-start" } : { width: "100%" }) }}>
         {showBruceLabel && role === "assistant" && !isStreaming && (
           <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", padding: "0 2px", marginBottom: "2px" }}>
             Bruce
@@ -534,48 +547,15 @@ export default function MessageBubble({
         document.body
       )}
 
-      {/* Reaction hint — portal to body (mobile long-press) */}
-      {showReactionHint && onReact && createPortal(
-        <div
-          ref={reactionHintRef}
-          style={{
-            position: "fixed",
-            top: Math.max(8, reactionHintPos.y - 56),
-            left: Math.max(8, reactionHintPos.x - 24),
-            zIndex: 9999,
-            backgroundColor: "var(--bg-primary)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-full)",
-            boxShadow: "var(--shadow-lg)",
-            padding: "8px 14px",
-            display: "flex",
-            gap: "8px",
-          }}
-        >
-          {(["thumbs_up", "heart"] as const).map((type) => (
-            <button
-              key={type}
-              type="button"
-              style={{
-                fontSize: "1.375rem",
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                lineHeight: 1,
-                padding: 0,
-              }}
-              onClick={() => {
-                setShowReactionHint(false);
-                if (reactionHintTimer.current) clearTimeout(reactionHintTimer.current);
-                onReact(type);
-              }}
-              aria-label={`React with ${type === "thumbs_up" ? "thumbs up" : "heart"}`}
-            >
-              {type === "thumbs_up" ? "👍" : "❤️"}
-            </button>
-          ))}
-        </div>,
-        document.body
+      {/* Long-press context menu (touch devices) */}
+      {menuOpen && menuAnchor && (
+        <MessageContextMenu
+          anchor={menuAnchor}
+          content={displayContent}
+          onClose={() => setMenuOpen(false)}
+          reactions={reactions}
+          onReact={onReact}
+        />
       )}
 
       <AttachmentViewer content={viewer} onClose={() => setViewer(null)} />

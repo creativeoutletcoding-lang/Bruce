@@ -209,6 +209,20 @@ a {
 }
 
 /* ============================================================
+   TOUCH — suppress native selection on bubbles so the long-press
+   menu fires cleanly without native text-selection competing.
+   Desktop is completely unaffected (pointer: fine).
+   ============================================================ */
+
+@media (pointer: coarse) {
+  .message-bubble {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
+/* ============================================================
    ANIMATIONS
    ============================================================ */
 
