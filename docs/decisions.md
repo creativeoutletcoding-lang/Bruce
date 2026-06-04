@@ -6,6 +6,18 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Bidirectional reactions + Bruce emoji awareness — 2026-06-04
+
+**Part 1 — Full bidirectional reactions.** Removed the `msg.role === "assistant" &&` gate from `onReact` in `MessageList.tsx` (line previously read "members only react to Bruce"). `onReact` is now passed to every bubble regardless of role. The API endpoint (`/api/messages/[id]/reaction`) was already role-agnostic. `handleReact` in `useChatReactions.ts` was already role-agnostic. Reaction display (`reactions={reactionsMap?.[msg.id]}`) was already role-agnostic. Only the action gate needed removal.
+
+**Reaction pip position (confirmed correct):** For own right-aligned bubbles (`isUser=true`), `ReactionRow` uses `justifyContent: "flex-start"` — placing icons at the left edge of the msg-group, which is the top-left corner of the bubble space. `borderRadius: "10px 0 0 10px"` gives these bubbles a rounded top-left corner, so the pip sits at the correct anchor point. No change needed.
+
+**MessageContextMenu — ❤️ added.** The mobile long-press menu now has both 👍 (Like/Remove) and ❤️ (Love/Remove), each toggled independently via `ReactionEntry.hasCurrentUser`. Both use design-token active states (`color-mix(in srgb, var(--accent) 10%, transparent)` background, `var(--accent)` label color). Menu height estimate updated to 136px with reactions.
+
+**Part 2 — Bruce emoji awareness.** `react_to_message` tool schema updated: `type: { enum: ["thumbs_up"] }` replaced with `emoji: { enum: ["👍", "❤️"] }`. `executeReactionTool` now accepts an `emoji` parameter and maps it to the DB `type` field via `emojiToType()` ("👍" → "thumbs_up", "❤️" → "heart"). `streamHandler.ts` now passes `input.emoji` (defaulting to "👍") to the handler. `REACTION_SYSTEM_BLOCK` and `MULTI_MEMBER_PARTICIPATION_RULE` both updated with: "Use 👍 to acknowledge, confirm, or agree. Use ❤️ when a message is warm, personal, or emotionally significant — a kind gesture, a family moment, something shared. Do not use ❤️ for task confirmations or neutral exchanges."
+
+---
+
 ### Mobile long-press context menu for messages — 2026-06-04
 
 Replaced the conflict between the old mobile long-press reaction hint and native iOS text selection with a unified `MessageContextMenu` component. The old mechanism (touch-based long-press timer in `handleSwipeTouchStart` → floating emoji picker portal) is removed entirely.
