@@ -3,17 +3,17 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 
 export const REACTION_TOOL: Anthropic.Messages.Tool = {
   name: "react_to_message",
-  description: `React to the current user message with a thumbs up. Use this when the message is purely informational — sharing news, a status update, a confirmation, or context that warrants acknowledgment but needs no substantive reply. When you call this tool, produce no text. The tool call is your complete response.`,
+  description: `React to the current user message with an emoji. Use this when the message warrants acknowledgment but no substantive reply. When you call this tool, produce no text. The tool call is your complete response.`,
   input_schema: {
     type: "object" as const,
     properties: {
-      type: {
+      emoji: {
         type: "string",
-        enum: ["thumbs_up"],
-        description: "Reaction type",
+        enum: ["👍", "❤️"],
+        description: "The reaction emoji. Use 👍 to acknowledge, confirm, or agree. Use ❤️ when a message is warm, personal, or emotionally significant.",
       },
     },
-    required: ["type"],
+    required: ["emoji"],
   },
 };
 
@@ -23,24 +23,34 @@ export const REACTION_SYSTEM_BLOCK = `
 
 You have a third response mode between responding with text and staying silent: reacting.
 
-Call react_to_message({type: "thumbs_up"}) when:
+Call react_to_message({emoji: "👍"}) or react_to_message({emoji: "❤️"}) when:
 - The message is purely informational (news, updates, confirmations, check-ins)
 - Acknowledgment is appropriate but no follow-up text is needed
-- A thumbs up conveys the right response without additional words
+- A reaction conveys the right response without additional words
+
+Use 👍 to acknowledge, confirm, or agree.
+Use ❤️ when a message is warm, personal, or emotionally significant — a kind gesture, a family moment, something shared with care. Do not use ❤️ for task confirmations or neutral exchanges.
 
 When you call react_to_message, produce no text — the tool call is your complete response.
 
 Lean toward staying silent over reacting. A reaction still signals presence and can feel intrusive if overused. In 1-on-1 conversations you may be slightly more liberal with reactions. Never react to questions or tasks — respond with text for those.`;
 
+function emojiToType(emoji: string): string {
+  if (emoji === "❤️") return "heart";
+  return "thumbs_up";
+}
+
 export async function executeReactionTool(
   messageId: string | null,
   chatId: string | null,
+  emoji: string = "👍",
 ): Promise<string> {
   if (!messageId || !chatId) return "ok";
+  const type = emojiToType(emoji);
   try {
     const serviceRole = createServiceRoleClient();
     await serviceRole.from("reactions").upsert(
-      { message_id: messageId, chat_id: chatId, user_id: null, type: "thumbs_up" },
+      { message_id: messageId, chat_id: chatId, user_id: null, type },
       { ignoreDuplicates: true },
     );
   } catch {

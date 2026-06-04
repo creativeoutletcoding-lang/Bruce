@@ -191,7 +191,8 @@ async function executeOneTool(
     return executeRemindersTool(input, userId, chatId);
   }
   if (name === "react_to_message") {
-    return executeReactionTool(latestUserMessageId ?? null, chatId);
+    const emoji = typeof input.emoji === "string" ? input.emoji : "👍";
+    return executeReactionTool(latestUserMessageId ?? null, chatId, emoji);
   }
   if (GMAIL_TOOL_NAMES.has(name)) {
     return executeGmailTool(name, input, userId);
