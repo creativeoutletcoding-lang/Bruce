@@ -53,9 +53,13 @@ export default function MessageContextMenu({
   const hasReactedHeart = reactions?.find((r) => r.type === "heart")?.hasCurrentUser ?? false;
 
   const menuHeightEst = onReact ? 136 : 46;
-  const positionAbove = anchor.top > menuHeightEst + 24;
-  const menuTop = positionAbove ? anchor.top - menuHeightEst - 8 : anchor.bottom + 8;
+  const viewportH = typeof window !== "undefined" ? window.innerHeight : 812;
   const viewportW = typeof window !== "undefined" ? window.innerWidth : 375;
+  // Position above the bubble when there isn't enough room below in the viewport.
+  const positionAbove = viewportH - anchor.bottom < menuHeightEst + 16;
+  const menuTop = positionAbove
+    ? Math.max(8, anchor.top - menuHeightEst - 8)
+    : anchor.bottom + 8;
   const menuLeft = Math.max(
     8,
     Math.min(anchor.left + anchor.width / 2 - MENU_WIDTH / 2, viewportW - MENU_WIDTH - 8)
