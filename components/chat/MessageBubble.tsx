@@ -312,7 +312,6 @@ export default function MessageBubble({
   const isUser = isOwn !== undefined ? isOwn : role === "user";
   const isHumanMessage = role === "user";
   const showSenderLabel = isOwn === false && isHumanMessage && Boolean(senderName);
-  const showDots = isStreaming && !content;
   const resolvedSenderColor = getProfileColor(senderId ?? null, senderColorHex ?? null);
   const resolvedOwnColor = getProfileColor(null, bubbleColorHex ?? null);
 
@@ -444,7 +443,7 @@ export default function MessageBubble({
         )}
 
         {/* Bubble */}
-        {(showDots || displayContent) && (
+        {displayContent && (
           <div
             className={isHumanMessage ? "bubble-tint" : undefined}
             style={
@@ -461,21 +460,13 @@ export default function MessageBubble({
                 : styles.assistantContent
             }
           >
-            {showDots ? (
-              <span style={styles.dotsRow}>
-                <span style={styles.dot1} />
-                <span style={styles.dot2} />
-                <span style={styles.dot3} />
-              </span>
+            {role === "assistant" ? (
+              <div
+                className="bruce-md"
+                dangerouslySetInnerHTML={{ __html: marked(displayContent) as string }}
+              />
             ) : (
-              role === "assistant" ? (
-                <div
-                  className="bruce-md"
-                  dangerouslySetInnerHTML={{ __html: marked(displayContent) as string }}
-                />
-              ) : (
-                <span style={styles.content}>{displayContent}</span>
-              )
+              <span style={styles.content}>{displayContent}</span>
             )}
             {interrupted && (
               <div style={styles.interruptedNote}>Stopped</div>
@@ -624,38 +615,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-primary)",
     padding: "8px 0",
     width: "100%",
-  },
-  dotsRow: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "4px",
-  },
-  dot1: {
-    display: "inline-block",
-    width: "6px",
-    height: "6px",
-    borderRadius: "50%",
-    backgroundColor: "var(--text-tertiary)",
-    animation: "dotFade 1.2s ease-in-out infinite",
-    animationDelay: "0ms",
-  },
-  dot2: {
-    display: "inline-block",
-    width: "6px",
-    height: "6px",
-    borderRadius: "50%",
-    backgroundColor: "var(--text-tertiary)",
-    animation: "dotFade 1.2s ease-in-out infinite",
-    animationDelay: "150ms",
-  },
-  dot3: {
-    display: "inline-block",
-    width: "6px",
-    height: "6px",
-    borderRadius: "50%",
-    backgroundColor: "var(--text-tertiary)",
-    animation: "dotFade 1.2s ease-in-out infinite",
-    animationDelay: "300ms",
   },
   interruptedNote: {
     marginTop: "6px",

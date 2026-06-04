@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import MessageBubble from "./MessageBubble";
+import StreamingStatusBar from "./StreamingStatusBar";
 import PullProgressBar from "@/components/ui/PullProgressBar";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { ChatMessage, MessageAttachment, PastedAttachmentData, ReactionEntry } from "@/lib/chat/types";
@@ -32,6 +33,9 @@ interface MessageListProps {
 export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus, currentUserId, onDeleteMessage, reactionsMap, onReact }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const streamingMsg = messages.find((m) => m.isStreaming);
+  const isStreamingNow = !!streamingMsg;
+  const liveTaskProgress: TaskProgressData | null = streamingMsg?.taskData ?? null;
   const [showScrollButton, setShowScrollButton] = useState(false);
   const userScrolledUp = useRef(false);
   const touchStartY = useRef<number>(-1);
@@ -108,128 +112,137 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
   return (
     <div style={styles.wrapper}>
       <PullProgressBar pullProgress={Math.min(pullDistance / 56, 1)} refreshing={isRefreshing} />
-      {streamingStatus && (
-        <div style={styles.statusStrip}>{streamingStatus}</div>
-      )}
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        onTouchStart={onRefresh ? handleTouchStart : undefined}
-        onTouchMove={onRefresh ? handleTouchMove : undefined}
-        onTouchEnd={onRefresh ? handleTouchEnd : undefined}
-        style={styles.container}
-      >
-        <div style={styles.inner}>
-          <div style={styles.spacer} />
-          {messages.map((msg) => {
-            if (msg.role === "system") {
-              return (
-                <div key={msg.id} style={styles.systemDivider}>
-                  <div style={styles.systemLine} />
-                  <span style={styles.systemText}>{msg.content}</span>
-                  <div style={styles.systemLine} />
-                </div>
-              );
-            }
-            if (msg.metadata?.content_type === "image") {
-              const url = msg.metadata.image_url as string;
-              const prompt = (msg.metadata.prompt as string) ?? msg.content;
-              const isHD = msg.metadata.quality === "hd";
-              if (!url) return <ImageMessageSkeleton key={msg.id} isHD={isHD} />;
-              return <ImageMessage key={msg.id} url={url} prompt={prompt} isHD={isHD} />;
-            }
-            if (msg.taskData || msg.metadata?.content_type === "task") {
-              const data = (msg.taskData ?? msg.metadata?.task_data) as TaskProgressData | undefined;
-              if (data) {
+      <div style={styles.scrollArea}>
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          onTouchStart={onRefresh ? handleTouchStart : undefined}
+          onTouchMove={onRefresh ? handleTouchMove : undefined}
+          onTouchEnd={onRefresh ? handleTouchEnd : undefined}
+          style={styles.container}
+        >
+          <div style={styles.inner}>
+            <div style={styles.spacer} />
+            {messages.map((msg) => {
+              if (msg.role === "system") {
                 return (
-                  <div key={msg.id} style={{ padding: "2px 16px" }}>
-                    <TaskCard data={data} isStreaming={msg.isStreaming} />
-                    {msg.content && !msg.isStreaming && (
-                      <div style={{ paddingTop: "6px", fontSize: "0.9375rem", lineHeight: "1.55", color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>
-                        {msg.content}
-                      </div>
-                    )}
+                  <div key={msg.id} style={styles.systemDivider}>
+                    <div style={styles.systemLine} />
+                    <span style={styles.systemText}>{msg.content}</span>
+                    <div style={styles.systemLine} />
                   </div>
                 );
               }
-            }
-            {
-              // Resolve attachment list: prefer explicit array, then metadata.attachments, then single legacy fields
-              const resolvedAttachments: MessageAttachment[] | undefined =
-                msg.attachments ??
-                (msg.metadata?.attachments as MessageAttachment[] | undefined) ??
-                (msg.imageUrl
-                  ? [{ url: msg.imageUrl, type: msg.attachmentType ?? "image", filename: msg.attachmentFilename }]
-                  : undefined);
-
-              const pastedAttachments =
-                msg.pastedAttachments ??
-                (msg.metadata?.pastedAttachments as PastedAttachmentData[] | undefined);
-
-              return (
-              <MessageBubble
-                key={msg.id}
-                role={msg.role}
-                content={msg.content}
-                timestamp={msg.created_at}
-                isStreaming={msg.isStreaming}
-                interrupted={msg.interrupted}
-                bubbleColorHex={userColorHex}
-                isOwn={
-                  currentUserId !== undefined && msg.sender_id !== undefined
-                    ? msg.sender_id === currentUserId
-                    : undefined
+              if (msg.metadata?.content_type === "image") {
+                const url = msg.metadata.image_url as string;
+                const prompt = (msg.metadata.prompt as string) ?? msg.content;
+                const isHD = msg.metadata.quality === "hd";
+                if (!url) return <ImageMessageSkeleton key={msg.id} isHD={isHD} />;
+                return <ImageMessage key={msg.id} url={url} prompt={prompt} isHD={isHD} />;
+              }
+              if (msg.taskData || msg.metadata?.content_type === "task") {
+                const data = (msg.taskData ?? msg.metadata?.task_data) as TaskProgressData | undefined;
+                if (data) {
+                  // While streaming: task card lives in StreamingStatusBar, not here.
+                  if (msg.isStreaming) return null;
+                  return (
+                    <div key={msg.id} style={{ padding: "2px 16px" }}>
+                      <TaskCard data={data} isStreaming={false} />
+                      {msg.content && (
+                        <div style={{ paddingTop: "6px", fontSize: "0.9375rem", lineHeight: "1.55", color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>
+                          {msg.content}
+                        </div>
+                      )}
+                    </div>
+                  );
                 }
-                senderName={msg.senderName}
-                senderColorHex={msg.senderColorHex}
-                senderId={msg.sender_id ?? null}
-                attachments={resolvedAttachments}
-                pastedAttachments={pastedAttachments}
-                canDelete={
-                  !msg.isStreaming &&
-                  !msg.id.startsWith("tmp-") &&
-                  currentUserId !== undefined &&
-                  msg.sender_id === currentUserId
-                }
-                onDelete={onDeleteMessage ? () => onDeleteMessage(msg.id) : undefined}
-                swipeOpen={openSwipeId === msg.id}
-                onSwipeOpen={() => setOpenSwipeId(msg.id)}
-                showBruceLabel={true}
-                // Reactions render on the message whose id === reactions.message_id,
-                // regardless of role: a member's 👍 on Bruce shows on Bruce's message;
-                // Bruce's react_to_message 👍 shows on the member's message. (The
-                // react *action* below stays gated to Bruce's messages.)
-                reactions={reactionsMap?.[msg.id]}
-                onReact={msg.role === "assistant" && onReact && !msg.id.startsWith("tmp-") ? (type) => onReact(msg.id, type) : undefined}
-              />
-              );
-            }
-          })}
-          <div style={styles.bottomPad} />
-          <div ref={endRef} />
+              }
+              // Empty streaming message (no content, no task): shown in StreamingStatusBar.
+              if (msg.isStreaming && !msg.content) return null;
+              {
+                // Resolve attachment list: prefer explicit array, then metadata.attachments, then single legacy fields
+                const resolvedAttachments: MessageAttachment[] | undefined =
+                  msg.attachments ??
+                  (msg.metadata?.attachments as MessageAttachment[] | undefined) ??
+                  (msg.imageUrl
+                    ? [{ url: msg.imageUrl, type: msg.attachmentType ?? "image", filename: msg.attachmentFilename }]
+                    : undefined);
+
+                const pastedAttachments =
+                  msg.pastedAttachments ??
+                  (msg.metadata?.pastedAttachments as PastedAttachmentData[] | undefined);
+
+                return (
+                <MessageBubble
+                  key={msg.id}
+                  role={msg.role}
+                  content={msg.content}
+                  timestamp={msg.created_at}
+                  isStreaming={msg.isStreaming}
+                  interrupted={msg.interrupted}
+                  bubbleColorHex={userColorHex}
+                  isOwn={
+                    currentUserId !== undefined && msg.sender_id !== undefined
+                      ? msg.sender_id === currentUserId
+                      : undefined
+                  }
+                  senderName={msg.senderName}
+                  senderColorHex={msg.senderColorHex}
+                  senderId={msg.sender_id ?? null}
+                  attachments={resolvedAttachments}
+                  pastedAttachments={pastedAttachments}
+                  canDelete={
+                    !msg.isStreaming &&
+                    !msg.id.startsWith("tmp-") &&
+                    currentUserId !== undefined &&
+                    msg.sender_id === currentUserId
+                  }
+                  onDelete={onDeleteMessage ? () => onDeleteMessage(msg.id) : undefined}
+                  swipeOpen={openSwipeId === msg.id}
+                  onSwipeOpen={() => setOpenSwipeId(msg.id)}
+                  showBruceLabel={true}
+                  // Reactions render on the message whose id === reactions.message_id,
+                  // regardless of role: a member's 👍 on Bruce shows on Bruce's message;
+                  // Bruce's react_to_message 👍 shows on the member's message. (The
+                  // react *action* below stays gated to Bruce's messages.)
+                  reactions={reactionsMap?.[msg.id]}
+                  onReact={msg.role === "assistant" && onReact && !msg.id.startsWith("tmp-") ? (type) => onReact(msg.id, type) : undefined}
+                />
+                );
+              }
+            })}
+            <div style={styles.bottomPad} />
+            <div ref={endRef} />
+          </div>
         </div>
+
+        {showScrollButton && (
+          <button
+            onClick={() => {
+              userScrolledUp.current = false;
+              scrollToBottom("smooth");
+            }}
+            style={styles.scrollButton}
+            aria-label="Scroll to bottom"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M8 3v10M4 9l4 4 4-4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        )}
       </div>
 
-      {showScrollButton && (
-        <button
-          onClick={() => {
-            userScrolledUp.current = false;
-            scrollToBottom("smooth");
-          }}
-          style={styles.scrollButton}
-          aria-label="Scroll to bottom"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path
-              d="M8 3v10M4 9l4 4 4-4"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      )}
+      <StreamingStatusBar
+        streamingStatus={streamingStatus ?? ""}
+        taskProgress={liveTaskProgress}
+        isStreaming={isStreamingNow}
+      />
     </div>
   );
 }
@@ -243,18 +256,19 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
   },
-  statusStrip: {
-    padding: "4px 16px",
-    fontSize: "0.75rem",
-    color: "var(--text-tertiary)",
-    borderBottom: "1px solid var(--border)",
-    backgroundColor: "var(--bg-primary)",
-    flexShrink: 0,
+  scrollArea: {
+    flex: 1,
+    minHeight: 0,
+    position: "relative",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
   },
   container: {
     flex: 1,
     minHeight: 0,
     overflowY: "auto",
+    overscrollBehavior: "contain",
     display: "flex",
     flexDirection: "column",
   },
