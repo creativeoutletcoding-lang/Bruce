@@ -93,7 +93,7 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
 
   // When the keyboard appears the input container grows, shrinking this list.
   // scrollTop doesn't auto-adjust, so the last message slides above the fold.
-  // Re-anchor to the bottom instantly whenever the visual viewport shrinks.
+  // Double-rAF ensures the call fires after both style recalculation and paint.
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
@@ -101,7 +101,11 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
     function onViewportResize() {
       const newHeight = vv!.height;
       if (newHeight < lastHeight) {
-        scrollToBottom("instant");
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            scrollToBottom("instant");
+          });
+        });
       }
       lastHeight = newHeight;
     }
@@ -157,12 +161,9 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                   );
                 }
               }
-              // Hide only the actively streaming message while it has no content yet
-              // (shown in StreamingStatusBar instead). Scoped to the active stream ID
-              // so interrupted/completed messages with no content still fall through to
-              // normal rendering. Reaction-only responses (no content by design) are
-              // also hidden while streaming; they get removed from the array by the
-              // finalizer after the stream ends.
+              // Only hide the actively streaming message while content is pending.
+              // Fall through to render if streaming has ended, content exists, or any
+              // reactions are present (including mid-stream reactions from any member).
               if (
                 msg.isStreaming &&
                 !msg.content &&
