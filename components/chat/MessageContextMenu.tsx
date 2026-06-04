@@ -49,9 +49,10 @@ export default function MessageContextMenu({
   onReact,
 }: MessageContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const hasReacted = reactions?.find((r) => r.type === "thumbs_up")?.hasCurrentUser ?? false;
+  const hasReactedThumb = reactions?.find((r) => r.type === "thumbs_up")?.hasCurrentUser ?? false;
+  const hasReactedHeart = reactions?.find((r) => r.type === "heart")?.hasCurrentUser ?? false;
 
-  const menuHeightEst = onReact ? 92 : 46;
+  const menuHeightEst = onReact ? 136 : 46;
   const positionAbove = anchor.top > menuHeightEst + 24;
   const menuTop = positionAbove ? anchor.top - menuHeightEst - 8 : anchor.bottom + 8;
   const viewportW = typeof window !== "undefined" ? window.innerWidth : 375;
@@ -66,8 +67,13 @@ export default function MessageContextMenu({
     onClose();
   }
 
-  function handleReact() {
+  function handleReactThumb() {
     onReact?.("thumbs_up");
+    onClose();
+  }
+
+  function handleReactHeart() {
+    onReact?.("heart");
     onClose();
   }
 
@@ -105,29 +111,54 @@ export default function MessageContextMenu({
         }}
       >
         {onReact && (
-          <button
-            role="menuitem"
-            type="button"
-            style={{
-              ...styles.item,
-              backgroundColor: hasReacted
-                ? "color-mix(in srgb, var(--accent) 10%, transparent)"
-                : undefined,
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={handleReact}
-            aria-label={hasReacted ? "Remove thumbs up" : "Thumbs up"}
-          >
-            <span style={styles.icon} aria-hidden="true">👍</span>
-            <span
+          <>
+            <button
+              role="menuitem"
+              type="button"
               style={{
-                ...styles.label,
-                color: hasReacted ? "var(--accent)" : "var(--text-primary)",
+                ...styles.item,
+                backgroundColor: hasReactedThumb
+                  ? "color-mix(in srgb, var(--accent) 10%, transparent)"
+                  : undefined,
               }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={handleReactThumb}
+              aria-label={hasReactedThumb ? "Remove thumbs up" : "Thumbs up"}
             >
-              {hasReacted ? "Remove" : "Like"}
-            </span>
-          </button>
+              <span style={styles.icon} aria-hidden="true">👍</span>
+              <span
+                style={{
+                  ...styles.label,
+                  color: hasReactedThumb ? "var(--accent)" : "var(--text-primary)",
+                }}
+              >
+                {hasReactedThumb ? "Remove" : "Like"}
+              </span>
+            </button>
+            <button
+              role="menuitem"
+              type="button"
+              style={{
+                ...styles.item,
+                backgroundColor: hasReactedHeart
+                  ? "color-mix(in srgb, var(--accent) 10%, transparent)"
+                  : undefined,
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={handleReactHeart}
+              aria-label={hasReactedHeart ? "Remove heart" : "Heart"}
+            >
+              <span style={styles.icon} aria-hidden="true">❤️</span>
+              <span
+                style={{
+                  ...styles.label,
+                  color: hasReactedHeart ? "var(--accent)" : "var(--text-primary)",
+                }}
+              >
+                {hasReactedHeart ? "Remove" : "Love"}
+              </span>
+            </button>
+          </>
         )}
         {onReact && <div style={styles.divider} aria-hidden="true" />}
         <button
