@@ -308,6 +308,12 @@ span[class*="typingDots"] > span:nth-child(3),
     margin: 0 !important;
     padding: 10px 14px !important;
   }
+
+  .msg-input-picker-row {
+    justify-content: center;
+    padding-left: 0 !important;
+    padding-bottom: 8px;
+  }
 }
 
 /* ============================================================

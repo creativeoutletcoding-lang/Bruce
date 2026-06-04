@@ -369,7 +369,6 @@ export default function MessageInput({
           style={styles.textarea}
           aria-label="Message input"
         />
-        {modelPicker}
         {canStop ? (
           <button
             onClick={() => { lightHaptic(); onStop!(); }}
@@ -394,6 +393,11 @@ export default function MessageInput({
           </button>
         )}
       </div>
+      {modelPicker && (
+        <div className="msg-input-picker-row" style={styles.pickerRow}>
+          {modelPicker}
+        </div>
+      )}
     </div>
   );
 }
@@ -609,5 +613,14 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     transition: "background-color var(--transition), color var(--transition)",
     padding: 0,
+  },
+  pickerRow: {
+    display: "flex",
+    justifyContent: "flex-start",
+    paddingTop: "6px",
+    paddingLeft: "4px",
+    maxWidth: 780,
+    margin: "0 auto",
+    width: "100%",
   },
 };
