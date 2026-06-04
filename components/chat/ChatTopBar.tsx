@@ -51,7 +51,9 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     borderBottom: "1px solid var(--border)",
     backgroundColor: "var(--bg-primary)",
-    position: "relative",
+    position: "sticky",
+    top: 0,
+    zIndex: 10,
   },
   leftSpacer: {
     width: "0px",

@@ -280,7 +280,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   shell: {
     display: "flex",
-    height: "100dvh",
+    height: "100%",
     overflow: "hidden",
     backgroundColor: "var(--bg-primary)",
   },
