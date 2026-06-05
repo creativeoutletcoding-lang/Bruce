@@ -42,6 +42,10 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
+  // Part 2: ref so viewport resize handler always sees the current value across re-mounts
+  const previousViewportHeight = useRef<number>(0);
+  // tracks whether the initial message load has been scrolled into view
+  const initialScrollDone = useRef(false);
 
   function handleTouchStart(e: React.TouchEvent<HTMLDivElement>) {
     if ((containerRef.current?.scrollTop ?? 1) === 0) {
@@ -81,12 +85,40 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
     setShowScrollButton(!atBottom);
   }
 
+  // Part 1: scroll to bottom when the document becomes visible again (app resume / tab switch)
   useEffect(() => {
-    scrollToBottom("instant");
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            scrollToBottom("instant");
+          });
+        });
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, []);
 
+  // Double-rAF on mount so layout has settled before the scroll fires.
   useEffect(() => {
-    if (!userScrolledUp.current) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollToBottom("instant");
+      });
+    });
+  }, []);
+
+  // Part 3: instant scroll after the initial message batch loads; smooth for subsequent messages.
+  useEffect(() => {
+    if (messages.length > 0 && !initialScrollDone.current) {
+      initialScrollDone.current = true;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollToBottom("instant");
+        });
+      });
+    } else if (!userScrolledUp.current) {
       scrollToBottom("smooth");
     }
   }, [messages]);
@@ -94,20 +126,21 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
   // When the keyboard appears the input container grows, shrinking this list.
   // scrollTop doesn't auto-adjust, so the last message slides above the fold.
   // Double-rAF ensures the call fires after both style recalculation and paint.
+  // Part 2: use a ref for previousViewportHeight so it's initialized correctly on every mount.
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    let lastHeight = vv.height;
+    previousViewportHeight.current = vv.height;
     function onViewportResize() {
       const newHeight = vv!.height;
-      if (newHeight < lastHeight) {
+      if (newHeight < previousViewportHeight.current) {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             scrollToBottom("instant");
           });
         });
       }
-      lastHeight = newHeight;
+      previousViewportHeight.current = newHeight;
     }
     vv.addEventListener("resize", onViewportResize);
     return () => vv.removeEventListener("resize", onViewportResize);
