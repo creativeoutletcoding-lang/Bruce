@@ -308,6 +308,7 @@ export default function ProjectChatView({
           )
         : [];
 
+      setWorkingStatus("Thinking…");
       const res = await fetch(`/api/projects/${projectId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

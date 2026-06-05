@@ -232,6 +232,7 @@ export default function ChatWindow({
           )
         : [];
 
+      setWorkingStatus("Thinking…");
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

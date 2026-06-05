@@ -281,6 +281,7 @@ export default function FamilyChatWindow({
     abortRef.current = abort;
 
     try {
+      setWorkingStatus("Thinking…");
       const res = await fetch("/api/family/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
