@@ -240,6 +240,14 @@ export async function POST(request: NextRequest) {
         blocks.push({ type: "document", source: { type: "file", file_id: att.file_id }, title: att.filename } as unknown as Anthropic.Messages.ContentBlockParam);
       }
     }
+    // Append public storage URLs so Bruce can reference them with the edit_image tool.
+    // Blob URLs are client-side only and rejected — only include real storage URLs.
+    const imageStorageUrls = attachments
+      .filter((a) => a.type === "image" && a.url && !a.url.startsWith("blob:"))
+      .map((a) => a.url);
+    if (imageStorageUrls.length > 0) {
+      blocks.push({ type: "text" as const, text: imageStorageUrls.map((u) => `[image_url: ${u}]`).join("\n") });
+    }
     if (message.trim()) blocks.push({ type: "text" as const, text: message });
     if (blocks.length === 0) blocks.push({ type: "text" as const, text: message || "[attachment]" });
     userContent = blocks as Anthropic.Messages.MessageParam["content"];

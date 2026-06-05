@@ -36,7 +36,7 @@ import {
   executeDocumentTool,
 } from "@/lib/documents/documentTools";
 import { IMAGE_VISION_BLOCK, IMAGE_SYSTEM_BLOCK, TASK_PROGRESS_SYSTEM_BLOCK } from "@/lib/anthropic";
-import { type ImageQuality } from "@/lib/images/generate";
+import { type ImageQuality, editImageAndSave } from "@/lib/images/generate";
 import {
   REMINDERS_TOOLS,
   REMINDERS_SYSTEM_BLOCK,
@@ -53,6 +53,26 @@ import {
 // Family/group chats omit IMAGE_SYSTEM_BLOCK (no image generation) but still
 // include vision (analyze incoming images) and all other tools.
 
+export const EDIT_IMAGE_TOOL = {
+  name: "edit_image",
+  description:
+    "Edit or transform an existing image based on a text instruction. Use when the user has attached an image and wants it modified — style transfer, background removal, color changes, object addition/removal, artistic transformation, etc. Do not use for generating new images from scratch.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      image_url: {
+        type: "string",
+        description: "The public URL of the image to edit (from the [image_url: ...] tag in the message — never a blob URL)",
+      },
+      prompt: {
+        type: "string",
+        description: "Plain English instruction describing the edit",
+      },
+    },
+    required: ["image_url", "prompt"],
+  },
+};
+
 export const TOOLS_FULL = [
   ...CALENDAR_TOOLS,
   ...GMAIL_TOOLS,
@@ -62,6 +82,7 @@ export const TOOLS_FULL = [
   HISTORY_SEARCH_TOOL,
   ...DOCUMENT_TOOLS,
   REACTION_TOOL,
+  EDIT_IMAGE_TOOL,
 ];
 
 export function buildToolSystemBlocks(opts: { includeImageGen: boolean }): string {
@@ -153,6 +174,7 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   archive_email: "Archive email",
   delete_email: "Delete email",
   manage_reminders: "Manage reminders",
+  edit_image: "Edit image",
 };
 
 function extractStepDetail(toolName: string, result: string): string | undefined {
@@ -181,6 +203,22 @@ async function executeOneTool(
   latestUserMessageId: string | null | undefined,
   projectId?: string | null,
 ): Promise<string> {
+  if (name === "edit_image") {
+    const imageUrl = typeof input.image_url === "string" ? input.image_url : "";
+    const prompt = typeof input.prompt === "string" ? input.prompt : "";
+    if (!imageUrl || imageUrl.startsWith("blob:")) {
+      console.warn("[edit_image] Blob or missing URL — declining");
+      return JSON.stringify({ error: "edit_image requires a public image URL — blob URLs cannot be edited remotely" });
+    }
+    if (!chatId) {
+      // Incognito or no chat context — edit but skip DB save
+      const { editImage } = await import("@/lib/image/editImage");
+      const { url } = await editImage(imageUrl, prompt);
+      return JSON.stringify({ url });
+    }
+    const { url } = await editImageAndSave(imageUrl, prompt, userId, chatId);
+    return JSON.stringify({ url, saved: true });
+  }
   if (name === "browse_url") {
     return executeSearchTool(name, input);
   }

@@ -266,7 +266,22 @@ That is your entire response. Do not add any words.
 
 Use quality "hd" when the user explicitly asks for HD, high quality, high res, detailed, or best quality. Use "standard" for everything else.
 
-Write the prompt as if describing the image to a professional photographer or artist — specific, visual, detailed. Include lighting, style, composition, subject matter, and color palette. Do not use vague language.`;
+Write the prompt as if describing the image to a professional photographer or artist — specific, visual, detailed. Include lighting, style, composition, subject matter, and color palette. Do not use vague language.
+
+## Image editing
+
+When the user has attached an image (you will see an [image_url: ...] tag in their message) and asks you to modify, transform, or edit it — use the edit_image tool instead of generate_image. Never emit an <image_request> tag when a source image is available.
+
+Situations that must use edit_image (not generate_image):
+- "Make this look like a painting / cartoon / sketch"
+- "Remove the background"
+- "Change the sky to sunset / add snow / make it black and white"
+- "Put me in Paris" / "Add a hat" / any object addition or removal
+- Any request that says "this", "it", "the image" when an image is attached
+
+Pass the URL from the [image_url: ...] tag directly as image_url. Write the prompt as a plain English instruction describing what to change.
+
+The edited image is saved automatically — respond with a brief confirmation after the tool returns.`;
 
 export const IMAGE_VISION_BLOCK = `
 
