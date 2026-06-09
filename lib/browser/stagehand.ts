@@ -41,6 +41,12 @@ export async function performBrowserAction(
   const stagehand = new Stagehand({
     env: "BROWSERBASE",
     disablePino: true,
+    // Direct mode: resolve the model locally via our Anthropic key through the
+    // AI SDK provider, instead of routing inference through Stagehand's hosted
+    // API (which has its own model allow-list that returns 400 for models it
+    // doesn't recognize). navigate doesn't use the model at all; act/extract use
+    // our key directly. Requires the provider/model format below.
+    disableAPI: true,
     apiKey: process.env.BROWSERBASE_API_KEY!,
     projectId: process.env.BROWSERBASE_PROJECT_ID!,
     browserbaseSessionID: sessionId, // reconnect to the existing shared session
