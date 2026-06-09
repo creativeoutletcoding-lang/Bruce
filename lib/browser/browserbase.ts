@@ -120,8 +120,8 @@ export async function getBrowserContextBlock(
   const session = await getActiveBrowserSession(chatId);
   if (!session) return undefined;
   return `BROWSER SESSION ACTIVE
-The user can see a live browser panel in this chat. Current URL: ${session.currentUrl}
-You and the user share this one browser — use the browse_page tool to navigate, act, or extract, and coordinate naturally. The user may have clicked or typed since your last action, so don't assume the page is unchanged.`;
+Current URL: ${session.currentUrl}
+You can see the browser panel via screenshot. When you navigate, you automatically receive a screenshot of the page. Use extract to read full page text. Describe what you see to the user naturally — you are both looking at the same browser.`;
 }
 
 // Mark a session inactive by its Browserbase id — used when a CDP connect fails

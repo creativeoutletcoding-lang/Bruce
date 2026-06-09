@@ -189,20 +189,27 @@ const TOOL_STEP_LABELS: Record<string, string> = {
 
 // browse_page is executed specially (it needs the stream controller to emit the
 // browser_event). Returns the tool-result text plus the panel event to emit.
+type BrowseToolContent = string | Array<Anthropic.Messages.TextBlockParam | Anthropic.Messages.ImageBlockParam>;
+
 async function executeBrowsePage(
   input: Record<string, unknown>,
   userId: string,
   chatId: string | null,
 ): Promise<{
+  /** Plain-text summary, used for task-progress + error detection. */
   result: string;
+  /** Tool-result content for Bruce — an image+text array when a screenshot exists. */
+  content: BrowseToolContent;
   event: { sessionId: string; liveViewUrl: string; currentUrl: string; isNew: boolean } | null;
 }> {
   if (!chatId) {
-    return { result: "Error: the shared browser is not available in incognito chats.", event: null };
+    const msg = "Error: the shared browser is not available in incognito chats.";
+    return { result: msg, content: msg, event: null };
   }
   const action = typeof input.action === "string" ? input.action : "";
   if (!["navigate", "act", "extract", "screenshot"].includes(action)) {
-    return { result: `Error: unknown browse_page action "${action}".`, event: null };
+    const msg = `Error: unknown browse_page action "${action}".`;
+    return { result: msg, content: msg, event: null };
   }
   const url = typeof input.url === "string" ? input.url : undefined;
   const instruction = typeof input.instruction === "string" ? input.instruction : undefined;
@@ -266,23 +273,38 @@ async function executeBrowsePage(
     };
 
     let result: string;
+    let content: BrowseToolContent;
     if (actionResult.success) {
-      // Screenshots return a data URL — don't dump it back into the model context.
-      const payload = action === "screenshot" ? "(screenshot captured in the panel)" : actionResult.result;
-      result = JSON.stringify({ success: true, currentUrl, result: payload });
+      const summary = `${actionResult.result ?? "Done."}\nCurrent URL: ${currentUrl}`;
+      result = summary;
+      if (actionResult.screenshotData) {
+        // Hand Bruce the actual page image so he can see what he landed on —
+        // never dump the base64 data URL into the model context as text.
+        const base64 = actionResult.screenshotData.replace("data:image/jpeg;base64,", "");
+        content = [
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
+          { type: "text", text: summary },
+        ];
+      } else {
+        // extract / act — plain text only.
+        content = summary;
+      }
     } else {
       result = `Error: ${actionResult.error ?? "browser action failed"} (current URL: ${currentUrl})`;
+      content = result;
     }
-    return { result, event };
+    return { result, content, event };
   } catch (error) {
     console.error("BROWSE_PAGE_ERROR:", error);
     const message = error instanceof Error ? error.message : String(error);
     // Surface the real error to Bruce so it shows up in the chat instead of a
     // generic failure he can't explain.
     if (message === "SESSION_DEAD") {
-      return { result: "Error: the shared browser session ended and could not be re-established. Ask the user to reopen the browser and try again.", event: null };
+      const msg = "Error: the shared browser session ended and could not be re-established. Ask the user to reopen the browser and try again.";
+      return { result: msg, content: msg, event: null };
     }
-    return { result: `Error: the shared browser failed — ${message}`, event: null };
+    const msg = `Error: the shared browser failed — ${message}`;
+    return { result: msg, content: msg, event: null };
   }
 }
 
@@ -563,11 +585,14 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
           const toolResults = await Promise.all(
             toolCalls.map(async (tc) => {
               let result: string;
+              // browse_page can return an image+text array (a page screenshot) as
+              // the tool-result content; other tools always return a string.
+              let browseContent: BrowseToolContent | null = null;
               try {
                 if (tc.name === "browse_page") {
                   // Special-cased: needs the controller to emit the browser_event
                   // sentinel so the panel opens the instant Bruce starts working.
-                  const { result: r, event } = await Promise.race([
+                  const { result: r, content, event } = await Promise.race([
                     executeBrowsePage(tc.input as Record<string, unknown>, userId, persist.chatId),
                     new Promise<never>((_, reject) =>
                       setTimeout(
@@ -580,6 +605,7 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
                     controller.enqueue(encoder.encode(`${BROWSER_EVENT_SENTINEL}${JSON.stringify(event)}\x1e`));
                   }
                   result = r;
+                  browseContent = content;
                 } else {
                   result = await Promise.race([
                     executeOneTool(tc.name, tc.input as Record<string, unknown>, userId, persist.chatId, persist.latestUserMessageId, searchContext?.projectId),
@@ -613,7 +639,9 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
               return {
                 type: "tool_result" as const,
                 tool_use_id: tc.id,
-                content: result,
+                // browse_page may hand back an image+text array (page screenshot);
+                // all other tools use the plain-text result string.
+                content: browseContent ?? result,
                 ...(isToolError ? { is_error: true } : {}),
               };
             })

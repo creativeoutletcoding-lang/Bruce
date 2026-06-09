@@ -19,6 +19,8 @@ export interface BrowserActionResult {
   result?: string;
   currentUrl: string;
   error?: string;
+  /** Base64 data URL of the page screenshot (set for navigate + screenshot). */
+  screenshotData?: string;
 }
 
 export async function performBrowserAction(
@@ -55,30 +57,43 @@ export async function performBrowserAction(
     const page = context.pages()[0] ?? (await context.newPage());
 
     let result: string | undefined;
+    let screenshotData: string | undefined;
 
     switch (action) {
       case "navigate": {
         if (!params.url) throw new Error("URL required for navigate");
         await page.goto(params.url, { waitUntil: "domcontentloaded", timeout: 20000 });
         result = `Navigated to ${params.url}`;
+        // Auto-screenshot so Bruce always sees what he landed on. Best-effort —
+        // the navigation already succeeded, so don't fail it if capture throws.
+        try {
+          const buffer = await page.screenshot({ type: "jpeg", quality: 80 });
+          screenshotData = `data:image/jpeg;base64,${buffer.toString("base64")}`;
+        } catch { /* screenshot is best-effort */ }
         break;
       }
       case "screenshot": {
         const buffer = await page.screenshot({ type: "jpeg", quality: 80 });
-        // Base64 data URL — no external upload needed for the initial ship.
-        result = `data:image/jpeg;base64,${buffer.toString("base64")}`;
+        screenshotData = `data:image/jpeg;base64,${buffer.toString("base64")}`;
+        result = "Captured a screenshot of the current page.";
         break;
       }
-      case "act":
       case "extract": {
-        // Stubbed for now (these required Stagehand's LLM-driven act/extract).
-        // Return a clear message so Bruce can respond gracefully instead of failing.
-        result = `Browser action '${action}' is not yet supported. Navigation and screenshots are available.`;
+        const title = await page.title();
+        const text = await page.evaluate(() => document.body.innerText);
+        // Trim to ~3000 chars so it fits cleanly in the tool result.
+        const trimmed = text.slice(0, 3000);
+        result = `Page title: ${title}\n\nContent:\n${trimmed}`;
+        break;
+      }
+      case "act": {
+        // Direct LLM-driven interaction isn't wired up yet (it relied on Stagehand).
+        result = `Direct page interaction isn't available yet — try asking me to navigate to a specific URL instead.`;
         break;
       }
     }
 
-    return { success: true, result, currentUrl: page.url() };
+    return { success: true, result, currentUrl: page.url(), screenshotData };
   } catch (error) {
     console.error("STAGEHAND_ERROR:", error);
     return {
