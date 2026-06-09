@@ -40,6 +40,7 @@ export async function performBrowserAction(
 
   const stagehand = new Stagehand({
     env: "BROWSERBASE",
+    disablePino: true,
     apiKey: process.env.BROWSERBASE_API_KEY!,
     projectId: process.env.BROWSERBASE_PROJECT_ID!,
     browserbaseSessionID: sessionId, // reconnect to the existing shared session
