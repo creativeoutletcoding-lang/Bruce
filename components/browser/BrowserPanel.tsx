@@ -158,15 +158,17 @@ export default function BrowserPanel({
       </div>
 
       <div style={styles.viewport}>
-        <iframe
-          key={`${sessionId}-${iframeKey}`}
-          src={liveViewUrl}
-          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
-          allow="clipboard-read; clipboard-write"
-          style={styles.iframe}
-          onLoad={() => setLoading(false)}
-          title="Shared browser"
-        />
+        <div style={styles.iframeWrap}>
+          <iframe
+            key={`${sessionId}-${iframeKey}`}
+            src={liveViewUrl}
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+            allow="clipboard-read; clipboard-write"
+            style={styles.iframe}
+            onLoad={() => setLoading(false)}
+            title="Shared browser"
+          />
+        </div>
 
         {loading && !disconnected && (
           <div style={styles.overlay}>
@@ -248,12 +250,23 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minHeight: 0,
     backgroundColor: "var(--bg-secondary)",
+    // Flex column so the iframe wrapper's `flex: 1` fills the available space;
+    // the overlays are absolutely positioned and unaffected.
+    display: "flex",
+    flexDirection: "column",
+  },
+  iframeWrap: {
+    position: "relative",
+    width: "100%",
+    flex: 1,
+    overflow: "hidden",
   },
   iframe: {
     width: "100%",
     height: "100%",
     border: "none",
     display: "block",
+    transformOrigin: "top left",
   },
   overlay: {
     position: "absolute",

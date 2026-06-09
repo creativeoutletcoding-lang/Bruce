@@ -55,6 +55,9 @@ export async function createBrowserSession(
   const session = await bbClient().sessions.create({
     projectId: process.env.BROWSERBASE_PROJECT_ID!,
     keepAlive: true,
+    browserSettings: {
+      viewport: { width: 1280, height: 800 },
+    },
   });
 
   // The create response carries the signed CDP WebSocket URL — capture it now so
