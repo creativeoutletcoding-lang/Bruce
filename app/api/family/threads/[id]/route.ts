@@ -2,6 +2,48 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { NextRequest } from "next/server";
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return new Response("Unauthorized", { status: 401 });
+
+  const { id } = await params;
+  const { title } = (await request.json()) as { title?: string };
+  const trimmed = title?.trim();
+  if (!trimmed) return new Response("Title required", { status: 400 });
+
+  // Verify membership before allowing rename.
+  const { data: membership } = await supabase
+    .from("chat_members")
+    .select("id")
+    .eq("chat_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!membership) return new Response("Forbidden", { status: 403 });
+
+  const adminSupabase = createServiceRoleClient();
+
+  const { error } = await adminSupabase
+    .from("chats")
+    .update({ title: trimmed })
+    .eq("id", id)
+    .eq("type", "family_thread");
+
+  if (error) {
+    console.error("[api/family/threads/[id]] Rename failed:", error);
+    return new Response("Failed to rename", { status: 500 });
+  }
+
+  return Response.json({ title: trimmed });
+}
+
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

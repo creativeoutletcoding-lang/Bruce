@@ -31,6 +31,11 @@ export default function FamilyThreadTopBar({
   const [isAdding, setIsAdding] = useState(false);
   // Track current member IDs locally so newly added members disappear from the picker
   const [currentMemberIds, setCurrentMemberIds] = useState<string[]>(threadMemberIds);
+  // Track the name locally so renames are reflected immediately without a page reload
+  const [currentName, setCurrentName] = useState(threadName);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState(threadName);
+  const [isRenaming, setIsRenaming] = useState(false);
 
   const threadMembers = allMembers.filter((m) => currentMemberIds.includes(m.id));
   const addableMembers = allMembers.filter(
@@ -64,6 +69,25 @@ export default function FamilyThreadTopBar({
       }
     } finally {
       setIsAdding(false);
+    }
+  }
+
+  async function handleRename() {
+    const trimmed = renameValue.trim();
+    if (!trimmed || trimmed === currentName || isRenaming) return;
+    setIsRenaming(true);
+    try {
+      const res = await fetch(`/api/family/threads/${threadId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: trimmed }),
+      });
+      if (res.ok) {
+        setCurrentName(trimmed);
+        setRenameOpen(false);
+      }
+    } finally {
+      setIsRenaming(false);
     }
   }
 
@@ -151,6 +175,19 @@ export default function FamilyThreadTopBar({
               style={styles.dropdownItem}
               onClick={() => {
                 setMenuOpen(false);
+                setRenameValue(currentName);
+                setRenameOpen(true);
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M9.5 2.5l2 2-7 7H2.5v-2l7-7z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Rename
+            </button>
+            <button
+              style={styles.dropdownItem}
+              onClick={() => {
+                setMenuOpen(false);
                 setSelectedUserId(null);
                 setAddMemberOpen(true);
               }}
@@ -200,7 +237,7 @@ export default function FamilyThreadTopBar({
             </svg>
           </button>
         }
-        title={threadName}
+        title={currentName}
         right={rightCluster}
       />
 
@@ -263,6 +300,47 @@ export default function FamilyThreadTopBar({
         </div>
       )}
 
+      {/* Rename modal */}
+      {renameOpen && (
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <p style={styles.modalTitle}>Rename group chat</p>
+            <input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleRename();
+                if (e.key === "Escape") setRenameOpen(false);
+              }}
+              placeholder="Group chat name"
+              autoFocus
+              style={styles.renameInput}
+            />
+            <div style={styles.modalActions}>
+              <button
+                style={styles.cancelButton}
+                onClick={() => setRenameOpen(false)}
+                disabled={isRenaming}
+              >
+                Cancel
+              </button>
+              <button
+                style={{
+                  ...styles.addButton,
+                  ...(!renameValue.trim() || renameValue.trim() === currentName || isRenaming
+                    ? styles.addButtonDisabled
+                    : {}),
+                }}
+                onClick={handleRename}
+                disabled={!renameValue.trim() || renameValue.trim() === currentName || isRenaming}
+              >
+                {isRenaming ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Member sheet */}
       {memberSheetOpen && (
         <div style={styles.overlay} onClick={() => setMemberSheetOpen(false)}>
@@ -291,7 +369,7 @@ export default function FamilyThreadTopBar({
       {deleteModalOpen && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
-            <p style={styles.modalTitle}>Delete &ldquo;{threadName}&rdquo;?</p>
+            <p style={styles.modalTitle}>Delete &ldquo;{currentName}&rdquo;?</p>
             <p style={styles.modalBody}>
               This removes the group chat and all its messages for everyone.
             </p>
@@ -470,6 +548,20 @@ const styles: Record<string, React.CSSProperties> = {
   },
   checkIcon: {
     flexShrink: 0,
+  },
+  renameInput: {
+    width: "100%",
+    height: "40px",
+    padding: "0 12px",
+    fontSize: "0.9375rem",
+    color: "var(--text-primary)",
+    backgroundColor: "var(--bg-secondary)",
+    border: "1px solid var(--border-strong)",
+    borderRadius: "var(--radius-md)",
+    outline: "none",
+    caretColor: "var(--accent)",
+    marginBottom: "20px",
+    WebkitAppearance: "none",
   },
   modalActions: {
     display: "flex",
