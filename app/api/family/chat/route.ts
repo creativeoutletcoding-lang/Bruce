@@ -7,6 +7,7 @@ import {
 } from "@/lib/anthropic";
 import { parsePastedAttachments } from "@/lib/chat/pastedText";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
+import { getBrowserContextBlock } from "@/lib/browser/browserbase";
 import {
   runChatStream,
   sanitizeAlternatingMessages,
@@ -200,12 +201,15 @@ export async function POST(request: NextRequest) {
     ? `${senderName}'s current location right now is ${currentLocation}.`
     : `${senderName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;
 
+  const browserContext = await getBrowserContextBlock(chatId);
+
   const systemPrompt = buildSystemPrompt({
     mode: "family",
     userName: senderName,
     userTimestamp,
     memoryBlock,
     locationContext,
+    browserContext,
     includeImageGen: false,
   });
 

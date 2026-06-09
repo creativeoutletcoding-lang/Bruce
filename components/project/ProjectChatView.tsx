@@ -20,6 +20,9 @@ import {
 import { useChatMemory } from "@/lib/chat/useChatMemory";
 import { useChatReactions } from "@/hooks/useChatReactions";
 import { useChatSession } from "@/hooks/useChatSession";
+import { useBrowserPanel } from "@/hooks/useBrowserPanel";
+import BrowserPanel from "@/components/browser/BrowserPanel";
+import BrowserSplitLayout from "@/components/browser/BrowserSplitLayout";
 import { getDisplayName } from "@/lib/chat/senderProfile";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 
@@ -120,6 +123,8 @@ export default function ProjectChatView({
   const { currentLocation, deleteMessage, handleRetry } = useChatSession({
     chatId, currentUserId, messages, setMessages, setInput, setError,
   });
+  const { panel: browserPanel, opening: browserOpening, openBrowser, toggleBrowser, closeBrowser, applyBrowserEvent } =
+    useBrowserPanel(chatId, true);
 
   useEffect(() => { setIsClient(true); }, []);
   useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
@@ -329,12 +334,13 @@ export default function ProjectChatView({
       const { accumulated, aborted } = await consumeStream({
         response: res,
         signal: abort.signal,
-        onTick: ({ display, task, workingStatus: ws }) => {
+        onTick: ({ display, task, workingStatus: ws, browserEvent }) => {
           if (!hasFirstContent && (display.trim() || task)) {
             hasFirstContent = true;
             setWorkingStatus(null);
           }
           if (ws !== null) setWorkingStatus(ws);
+          if (browserEvent) applyBrowserEvent(browserEvent);
           setMessages((prev) =>
             prev.map((m) =>
               m.id === streamMsgId
@@ -449,7 +455,18 @@ export default function ProjectChatView({
 
   function handleSend() { sendMessage(input.trim()); }
 
+  const browserPanelEl = browserPanel.sessionId && browserPanel.liveViewUrl ? (
+    <BrowserPanel
+      chatId={chatId}
+      sessionId={browserPanel.sessionId}
+      liveViewUrl={browserPanel.liveViewUrl}
+      initialUrl={browserPanel.currentUrl ?? undefined}
+      onClose={closeBrowser}
+    />
+  ) : null;
+
   return (
+    <BrowserSplitLayout panelOpen={browserPanel.open && !!browserPanelEl} panel={browserPanelEl}>
     <div style={styles.container}>
       <ProjectTopBar
         projectId={projectId}
@@ -487,8 +504,12 @@ export default function ProjectChatView({
         onFilesAttach={(files) => setAttachedFiles((prev) => [...prev, ...files])}
         onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
         placeholder={`Message ${projectName}…`}
+        onBrowserClick={() => (browserPanel.sessionId ? toggleBrowser() : openBrowser())}
+        browserActive={browserPanel.open}
+        browserOpening={browserOpening}
       />
     </div>
+    </BrowserSplitLayout>
   );
 }
 

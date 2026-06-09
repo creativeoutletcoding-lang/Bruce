@@ -47,6 +47,7 @@ import {
   REACTION_SYSTEM_BLOCK,
   executeReactionTool,
 } from "@/lib/chat/reactionTools";
+import { BROWSE_PAGE_TOOL, BROWSER_SYSTEM_BLOCK } from "@/lib/browser/browseTool";
 
 // ── Tool sets ────────────────────────────────────────────────────────────────
 // Standalone + project chats get the full tool set including image generation.
@@ -83,6 +84,7 @@ export const TOOLS_FULL = [
   ...DOCUMENT_TOOLS,
   REACTION_TOOL,
   EDIT_IMAGE_TOOL,
+  BROWSE_PAGE_TOOL,
 ];
 
 export function buildToolSystemBlocks(opts: { includeImageGen: boolean }): string {
@@ -97,7 +99,8 @@ export function buildToolSystemBlocks(opts: { includeImageGen: boolean }): strin
     HISTORY_SEARCH_SYSTEM_BLOCK +
     DOCUMENT_SYSTEM_BLOCK +
     TASK_PROGRESS_SYSTEM_BLOCK +
-    REACTION_SYSTEM_BLOCK
+    REACTION_SYSTEM_BLOCK +
+    BROWSER_SYSTEM_BLOCK
   );
 }
 
@@ -143,6 +146,12 @@ const TOOL_TIMEOUT_MS = 90_000;
 // Uses \x1e (same family as STATUS sentinels) — never \x1f, which is reserved for IMAGE_REQ.
 export const TASK_PROGRESS_SENTINEL = "\x1eTASK_PROGRESS:";
 
+// Emitted when Bruce's browse_page tool opens or moves the shared browser.
+// Format: \x1eBROWSER_EVENT:{"sessionId":"...","liveViewUrl":"...","currentUrl":"...","isNew":true}\x1e
+// Same \x1e family as STATUS/TASK_PROGRESS — the client strips it from display
+// text and opens/updates the BrowserPanel from the latest one.
+export const BROWSER_EVENT_SENTINEL = "\x1eBROWSER_EVENT:";
+
 const TOOL_STEP_LABELS: Record<string, string> = {
   list_drive_files: "List Drive files",
   resolve_drive_path: "Resolve Drive path",
@@ -175,7 +184,74 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   delete_email: "Delete email",
   manage_reminders: "Manage reminders",
   edit_image: "Edit image",
+  browse_page: "Browse page",
 };
+
+// browse_page is executed specially (it needs the stream controller to emit the
+// browser_event). Returns the tool-result text plus the panel event to emit.
+async function executeBrowsePage(
+  input: Record<string, unknown>,
+  userId: string,
+  chatId: string | null,
+): Promise<{
+  result: string;
+  event: { sessionId: string; liveViewUrl: string; currentUrl: string; isNew: boolean } | null;
+}> {
+  if (!chatId) {
+    return { result: "Error: the shared browser is not available in incognito chats.", event: null };
+  }
+  const action = typeof input.action === "string" ? input.action : "";
+  if (!["navigate", "act", "extract", "screenshot"].includes(action)) {
+    return { result: `Error: unknown browse_page action "${action}".`, event: null };
+  }
+  const url = typeof input.url === "string" ? input.url : undefined;
+  const instruction = typeof input.instruction === "string" ? input.instruction : undefined;
+
+  const { getActiveBrowserSession, createBrowserSession, updateSessionUrl } = await import(
+    "@/lib/browser/browserbase"
+  );
+  const { performBrowserAction } = await import("@/lib/browser/stagehand");
+
+  // Reuse the chat's single active session, or open one (panel opens via isNew).
+  let session = await getActiveBrowserSession(chatId);
+  let isNew = false;
+  if (!session) {
+    const created = await createBrowserSession(chatId, userId);
+    session = { sessionId: created.sessionId, liveViewUrl: created.liveViewUrl, currentUrl: "about:blank" };
+    isNew = true;
+  }
+
+  const actionResult = await performBrowserAction(
+    session.sessionId,
+    action as "navigate" | "act" | "extract" | "screenshot",
+    { url, instruction },
+  );
+
+  const currentUrl =
+    actionResult.currentUrl && actionResult.currentUrl !== "about:blank"
+      ? actionResult.currentUrl
+      : session.currentUrl;
+  if (actionResult.currentUrl && actionResult.currentUrl !== "about:blank") {
+    await updateSessionUrl(chatId, actionResult.currentUrl);
+  }
+
+  const event = {
+    sessionId: session.sessionId,
+    liveViewUrl: session.liveViewUrl,
+    currentUrl,
+    isNew,
+  };
+
+  let result: string;
+  if (actionResult.success) {
+    // Screenshots return a data URL — don't dump it back into the model context.
+    const payload = action === "screenshot" ? "(screenshot captured in the panel)" : actionResult.result;
+    result = JSON.stringify({ success: true, currentUrl, result: payload });
+  } else {
+    result = `Error: ${actionResult.error ?? "browser action failed"} (current URL: ${currentUrl})`;
+  }
+  return { result, event };
+}
 
 function extractStepDetail(toolName: string, result: string): string | undefined {
   try {
@@ -455,15 +531,33 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
             toolCalls.map(async (tc) => {
               let result: string;
               try {
-                result = await Promise.race([
-                  executeOneTool(tc.name, tc.input as Record<string, unknown>, userId, persist.chatId, persist.latestUserMessageId, searchContext?.projectId),
-                  new Promise<never>((_, reject) =>
-                    setTimeout(
-                      () => reject(new Error(`"${tc.name}" did not complete within ${TOOL_TIMEOUT_MS / 1000}s`)),
-                      TOOL_TIMEOUT_MS
-                    )
-                  ),
-                ]);
+                if (tc.name === "browse_page") {
+                  // Special-cased: needs the controller to emit the browser_event
+                  // sentinel so the panel opens the instant Bruce starts working.
+                  const { result: r, event } = await Promise.race([
+                    executeBrowsePage(tc.input as Record<string, unknown>, userId, persist.chatId),
+                    new Promise<never>((_, reject) =>
+                      setTimeout(
+                        () => reject(new Error(`"${tc.name}" did not complete within ${TOOL_TIMEOUT_MS / 1000}s`)),
+                        TOOL_TIMEOUT_MS
+                      )
+                    ),
+                  ]);
+                  if (event) {
+                    controller.enqueue(encoder.encode(`${BROWSER_EVENT_SENTINEL}${JSON.stringify(event)}\x1e`));
+                  }
+                  result = r;
+                } else {
+                  result = await Promise.race([
+                    executeOneTool(tc.name, tc.input as Record<string, unknown>, userId, persist.chatId, persist.latestUserMessageId, searchContext?.projectId),
+                    new Promise<never>((_, reject) =>
+                      setTimeout(
+                        () => reject(new Error(`"${tc.name}" did not complete within ${TOOL_TIMEOUT_MS / 1000}s`)),
+                        TOOL_TIMEOUT_MS
+                      )
+                    ),
+                  ]);
+                }
               } catch (err) {
                 result = `Error: ${err instanceof Error ? err.message : String(err)}`;
               }

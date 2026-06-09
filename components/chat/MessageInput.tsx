@@ -131,6 +131,12 @@ interface MessageInputProps {
   modelPicker?: ReactNode;
   /** When set, the "+" menu shows a "Move to project" entry (standalone private chats). */
   moveToProject?: MoveToProjectConfig;
+  /** Tap handler for the shared-browser globe button. When omitted (incognito), the button is hidden. */
+  onBrowserClick?: () => void;
+  /** True when a shared browser panel is currently open (highlights the globe). */
+  browserActive?: boolean;
+  /** True while a browser session is being created (spinner on the globe). */
+  browserOpening?: boolean;
 }
 
 export default function MessageInput({
@@ -147,6 +153,9 @@ export default function MessageInput({
   containerStyle,
   modelPicker,
   moveToProject,
+  onBrowserClick,
+  browserActive = false,
+  browserOpening = false,
 }: MessageInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -369,6 +378,27 @@ export default function MessageInput({
           style={styles.textarea}
           aria-label="Message input"
         />
+        {onBrowserClick && (
+          <button
+            onClick={() => { lightHaptic(); onBrowserClick(); }}
+            style={{ ...styles.browserButton, ...(browserActive ? styles.browserButtonActive : {}) }}
+            aria-label="Open shared browser"
+            aria-pressed={browserActive}
+            type="button"
+            disabled={disabled || browserOpening}
+          >
+            {browserOpening ? (
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" style={styles.spin}>
+                <path d="M9 2a7 7 0 1 0 7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.4" />
+                <path d="M2 9h14M9 2c1.9 2 1.9 12 0 14M9 2c-1.9 2-1.9 12 0 14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+            )}
+          </button>
+        )}
         {canStop ? (
           <button
             onClick={() => { lightHaptic(); onStop!(); }}
@@ -613,6 +643,28 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     transition: "background-color var(--transition), color var(--transition)",
     padding: 0,
+  },
+  browserButton: {
+    flexShrink: 0,
+    width: "36px",
+    height: "36px",
+    borderRadius: "var(--radius-md)",
+    backgroundColor: "transparent",
+    color: "var(--text-tertiary)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    transition: "color var(--transition), background-color var(--transition)",
+    border: "none",
+    padding: 0,
+  },
+  browserButtonActive: {
+    color: "#fff",
+    backgroundColor: "var(--accent)",
+  },
+  spin: {
+    animation: "bruce-browser-spin 0.8s linear infinite",
   },
   pickerRow: {
     display: "flex",

@@ -39,6 +39,12 @@ export interface SystemPromptContext {
   locationContext?: string;
   /** Upcoming reminders block injected for passive awareness. Pre-formatted by the route. */
   remindersContext?: string;
+  /**
+   * Active shared-browser session note. Pre-formatted by the route from
+   * getActiveBrowserSession(chatId). Present only when a live session exists so
+   * Bruce knows the panel is open and what URL it's showing.
+   */
+  browserContext?: string;
   /** When true, IMAGE_SYSTEM_BLOCK is included in tool blocks. Ignored in dev mode. */
   includeImageGen?: boolean;
   /** Project metadata. Required when mode === "project". */
@@ -201,6 +207,10 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
 
   if (ctx.remindersContext) {
     prompt += `\n\n${ctx.remindersContext}`;
+  }
+
+  if (ctx.browserContext) {
+    prompt += `\n\n${ctx.browserContext}`;
   }
 
   prompt += buildToolSystemBlocks({ includeImageGen: !!ctx.includeImageGen });

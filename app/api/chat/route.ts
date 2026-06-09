@@ -7,6 +7,7 @@ import {
 } from "@/lib/anthropic";
 import { parsePastedAttachments, stripPastedSummaries } from "@/lib/chat/pastedText";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
+import { getBrowserContextBlock } from "@/lib/browser/browserbase";
 import {
   runChatStream,
   sanitizeAlternatingMessages,
@@ -153,6 +154,8 @@ export async function POST(request: NextRequest) {
     remindersContext = `## ${userName}'s upcoming reminders\n${lines}`;
   }
 
+  const browserContext = await getBrowserContextBlock(chatId);
+
   const systemPrompt = buildSystemPrompt({
     mode: "standalone",
     userName,
@@ -160,6 +163,7 @@ export async function POST(request: NextRequest) {
     memoryBlock,
     locationContext,
     remindersContext,
+    browserContext,
     includeImageGen: true,
   });
   let currentChatId = chatId;

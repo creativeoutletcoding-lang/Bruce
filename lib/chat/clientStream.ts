@@ -20,11 +20,21 @@ export const PARAGRAPH_PAUSE_MS = 60;
 const STATUS_RE = /\x1eSTATUS:[^\x1e]*\x1e/g;
 const TASK_PROGRESS_RE = /\x1eTASK_PROGRESS:([^\x1e]+)\x1e/g;
 const TASK_PROGRESS_STRIP_RE = /\x1eTASK_PROGRESS:[^\x1e]*\x1e/g;
+const BROWSER_EVENT_STRIP_RE = /\x1eBROWSER_EVENT:[^\x1e]*\x1e/g;
+
+export interface BrowserEvent {
+  sessionId: string;
+  liveViewUrl: string;
+  currentUrl: string;
+  isNew: boolean;
+}
 
 export interface StreamTick {
   display: string;
   task: TaskProgressData | null;
   workingStatus: string | null;
+  /** Latest shared-browser event (panel open/update), or null if none yet. */
+  browserEvent: BrowserEvent | null;
 }
 
 // Parse the accumulated bytes so far, returning the user-visible text, any
@@ -72,6 +82,18 @@ export function parseStreamFrame(accumulated: string): StreamTick {
     }
   }
 
+  // Shared-browser event — the LAST one wins (panel reflects current state).
+  let browserEvent: BrowserEvent | null = null;
+  {
+    const re = /\x1eBROWSER_EVENT:([^\x1e]+)\x1e/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(raw)) !== null) {
+      try {
+        browserEvent = JSON.parse(m[1]) as BrowserEvent;
+      } catch { /* skip malformed */ }
+    }
+  }
+
   // XML-based extraction for the final turn (Bruce's summary text may include
   // a <task_progress> block with the full task name and resolved step list).
   const xmlTask = extractLatestTaskProgress(raw);
@@ -83,10 +105,11 @@ export function parseStreamFrame(accumulated: string): StreamTick {
   const display = stripTaskProgressTags(raw)
     .replace(STATUS_RE, "")
     .replace(TASK_PROGRESS_STRIP_RE, "")
+    .replace(BROWSER_EVENT_STRIP_RE, "")
     .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
     .trimStart();
 
-  return { display, task, workingStatus };
+  return { display, task, workingStatus, browserEvent };
 }
 
 export interface FinalizedStream {

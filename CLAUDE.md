@@ -20,6 +20,7 @@ Private household AI for the Johnson family at heybruce.app. Jake runs the build
 | Auth | Supabase Auth + Google OAuth |
 | AI | Anthropic — claude-sonnet-4-6 |
 | Image generation | fal.ai (FLUX.1 — flux/dev + flux-pro/v1.1) |
+| Shared browser | Browserbase (Live View iframe) + Stagehand v3 (server-side control) |
 | Web search | Anthropic native web search (server tool) |
 | URL fetching | Jina Reader |
 | Push notifications | Firebase Cloud Messaging |
@@ -30,7 +31,7 @@ Private household AI for the Johnson family at heybruce.app. Jake runs the build
 
 ## Database Schema
 
-Migrations 001–030 applied; 031 pending Supabase SQL editor. `schema.sql` is the source of truth — always update it when altering structure.
+Migrations 001–030 applied; 031–033 pending Supabase SQL editor. `schema.sql` is the source of truth — always update it when altering structure.
 
 **household** — single row; `memories` (jsonb), `context` (jsonb with family member data)
 
@@ -70,6 +71,8 @@ Migrations 001–030 applied; 031 pending Supabase SQL editor. `schema.sql` is t
 
 **reactions** — thumbs-up reactions on messages; `id`, `message_id` (FK → messages CASCADE), `chat_id` (FK → chats CASCADE, denormalized for realtime filtering), `user_id` (FK → users, nullable — NULL = Bruce), `type` (text, default `thumbs_up`), `created_at`. Partial unique indexes: one Bruce reaction per message per type; one member reaction per message per user per type. RLS: read via `is_chat_member(chat_id)`, insert/delete own only. Service role for Bruce reactions.
 
+**browser_sessions** — shared inline browser (migration 033); one active Browserbase session per chat. `id`, `chat_id` (FK → chats CASCADE), `browserbase_session_id`, `live_view_url` (Browserbase `debuggerFullscreenUrl`), `current_url` (default `about:blank`, synced on every action), `created_by` (FK → users SET NULL), `is_active`, `created_at`, `ended_at`. Partial index on `(chat_id, is_active) WHERE is_active`. On the realtime publication so the panel's address bar syncs across members. RLS: chat owner or any `chat_members` row. Service-role writes from API routes after membership check. Requires `BROWSERBASE_API_KEY` + `BROWSERBASE_PROJECT_ID`.
+
 **member_exclusions** — mutual exclusion pairs preventing two members from sharing a chat or project (migration 031); `id`, `user_id_a` (FK → users CASCADE), `user_id_b` (FK → users CASCADE), `created_by` (FK → users), `created_at`. Unique expression index on `(LEAST, GREATEST)` of the UUID pair. Admin-only RLS. DB triggers on `chat_members` and `project_members` enforce exclusions at insert time — raise `member_exclusion_violation` which API routes catch and return 409. `getExcludedMemberIds(userId)` in `lib/members/` fetches via service role for the UI layer.
 
 **RLS** is enabled on every table. `is_admin()` bypasses it for: `household`, `users`, `invite_tokens`, `pending_memory`. Admin does NOT bypass RLS on: `projects`, `project_members`, `chats`, `chat_members`, `messages`, `files`, `memory`. Memory privacy is architectural — no admin content access.
@@ -95,6 +98,8 @@ All chat routes use the same tool set. Tool definitions live in `lib/`. System b
 **manage_reminders** — `lib/remindersTools.ts`. Create, list, complete, and snooze personal reminders. Low-stakes: create immediately with brief acknowledgment, no confirmation needed. System block: `REMINDERS_SYSTEM_BLOCK`. All contexts.
 
 **Document tools** — `lib/documents/documentTools.ts`. Read spreadsheets, CSVs, and Drive files; resolve paths; list directory contents. System block: `DOCUMENT_SYSTEM_BLOCK`. All contexts.
+
+**browse_page** — shared inline browser. Tool def + `BROWSER_SYSTEM_BLOCK` live in `lib/browser/browseTool.ts`. Actions: `navigate` | `act` | `extract` | `screenshot`. Bruce drives a Browserbase session server-side via Stagehand (`lib/browser/stagehand.ts`, reconnects to the **existing** session by `browserbaseSessionID` — never creates its own); household members watch + interact via the Browserbase Live View iframe (`components/browser/BrowserPanel.tsx`). One session per chat, persisted in `browser_sessions` (`lib/browser/browserbase.ts`). Unlike other tools, `browse_page` is executed specially inside `runChatStream` (`executeBrowsePage`) so it can emit a `\x1eBROWSER_EVENT:{…}\x1e` sentinel that opens the panel the instant Bruce starts working; the client parses it in `parseStreamFrame` → `tick.browserEvent` and feeds the shared `useBrowserPanel` hook. URL bar syncs across members via Realtime on `browser_sessions.current_url`. Not available in incognito (globe button hidden; tool errors on null chatId). All non-incognito contexts. Routes inject the active-session note via `getBrowserContextBlock(chatId)` → `SystemPromptContext.browserContext`. API: `app/api/browser/session/route.ts` (POST create / DELETE release), `app/api/browser/action/route.ts` (human-side navigate). Requires `BROWSERBASE_API_KEY` + `BROWSERBASE_PROJECT_ID`.
 
 **Media analysis** — Bruce reads PDFs and analyzes images. Defined via `IMAGE_VISION_BLOCK` in `lib/anthropic/index.ts`. All contexts.
 
@@ -173,6 +178,9 @@ All three chat contexts (standalone, project, family) share the same code paths.
 | Memory generation on unmount | `lib/chat/useChatMemory.ts` |
 | Reaction state (initial seed, post-stream reload, optimistic toggle) | `hooks/useChatReactions.ts` |
 | Per-chat session (device location, mark-read, delete message, retry) | `hooks/useChatSession.ts` |
+| Shared-browser panel state + lifecycle | `hooks/useBrowserPanel.ts` |
+| Shared-browser panel UI (Live View iframe + URL bar) | `components/browser/BrowserPanel.tsx` |
+| Shared-browser responsive split (desktop grid / mobile overlay) | `components/browser/BrowserSplitLayout.tsx` |
 | Sender display name + color resolution | `lib/chat/senderProfile.ts` |
 
 **CHAT UI RULE:** Visual changes (bubble styling, list layout, input bar, top bar layout, dots, indicators) must always be made in the shared components above, never in the context wrappers. Context variations are handled via props — never by forking a component.
@@ -209,6 +217,7 @@ All three chat contexts (standalone, project, family) share the same code paths.
 - **Design tokens only.** `app/globals.css` has all tokens. Accent: `#0F6E56`. No Tailwind.
 - **Mobile-first.** Every component must work on iPhone.
 - **Deploy:** git push to main. Vercel auto-deploys. Never `npx vercel --prod`.
+- **Env vars:** API keys live server-side only. Required: `ANTHROPIC_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `FAL_KEY`, `JINA_API_KEY`, Google + Firebase keys, and (shared browser) `BROWSERBASE_API_KEY` + `BROWSERBASE_PROJECT_ID`. Add new ones to `.env.local` and Vercel project settings.
 - **Schema changes:** update `schema.sql` and provide a numbered migration file in `migrations/`.
 - **Migrations are manual:** apply in the Supabase SQL editor immediately after push. App will 500 until applied. Log completion in `docs/migration-log.md`.
 - **Working tree must be clean before ending a session.** Run `git status` to confirm.

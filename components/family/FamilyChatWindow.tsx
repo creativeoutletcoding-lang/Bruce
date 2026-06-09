@@ -18,6 +18,9 @@ import {
 import { useChatMemory } from "@/lib/chat/useChatMemory";
 import { useChatReactions } from "@/hooks/useChatReactions";
 import { useChatSession } from "@/hooks/useChatSession";
+import { useBrowserPanel } from "@/hooks/useBrowserPanel";
+import BrowserPanel from "@/components/browser/BrowserPanel";
+import BrowserSplitLayout from "@/components/browser/BrowserSplitLayout";
 import { getDisplayName } from "@/lib/chat/senderProfile";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 
@@ -101,6 +104,8 @@ export default function FamilyChatWindow({
   const { currentLocation, deleteMessage, handleRetry } = useChatSession({
     chatId, currentUserId, messages, setMessages, setInput, setError,
   });
+  const { panel: browserPanel, opening: browserOpening, openBrowser, toggleBrowser, closeBrowser, applyBrowserEvent } =
+    useBrowserPanel(chatId, true);
 
   useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
   useEffect(() => {
@@ -309,8 +314,9 @@ export default function FamilyChatWindow({
       const { accumulated, aborted } = await consumeStream({
         response: res,
         signal: abort.signal,
-        onTick: ({ display, task, workingStatus: ws }) => {
+        onTick: ({ display, task, workingStatus: ws, browserEvent }) => {
           if (ws !== null) setWorkingStatus(ws);
+          if (browserEvent) applyBrowserEvent(browserEvent);
           setMessages((prev) =>
             prev.map((m) =>
               m.id === streamMsgId
@@ -370,7 +376,18 @@ export default function FamilyChatWindow({
 
   function handleSend() { sendMessage(input.trim()); }
 
+  const browserPanelEl = browserPanel.sessionId && browserPanel.liveViewUrl ? (
+    <BrowserPanel
+      chatId={chatId}
+      sessionId={browserPanel.sessionId}
+      liveViewUrl={browserPanel.liveViewUrl}
+      initialUrl={browserPanel.currentUrl ?? undefined}
+      onClose={closeBrowser}
+    />
+  ) : null;
+
   return (
+    <BrowserSplitLayout panelOpen={browserPanel.open && !!browserPanelEl} panel={browserPanelEl}>
     <div style={styles.container}>
       {topbar}
 
@@ -403,8 +420,12 @@ export default function FamilyChatWindow({
         attachedFiles={attachedFiles}
         onFilesAttach={(files) => setAttachedFiles((prev) => [...prev, ...files])}
         onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
+        onBrowserClick={() => (browserPanel.sessionId ? toggleBrowser() : openBrowser())}
+        browserActive={browserPanel.open}
+        browserOpening={browserOpening}
       />
     </div>
+    </BrowserSplitLayout>
   );
 }
 

@@ -1,5 +1,5 @@
 # Bruce Database Schema — Live Reference
-_Reflects schema.sql + migrations 001–029_
+_Reflects schema.sql + migrations 001–033_
 
 ---
 
@@ -444,6 +444,30 @@ Personal reminders managed via the `manage_reminders` tool. Migrations 027–028
 
 ---
 
+## browser_sessions
+
+Shared inline browser. One active Browserbase session per chat — Bruce drives it server-side via Stagehand, household members watch + interact through a Browserbase Live View iframe. Migration 033.
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| id | UUID | NOT NULL | gen_random_uuid() (PK) |
+| chat_id | UUID | NOT NULL | — (FK → chats, ON DELETE CASCADE) |
+| browserbase_session_id | TEXT | NOT NULL | — |
+| live_view_url | TEXT | NOT NULL | — (Browserbase `debuggerFullscreenUrl`) |
+| current_url | TEXT | nullable | `'about:blank'` |
+| created_by | UUID | nullable | — (FK → users, ON DELETE SET NULL) |
+| is_active | BOOLEAN | nullable | TRUE |
+| created_at | TIMESTAMPTZ | nullable | NOW() |
+| ended_at | TIMESTAMPTZ | nullable | — |
+
+- **Index:** `browser_sessions_chat_active_idx` on `(chat_id, is_active) WHERE is_active = TRUE` — one active row per chat.
+- **RLS:** enabled
+  - `browser_sessions_select` / `_insert` / `_update` — chat owner OR any `chat_members` row OR `created_by = auth.uid()`
+- **Writes:** API routes use the service-role client after verifying chat membership. `current_url` is updated on every Stagehand action so the panel's address bar syncs via Realtime.
+- **Env:** requires `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`.
+
+---
+
 ## Helper Functions
 
 | Function | Returns | Notes |
@@ -458,7 +482,7 @@ Personal reminders managed via the `manage_reminders` tool. Migrations 027–028
 
 ## Realtime Publications
 
-Tables on `supabase_realtime`: `messages`, `notifications`, `chats`, `chat_members`
+Tables on `supabase_realtime`: `messages`, `notifications`, `chats`, `chat_members`, `browser_sessions`
 
 ## Extensions
 

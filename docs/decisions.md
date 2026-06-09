@@ -6,6 +6,26 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Shared inline browser (BrowserPanel) — 2026-06-09
+
+**What it is.** A browser that Bruce and household members drive *together* inside any chat. Bruce navigates/clicks/extracts server-side; humans watch the same session move live and can take the wheel at any moment. One Browserbase session is shared by both sides — Bruce's actions and the human's clicks land in the same browser, and each side sees the other's effect on the next render.
+
+**Browserbase + Stagehand over self-hosted Playwright.** A self-hosted headless Chrome would mean running and scaling browser processes on the DigitalOcean droplet, building our own live-streaming transport (CDP screencast → websocket → canvas), and solving the X-Frame-Options problem ourselves (target sites refuse to be iframed). Browserbase gives us a managed browser per session plus a **Live View** iframe served from the Browserbase domain, which sidesteps X-Frame-Options entirely and renders an interactive (not just pixels) view the human can click into. We use `debuggerFullscreenUrl` for the clean full-bleed embed. `keepAlive: true` so the session survives the gaps between Bruce's actions while a member reads the page.
+
+**Stagehand v3 for Bruce's control.** Stagehand wraps the session with natural-language `act()` / `extract()` on top of low-level `page.goto`/`screenshot`. The non-obvious requirement: Bruce must connect to the **existing** Browserbase session by id (`browserbaseSessionID` in the V3 constructor), never create his own — that is the entire trick that keeps Bruce and the human in one shared browser. v3 API differs from v2: `act(instruction)` (string, not `{action}`), `extract(instruction, schema)` (positional), and there is no `stagehand.page` — the page comes from `stagehand.context.activePage()`. `stagehand.close()` only tears down the CDP connection; the Browserbase session persists.
+
+**One session per chat, keyed in Postgres.** `browser_sessions` (migration 033) holds the single active row per `chat_id`. `current_url` is updated on every action and the table is on the realtime publication, so each member's address bar syncs via Supabase Realtime — the same mechanism reactions use. RLS mirrors chat visibility (owner or `chat_members`).
+
+**Panel opens from the stream, not a separate channel.** Rather than invent a new SSE protocol, the `browse_page` tool emits a `\x1eBROWSER_EVENT:{…}\x1e` sentinel in the existing byte stream (same family as `STATUS`/`TASK_PROGRESS`). `parseStreamFrame` surfaces the latest one as `tick.browserEvent`; all three chat contexts feed it to the shared `useBrowserPanel` hook. The panel therefore opens the instant Bruce starts working, before his summary text arrives.
+
+**Shared-module discipline.** Per the CHAT UI/LOGIC rules, the panel state machine lives in `hooks/useBrowserPanel.ts`, the panel UI in `components/browser/BrowserPanel.tsx`, and the responsive split (50/50 desktop grid, full-screen mobile overlay) in `components/browser/BrowserSplitLayout.tsx`. The three wrappers (`ChatWindow`, `ProjectChatView`, `FamilyChatWindow`) each only wire the hook, feed `applyBrowserEvent`, pass globe props to `MessageInput`, and wrap their return — no forked layout or logic.
+
+**System prompt.** Followed the route-injected context pattern (`locationContext`/`remindersContext`) rather than making `buildSystemPrompt` async: routes call `getBrowserContextBlock(chatId)` and pass `browserContext`. The base "you have a browse_page tool" text is always present via `BROWSER_SYSTEM_BLOCK` in `buildToolSystemBlocks`; the active-session note (current URL) is added only when a live session exists.
+
+**Incognito.** The panel is unavailable in incognito chats — the globe button is hidden (`onBrowserClick` omitted) and the tool returns an error if invoked with a null `chatId` (incognito never persists a chat row to key a session to).
+
+---
+
 ### Bidirectional reactions + Bruce emoji awareness — 2026-06-04
 
 **Part 1 — Full bidirectional reactions.** Removed the `msg.role === "assistant" &&` gate from `onReact` in `MessageList.tsx` (line previously read "members only react to Bruce"). `onReact` is now passed to every bubble regardless of role. The API endpoint (`/api/messages/[id]/reaction`) was already role-agnostic. `handleReact` in `useChatReactions.ts` was already role-agnostic. Reaction display (`reactions={reactionsMap?.[msg.id]}`) was already role-agnostic. Only the action gate needed removal.
