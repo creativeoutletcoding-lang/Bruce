@@ -1078,6 +1078,7 @@ CREATE TABLE browser_sessions (
   chat_id UUID REFERENCES chats(id) ON DELETE CASCADE NOT NULL,
   browserbase_session_id TEXT NOT NULL,
   live_view_url TEXT NOT NULL,
+  connect_url TEXT,
   current_url TEXT DEFAULT 'about:blank',
   created_by UUID REFERENCES users(id) ON DELETE SET NULL,
   is_active BOOLEAN DEFAULT TRUE,

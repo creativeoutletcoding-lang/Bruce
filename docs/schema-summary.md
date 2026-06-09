@@ -1,5 +1,5 @@
 # Bruce Database Schema — Live Reference
-_Reflects schema.sql + migrations 001–033_
+_Reflects schema.sql + migrations 001–034_
 
 ---
 
@@ -454,6 +454,7 @@ Shared inline browser. One active Browserbase session per chat — Bruce drives 
 | chat_id | UUID | NOT NULL | — (FK → chats, ON DELETE CASCADE) |
 | browserbase_session_id | TEXT | NOT NULL | — |
 | live_view_url | TEXT | NOT NULL | — (Browserbase `debuggerFullscreenUrl`) |
+| connect_url | TEXT | nullable | — (signed CDP WebSocket URL, migration 034) |
 | current_url | TEXT | nullable | `'about:blank'` |
 | created_by | UUID | nullable | — (FK → users, ON DELETE SET NULL) |
 | is_active | BOOLEAN | nullable | TRUE |

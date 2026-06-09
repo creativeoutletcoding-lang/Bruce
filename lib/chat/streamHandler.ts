@@ -218,12 +218,18 @@ async function executeBrowsePage(
     let isNew = false;
     if (!session) {
       const created = await createBrowserSession(chatId, userId);
-      session = { sessionId: created.sessionId, liveViewUrl: created.liveViewUrl, currentUrl: "about:blank" };
+      session = {
+        sessionId: created.sessionId,
+        liveViewUrl: created.liveViewUrl,
+        currentUrl: "about:blank",
+        connectUrl: created.connectUrl,
+      };
       isNew = true;
     }
 
     const actionResult = await performBrowserAction(
       session.sessionId,
+      session.connectUrl,
       action as "navigate" | "act" | "extract" | "screenshot",
       { url, instruction },
     );

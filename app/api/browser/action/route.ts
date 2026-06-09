@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "No active browser session for this chat" }, { status: 404 });
   }
 
-  const actionResult = await performBrowserAction(session.sessionId, action, { url, instruction });
+  const actionResult = await performBrowserAction(session.sessionId, session.connectUrl, action, { url, instruction });
 
   if (actionResult.currentUrl && actionResult.currentUrl !== "about:blank") {
     await updateSessionUrl(chatId, actionResult.currentUrl);

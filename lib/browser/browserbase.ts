@@ -22,6 +22,8 @@ export interface ActiveBrowserSession {
   sessionId: string;
   liveViewUrl: string;
   currentUrl: string;
+  /** Signed CDP WebSocket URL for direct Playwright connect. Null for pre-034 rows. */
+  connectUrl: string | null;
 }
 
 // A freshly created Browserbase session starts in PENDING and isn't connectable
@@ -47,7 +49,7 @@ async function waitForSessionReady(
 export async function createBrowserSession(
   chatId: string,
   createdBy: string
-): Promise<{ sessionId: string; liveViewUrl: string }> {
+): Promise<{ sessionId: string; liveViewUrl: string; connectUrl: string }> {
   // keepAlive prevents the session from idling out during slow chats while a
   // member is reading the page between Bruce's actions.
   const session = await bbClient().sessions.create({
@@ -55,7 +57,12 @@ export async function createBrowserSession(
     keepAlive: true,
   });
 
-  // Wait for RUNNING before debug()/Stagehand connect — a PENDING session isn't
+  // The create response carries the signed CDP WebSocket URL — capture it now so
+  // the action runner never has to re-retrieve it from Browserbase (that path is
+  // broken in Stagehand v3.5's reconnect).
+  const connectUrl = session.connectUrl;
+
+  // Wait for RUNNING before debug()/connect — a PENDING session isn't
   // connectable yet.
   await waitForSessionReady(bbClient(), session.id);
 
@@ -70,6 +77,7 @@ export async function createBrowserSession(
     chat_id: chatId,
     browserbase_session_id: session.id,
     live_view_url: liveViewUrl,
+    connect_url: connectUrl ?? null,
     current_url: "about:blank",
     created_by: createdBy,
     is_active: true,
@@ -78,7 +86,7 @@ export async function createBrowserSession(
     console.error("[browserbase] failed to persist session:", error.message);
   }
 
-  return { sessionId: session.id, liveViewUrl };
+  return { sessionId: session.id, liveViewUrl, connectUrl };
 }
 
 export async function getActiveBrowserSession(
@@ -87,7 +95,7 @@ export async function getActiveBrowserSession(
   const supabase = createServiceRoleClient();
   const { data } = await supabase
     .from("browser_sessions")
-    .select("browserbase_session_id, live_view_url, current_url")
+    .select("browserbase_session_id, live_view_url, current_url, connect_url")
     .eq("chat_id", chatId)
     .eq("is_active", true)
     .order("created_at", { ascending: false })
@@ -99,6 +107,7 @@ export async function getActiveBrowserSession(
     sessionId: data.browserbase_session_id as string,
     liveViewUrl: data.live_view_url as string,
     currentUrl: (data.current_url as string) ?? "about:blank",
+    connectUrl: (data.connect_url as string | null) ?? null,
   };
 }
 
