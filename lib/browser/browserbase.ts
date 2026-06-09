@@ -24,6 +24,26 @@ export interface ActiveBrowserSession {
   currentUrl: string;
 }
 
+// A freshly created Browserbase session starts in PENDING and isn't connectable
+// until it reaches RUNNING. Stagehand's CDP connect (and our debug() call) can
+// fail if we proceed too early, so poll until the session is RUNNING.
+async function waitForSessionReady(
+  bb: Browserbase,
+  sessionId: string,
+  timeoutMs = 15000
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const session = await bb.sessions.retrieve(sessionId);
+    if (session.status === "RUNNING") return;
+    if (session.status === "ERROR" || session.status === "TIMED_OUT") {
+      throw new Error(`Browserbase session failed to start: ${session.status}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error("Browserbase session did not reach RUNNING state in time");
+}
+
 export async function createBrowserSession(
   chatId: string,
   createdBy: string
@@ -34,6 +54,10 @@ export async function createBrowserSession(
     projectId: process.env.BROWSERBASE_PROJECT_ID!,
     keepAlive: true,
   });
+
+  // Wait for RUNNING before debug()/Stagehand connect — a PENDING session isn't
+  // connectable yet.
+  await waitForSessionReady(bbClient(), session.id);
 
   // Live View URL is served from the Browserbase domain, so embedding it in an
   // iframe bypasses X-Frame-Options on the target site. debuggerFullscreenUrl
