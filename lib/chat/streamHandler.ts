@@ -227,12 +227,28 @@ async function executeBrowsePage(
       isNew = true;
     }
 
-    const actionResult = await performBrowserAction(
-      session.sessionId,
-      session.connectUrl,
-      action as "navigate" | "act" | "extract" | "screenshot",
-      { url, instruction },
-    );
+    const browserAction = action as "navigate" | "act" | "extract" | "screenshot";
+    let actionResult;
+    try {
+      actionResult = await performBrowserAction(session.sessionId, session.connectUrl, browserAction, { url, instruction });
+    } catch (err) {
+      // The session was dead (CDP connect failed). Spin up a fresh one and retry
+      // once — the panel re-opens on the new session via isNew. If the retry also
+      // fails, let it propagate to the catch below and surface to Bruce normally.
+      if (err instanceof Error && err.message === "SESSION_DEAD") {
+        const created = await createBrowserSession(chatId, userId);
+        session = {
+          sessionId: created.sessionId,
+          liveViewUrl: created.liveViewUrl,
+          currentUrl: "about:blank",
+          connectUrl: created.connectUrl,
+        };
+        isNew = true;
+        actionResult = await performBrowserAction(session.sessionId, session.connectUrl, browserAction, { url, instruction });
+      } else {
+        throw err;
+      }
+    }
 
     const currentUrl =
       actionResult.currentUrl && actionResult.currentUrl !== "about:blank"
@@ -263,6 +279,9 @@ async function executeBrowsePage(
     const message = error instanceof Error ? error.message : String(error);
     // Surface the real error to Bruce so it shows up in the chat instead of a
     // generic failure he can't explain.
+    if (message === "SESSION_DEAD") {
+      return { result: "Error: the shared browser session ended and could not be re-established. Ask the user to reopen the browser and try again.", event: null };
+    }
     return { result: `Error: the shared browser failed — ${message}`, event: null };
   }
 }

@@ -50,7 +50,21 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "No active browser session for this chat" }, { status: 404 });
   }
 
-  const actionResult = await performBrowserAction(session.sessionId, session.connectUrl, action, { url, instruction });
+  let actionResult;
+  try {
+    actionResult = await performBrowserAction(session.sessionId, session.connectUrl, action, { url, instruction });
+  } catch (err) {
+    // The shared session is dead (CDP connect failed). performBrowserAction has
+    // already marked it inactive; tell the client to reopen the panel rather than
+    // 500. Bruce's tool path auto-recreates; the human side reopens via the globe.
+    if (err instanceof Error && err.message === "SESSION_DEAD") {
+      return Response.json(
+        { error: "Browser session ended — reopen the panel", sessionDead: true },
+        { status: 410 },
+      );
+    }
+    throw err;
+  }
 
   if (actionResult.currentUrl && actionResult.currentUrl !== "about:blank") {
     await updateSessionUrl(chatId, actionResult.currentUrl);

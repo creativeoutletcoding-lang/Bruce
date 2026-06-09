@@ -124,6 +124,18 @@ The user can see a live browser panel in this chat. Current URL: ${session.curre
 You and the user share this one browser — use the browse_page tool to navigate, act, or extract, and coordinate naturally. The user may have clicked or typed since your last action, so don't assume the page is unchanged.`;
 }
 
+// Mark a session inactive by its Browserbase id — used when a CDP connect fails
+// (the underlying Browserbase session is dead/expired), so the next browse picks
+// a fresh one instead of re-selecting this corpse. Keyed on browserbase_session_id
+// since the action runner only knows the session id, not the chat.
+export async function markSessionInactive(sessionId: string): Promise<void> {
+  const supabase = createServiceRoleClient();
+  await supabase
+    .from("browser_sessions")
+    .update({ is_active: false, ended_at: new Date().toISOString() })
+    .eq("browserbase_session_id", sessionId);
+}
+
 export async function updateSessionUrl(chatId: string, url: string): Promise<void> {
   const supabase = createServiceRoleClient();
   await supabase

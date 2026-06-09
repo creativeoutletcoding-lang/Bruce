@@ -37,7 +37,18 @@ export async function performBrowserAction(
     connectUrl ??
     `wss://connect.browserbase.com?apiKey=${process.env.BROWSERBASE_API_KEY}&sessionId=${sessionId}`;
 
-  const browser = await chromium.connectOverCDP(wsUrl);
+  // A failed CDP connect means the underlying Browserbase session is dead or
+  // expired. Mark it inactive so it's never re-selected, and signal the caller
+  // (via the SESSION_DEAD sentinel error) to spin up a fresh session and retry.
+  let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>>;
+  try {
+    browser = await chromium.connectOverCDP(wsUrl);
+  } catch (error) {
+    console.error("STAGEHAND_ERROR: CDP connect failed:", error);
+    const { markSessionInactive } = await import("@/lib/browser/browserbase");
+    await markSessionInactive(sessionId).catch(() => {});
+    throw new Error("SESSION_DEAD");
+  }
 
   try {
     const context = browser.contexts()[0] ?? (await browser.newContext());
