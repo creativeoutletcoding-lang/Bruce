@@ -207,50 +207,58 @@ async function executeBrowsePage(
   const url = typeof input.url === "string" ? input.url : undefined;
   const instruction = typeof input.instruction === "string" ? input.instruction : undefined;
 
-  const { getActiveBrowserSession, createBrowserSession, updateSessionUrl } = await import(
-    "@/lib/browser/browserbase"
-  );
-  const { performBrowserAction } = await import("@/lib/browser/stagehand");
+  try {
+    const { getActiveBrowserSession, createBrowserSession, updateSessionUrl } = await import(
+      "@/lib/browser/browserbase"
+    );
+    const { performBrowserAction } = await import("@/lib/browser/stagehand");
 
-  // Reuse the chat's single active session, or open one (panel opens via isNew).
-  let session = await getActiveBrowserSession(chatId);
-  let isNew = false;
-  if (!session) {
-    const created = await createBrowserSession(chatId, userId);
-    session = { sessionId: created.sessionId, liveViewUrl: created.liveViewUrl, currentUrl: "about:blank" };
-    isNew = true;
+    // Reuse the chat's single active session, or open one (panel opens via isNew).
+    let session = await getActiveBrowserSession(chatId);
+    let isNew = false;
+    if (!session) {
+      const created = await createBrowserSession(chatId, userId);
+      session = { sessionId: created.sessionId, liveViewUrl: created.liveViewUrl, currentUrl: "about:blank" };
+      isNew = true;
+    }
+
+    const actionResult = await performBrowserAction(
+      session.sessionId,
+      action as "navigate" | "act" | "extract" | "screenshot",
+      { url, instruction },
+    );
+
+    const currentUrl =
+      actionResult.currentUrl && actionResult.currentUrl !== "about:blank"
+        ? actionResult.currentUrl
+        : session.currentUrl;
+    if (actionResult.currentUrl && actionResult.currentUrl !== "about:blank") {
+      await updateSessionUrl(chatId, actionResult.currentUrl);
+    }
+
+    const event = {
+      sessionId: session.sessionId,
+      liveViewUrl: session.liveViewUrl,
+      currentUrl,
+      isNew,
+    };
+
+    let result: string;
+    if (actionResult.success) {
+      // Screenshots return a data URL — don't dump it back into the model context.
+      const payload = action === "screenshot" ? "(screenshot captured in the panel)" : actionResult.result;
+      result = JSON.stringify({ success: true, currentUrl, result: payload });
+    } else {
+      result = `Error: ${actionResult.error ?? "browser action failed"} (current URL: ${currentUrl})`;
+    }
+    return { result, event };
+  } catch (error) {
+    console.error("BROWSE_PAGE_ERROR:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    // Surface the real error to Bruce so it shows up in the chat instead of a
+    // generic failure he can't explain.
+    return { result: `Error: the shared browser failed — ${message}`, event: null };
   }
-
-  const actionResult = await performBrowserAction(
-    session.sessionId,
-    action as "navigate" | "act" | "extract" | "screenshot",
-    { url, instruction },
-  );
-
-  const currentUrl =
-    actionResult.currentUrl && actionResult.currentUrl !== "about:blank"
-      ? actionResult.currentUrl
-      : session.currentUrl;
-  if (actionResult.currentUrl && actionResult.currentUrl !== "about:blank") {
-    await updateSessionUrl(chatId, actionResult.currentUrl);
-  }
-
-  const event = {
-    sessionId: session.sessionId,
-    liveViewUrl: session.liveViewUrl,
-    currentUrl,
-    isNew,
-  };
-
-  let result: string;
-  if (actionResult.success) {
-    // Screenshots return a data URL — don't dump it back into the model context.
-    const payload = action === "screenshot" ? "(screenshot captured in the panel)" : actionResult.result;
-    result = JSON.stringify({ success: true, currentUrl, result: payload });
-  } else {
-    result = `Error: ${actionResult.error ?? "browser action failed"} (current URL: ${currentUrl})`;
-  }
-  return { result, event };
 }
 
 function extractStepDetail(toolName: string, result: string): string | undefined {

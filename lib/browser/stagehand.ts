@@ -92,6 +92,7 @@ export async function performBrowserAction(
 
     return { success: true, result, currentUrl: page.url() };
   } catch (error) {
+    console.error("STAGEHAND_ERROR:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Browser action failed",
