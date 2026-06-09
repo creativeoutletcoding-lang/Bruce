@@ -46,7 +46,7 @@ export async function performBrowserAction(
     browserbaseSessionID: sessionId, // reconnect to the existing shared session
     keepAlive: true,
     model: {
-      modelName: "claude-sonnet-4-6",
+      modelName: "anthropic/claude-sonnet-4-20250514",
       apiKey: process.env.ANTHROPIC_API_KEY!,
     },
   });
