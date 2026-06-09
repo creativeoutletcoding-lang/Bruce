@@ -22,7 +22,6 @@ import { useChatReactions } from "@/hooks/useChatReactions";
 import { useChatSession } from "@/hooks/useChatSession";
 import { useBrowserPanel } from "@/hooks/useBrowserPanel";
 import BrowserPanel from "@/components/browser/BrowserPanel";
-import BrowserSplitLayout from "@/components/browser/BrowserSplitLayout";
 import { getDisplayName } from "@/lib/chat/senderProfile";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 
@@ -466,7 +465,6 @@ export default function ProjectChatView({
   ) : null;
 
   return (
-    <BrowserSplitLayout panelOpen={browserPanel.open && !!browserPanelEl} panel={browserPanelEl}>
     <div style={styles.container}>
       <ProjectTopBar
         projectId={projectId}
@@ -485,6 +483,7 @@ export default function ProjectChatView({
         groupContext={members.length > 1}
         reactionsMap={reactionsMap}
         onReact={handleReact}
+        inlineCard={browserPanel.open ? browserPanelEl : null}
       />
 
       {error && (
@@ -509,7 +508,6 @@ export default function ProjectChatView({
         browserOpening={browserOpening}
       />
     </div>
-    </BrowserSplitLayout>
   );
 }
 

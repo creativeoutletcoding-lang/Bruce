@@ -1,11 +1,5 @@
 "use client";
 
-// Shared inline browser panel. Renders the Browserbase Live View iframe (the
-// human side of the shared session) plus an address bar. Bruce drives the same
-// session server-side via Stagehand; humans can click/type directly in the
-// iframe. URL changes from either side are synced through Supabase Realtime on
-// the browser_sessions row, keeping every member's address bar in step.
-
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -15,6 +9,20 @@ interface BrowserPanelProps {
   liveViewUrl: string;
   initialUrl?: string;
   onClose: () => void;
+}
+
+function useIsDesktop(): boolean {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(min-width: 768px)").matches : true
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener("change", handler);
+    setIsDesktop(mq.matches);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return isDesktop;
 }
 
 export default function BrowserPanel({
@@ -29,10 +37,22 @@ export default function BrowserPanel({
   const [urlBarValue, setUrlBarValue] = useState(initialUrl ?? "");
   const [navigating, setNavigating] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const urlBarRef = useRef(urlBarValue);
+  const isDesktop = useIsDesktop();
   urlBarRef.current = urlBarValue;
 
-  // ── Connection state from the Live View iframe ──────────────────────────────
+  // Escape exits fullscreen
+  useEffect(() => {
+    if (!isFullscreen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setIsFullscreen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isFullscreen]);
+
+  // Connection state from the Live View iframe
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data === "browserbase-disconnected") setDisconnected(true);
@@ -42,9 +62,9 @@ export default function BrowserPanel({
     return () => window.removeEventListener("message", handler);
   }, []);
 
-  // ── Realtime URL sync ───────────────────────────────────────────────────────
-  // Any member's navigation (or Bruce's) updates browser_sessions.current_url;
-  // reflect it in the address bar unless the user is mid-edit on the same value.
+  // Realtime URL sync — any member's navigation (or Bruce's) updates
+  // browser_sessions.current_url; reflect it in the address bar unless
+  // the user is mid-edit on the same value.
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
@@ -93,8 +113,26 @@ export default function BrowserPanel({
     setIframeKey((k) => k + 1);
   }
 
+  const viewportHeight = isFullscreen ? undefined : isDesktop ? "460px" : "340px";
+
+  const cardStyle: React.CSSProperties = isFullscreen
+    ? {
+        position: "fixed",
+        inset: 0,
+        zIndex: 200,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        backgroundColor: "var(--bg-secondary)",
+      }
+    : styles.card;
+
+  const viewportStyle: React.CSSProperties = isFullscreen
+    ? { position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }
+    : { position: "relative", height: viewportHeight, flexShrink: 0 };
+
   return (
-    <div style={styles.panel}>
+    <div style={cardStyle}>
       <div style={styles.topBar}>
         <button
           onClick={reloadIframe}
@@ -150,25 +188,57 @@ export default function BrowserPanel({
           </svg>
         </button>
 
-        <button onClick={onClose} style={styles.iconButton} aria-label="Close browser panel" type="button">
+        <button
+          onClick={() => setIsFullscreen((f) => !f)}
+          style={styles.iconButton}
+          aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          type="button"
+        >
+          {isFullscreen ? (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M5.5 2.5v3H2.5M10.5 2.5H13.5V5.5M13.5 10.5v3H10.5M5.5 13.5H2.5V10.5"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M2.5 5.5V2.5H5.5M13.5 2.5v3H10.5M13.5 10.5V13.5H10.5M2.5 10.5V13.5H5.5"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          )}
+        </button>
+
+        <button
+          onClick={onClose}
+          style={styles.iconButton}
+          aria-label="Close browser panel"
+          type="button"
+        >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
         </button>
       </div>
 
-      <div style={styles.viewport}>
-        <div style={styles.iframeWrap}>
-          <iframe
-            key={`${sessionId}-${iframeKey}`}
-            src={liveViewUrl}
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
-            allow="clipboard-read; clipboard-write"
-            style={styles.iframe}
-            onLoad={() => setLoading(false)}
-            title="Shared browser"
-          />
-        </div>
+      <div style={viewportStyle}>
+        <iframe
+          key={`${sessionId}-${iframeKey}`}
+          src={liveViewUrl}
+          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+          allow="clipboard-read; clipboard-write"
+          style={styles.iframe}
+          onLoad={() => setLoading(false)}
+          title="Shared browser"
+        />
 
         {loading && !disconnected && (
           <div style={styles.overlay}>
@@ -197,24 +267,25 @@ export default function BrowserPanel({
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  panel: {
+  card: {
+    width: "100%",
+    borderRadius: "12px",
+    overflow: "hidden",
+    border: "1px solid var(--border)",
+    backgroundColor: "var(--bg-secondary)",
+    margin: "8px 0",
     display: "flex",
     flexDirection: "column",
-    height: "100%",
-    width: "100%",
-    overflow: "hidden",
-    backgroundColor: "var(--bg-primary)",
-    borderLeft: "1px solid var(--border)",
   },
   topBar: {
+    height: "44px",
     display: "flex",
     alignItems: "center",
-    gap: "6px",
-    padding: "0 10px",
-    height: "52px",
-    flexShrink: 0,
+    gap: "8px",
+    padding: "0 12px",
     borderBottom: "1px solid var(--border)",
     backgroundColor: "var(--bg-primary)",
+    flexShrink: 0,
   },
   iconButton: {
     flexShrink: 0,
@@ -245,28 +316,11 @@ const styles: Record<string, React.CSSProperties> = {
     caretColor: "var(--accent)",
     WebkitAppearance: "none",
   },
-  viewport: {
-    position: "relative",
-    flex: 1,
-    minHeight: 0,
-    backgroundColor: "var(--bg-secondary)",
-    // Flex column so the iframe wrapper's `flex: 1` fills the available space;
-    // the overlays are absolutely positioned and unaffected.
-    display: "flex",
-    flexDirection: "column",
-  },
-  iframeWrap: {
-    position: "relative",
-    width: "100%",
-    flex: 1,
-    overflow: "hidden",
-  },
   iframe: {
     width: "100%",
     height: "100%",
     border: "none",
     display: "block",
-    transformOrigin: "top left",
   },
   overlay: {
     position: "absolute",

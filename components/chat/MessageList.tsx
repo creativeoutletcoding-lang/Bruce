@@ -28,9 +28,11 @@ interface MessageListProps {
   groupContext?: boolean;
   reactionsMap?: Record<string, ReactionEntry[]>;
   onReact?: (messageId: string, type: string) => void;
+  /** Inline card rendered after all messages (e.g. the shared browser panel). */
+  inlineCard?: React.ReactNode;
 }
 
-export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus, currentUserId, onDeleteMessage, reactionsMap, onReact }: MessageListProps) {
+export default function MessageList({ messages, onRefresh, userColorHex, streamingStatus, currentUserId, onDeleteMessage, reactionsMap, onReact, inlineCard }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const streamingMsg = messages.find((m) => m.isStreaming);
@@ -122,6 +124,19 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
       scrollToBottom("smooth");
     }
   }, [messages]);
+
+  // Scroll to bottom when the inline card (e.g. browser panel) first appears.
+  const hasInlineCard = !!inlineCard;
+  useEffect(() => {
+    if (hasInlineCard) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollToBottom("smooth");
+        });
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasInlineCard]);
 
   // When the keyboard appears the input container grows, shrinking this list.
   // scrollTop doesn't auto-adjust, so the last message slides above the fold.
@@ -254,6 +269,11 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                 );
               }
             })}
+            {inlineCard && (
+              <div style={{ padding: "2px 16px" }}>
+                {inlineCard}
+              </div>
+            )}
             <div style={styles.bottomPad} />
             <div ref={endRef} />
           </div>

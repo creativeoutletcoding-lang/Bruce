@@ -25,7 +25,6 @@ import { useChatReactions } from "@/hooks/useChatReactions";
 import { useChatSession } from "@/hooks/useChatSession";
 import { useBrowserPanel } from "@/hooks/useBrowserPanel";
 import BrowserPanel from "@/components/browser/BrowserPanel";
-import BrowserSplitLayout from "@/components/browser/BrowserSplitLayout";
 
 type ReactionRow = { message_id: string; user_id: string | null; type: string };
 
@@ -420,7 +419,6 @@ export default function ChatWindow({
   ) : null;
 
   return (
-    <BrowserSplitLayout panelOpen={browserPanel.open && !!browserPanelEl} panel={browserPanelEl}>
     <div
       style={{
         ...styles.container,
@@ -435,7 +433,7 @@ export default function ChatWindow({
         </div>
       )}
 
-      <MessageList messages={messages} onRefresh={loadMessages} userColorHex={userColorHex} streamingStatus={workingStatus} currentUserId={currentUserId} onDeleteMessage={deleteMessage} reactionsMap={reactionsMap} onReact={handleReact} />
+      <MessageList messages={messages} onRefresh={loadMessages} userColorHex={userColorHex} streamingStatus={workingStatus} currentUserId={currentUserId} onDeleteMessage={deleteMessage} reactionsMap={reactionsMap} onReact={handleReact} inlineCard={browserPanel.open ? browserPanelEl : null} />
 
       {error && (
         <div style={styles.errorRow}>
@@ -469,7 +467,6 @@ export default function ChatWindow({
         browserOpening={browserOpening}
       />
     </div>
-    </BrowserSplitLayout>
   );
 }
 
