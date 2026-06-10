@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { requestAndGetToken, listenForegroundMessages } from "@/lib/firebase/client";
 import type { User } from "@/lib/types";
 import Sidebar from "./Sidebar";
-import MobileTabBar from "./MobileTabBar";
 
 interface ForegroundToast {
   title: string;
@@ -219,7 +218,6 @@ export default function ChatShell({ user, children }: ChatShellProps) {
             </div>
           )}
           {children}
-          <MobileTabBar />
         </main>
       </div>
     </ChatContext.Provider>
