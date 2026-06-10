@@ -1124,3 +1124,35 @@ ALTER PUBLICATION supabase_realtime ADD TABLE browser_sessions;
 -- must never be exposed to the client — server-side only via
 -- DigitalOcean and Vercel API routes.
 -- ============================================================
+
+-- ============================================================
+-- SCHEDULED TASKS (migration 035)
+-- Proactive standing tasks: run as their owner on a recurrence
+-- schedule, post results into a chat the owner belongs to.
+-- Dispatched by /api/cron/scheduled-tasks (every 5 minutes).
+-- ============================================================
+
+CREATE TABLE scheduled_tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  chat_id UUID NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  prompt TEXT NOT NULL,
+  schedule JSONB NOT NULL,
+  timezone TEXT NOT NULL DEFAULT 'America/New_York',
+  next_run_at TIMESTAMPTZ NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  last_run_at TIMESTAMPTZ,
+  last_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE scheduled_tasks ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "scheduled_tasks_own"
+ON scheduled_tasks FOR ALL
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+CREATE INDEX scheduled_tasks_due_idx
+ON scheduled_tasks(next_run_at)
+WHERE enabled = TRUE;

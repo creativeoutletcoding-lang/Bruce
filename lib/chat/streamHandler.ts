@@ -43,6 +43,11 @@ import {
   executeRemindersTool,
 } from "@/lib/remindersTools";
 import {
+  SCHEDULED_TASKS_TOOLS,
+  SCHEDULED_TASKS_SYSTEM_BLOCK,
+  executeScheduledTasksTool,
+} from "@/lib/scheduledTasks/tools";
+import {
   REACTION_TOOL,
   REACTION_SYSTEM_BLOCK,
   executeReactionTool,
@@ -85,6 +90,7 @@ export const TOOLS_FULL = [
   ...CALENDAR_TOOLS,
   ...GMAIL_TOOLS,
   ...REMINDERS_TOOLS,
+  ...SCHEDULED_TASKS_TOOLS,
   WEB_SEARCH_TOOL, // Anthropic native server tool — added to every request
   BROWSE_TOOL,
   HISTORY_SEARCH_TOOL,
@@ -99,6 +105,7 @@ export function buildToolSystemBlocks(opts: { includeImageGen: boolean }): strin
     CALENDAR_SYSTEM_BLOCK +
     GMAIL_SYSTEM_BLOCK +
     REMINDERS_SYSTEM_BLOCK +
+    SCHEDULED_TASKS_SYSTEM_BLOCK +
     (opts.includeImageGen ? IMAGE_SYSTEM_BLOCK : "") +
     IMAGE_VISION_BLOCK +
     SEARCH_SYSTEM_BLOCK +
@@ -191,6 +198,7 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   archive_email: "Archive email",
   delete_email: "Delete email",
   manage_reminders: "Manage reminders",
+  manage_scheduled_tasks: "Manage scheduled tasks",
   edit_image: "Edit image",
   browse_page: "Browse page",
 };
@@ -366,6 +374,9 @@ async function executeOneTool(
   }
   if (name === "manage_reminders") {
     return executeRemindersTool(input, userId, chatId);
+  }
+  if (name === "manage_scheduled_tasks") {
+    return executeScheduledTasksTool(input, userId, chatId);
   }
   if (name === "react_to_message") {
     const emoji = typeof input.emoji === "string" ? input.emoji : "👍";

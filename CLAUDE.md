@@ -31,7 +31,7 @@ Private household AI for the Johnson family at heybruce.app. Jake runs the build
 
 ## Database Schema
 
-Migrations 001–030 applied; 031–033 pending Supabase SQL editor. `schema.sql` is the source of truth — always update it when altering structure.
+Migrations 001–034 applied; **035 pending Supabase SQL editor** (scheduled_tasks). `schema.sql` is the source of truth — always update it when altering structure.
 
 **household** — single row; `memories` (jsonb), `context` (jsonb with family member data)
 
@@ -73,6 +73,8 @@ Migrations 001–030 applied; 031–033 pending Supabase SQL editor. `schema.sql
 
 **browser_sessions** — shared inline browser (migration 033); one active Browserbase session per chat. `id`, `chat_id` (FK → chats CASCADE), `browserbase_session_id`, `live_view_url` (Browserbase `debuggerFullscreenUrl`), `current_url` (default `about:blank`, synced on every action), `created_by` (FK → users SET NULL), `is_active`, `created_at`, `ended_at`. Partial index on `(chat_id, is_active) WHERE is_active`. On the realtime publication so the panel's address bar syncs across members. RLS: chat owner or any `chat_members` row. Service-role writes from API routes after membership check. Requires `BROWSERBASE_API_KEY` + `BROWSERBASE_PROJECT_ID`.
 
+**scheduled_tasks** — proactive standing tasks (migration 035); `id`, `user_id` (FK → users CASCADE), `chat_id` (FK → chats CASCADE — target chat, must be one the owner belongs to), `prompt`, `schedule` (jsonb: `{type: daily|weekly|monthly, time: "HH:MM", weekday?, day?}`), `timezone`, `next_run_at` (precomputed UTC, partial index WHERE enabled), `enabled`, `last_run_at`, `last_error`, `created_at`. RLS: users manage own rows; cron dispatcher uses service role. Privacy rule: a task runs as its owner and can never see or post anything the owner couldn't by hand.
+
 **member_exclusions** — mutual exclusion pairs preventing two members from sharing a chat or project (migration 031); `id`, `user_id_a` (FK → users CASCADE), `user_id_b` (FK → users CASCADE), `created_by` (FK → users), `created_at`. Unique expression index on `(LEAST, GREATEST)` of the UUID pair. Admin-only RLS. DB triggers on `chat_members` and `project_members` enforce exclusions at insert time — raise `member_exclusion_violation` which API routes catch and return 409. `getExcludedMemberIds(userId)` in `lib/members/` fetches via service role for the UI layer.
 
 **RLS** is enabled on every table. `is_admin()` bypasses it for: `household`, `users`, `invite_tokens`, `pending_memory`. Admin does NOT bypass RLS on: `projects`, `project_members`, `chats`, `chat_members`, `messages`, `files`, `memory`. Memory privacy is architectural — no admin content access.
@@ -97,6 +99,8 @@ All chat routes use the same tool set. Tool definitions live in `lib/`. System b
 
 **manage_reminders** — `lib/remindersTools.ts`. Create, list, complete, and snooze personal reminders. Low-stakes: create immediately with brief acknowledgment, no confirmation needed. System block: `REMINDERS_SYSTEM_BLOCK`. All contexts.
 
+**manage_scheduled_tasks** — `lib/scheduledTasks/tools.ts`. Create/list/update/delete standing tasks (recurring Bruce runs that post into the current chat — morning briefings, weekly summaries). Schedule math lives in `lib/scheduledTasks/schedule.ts` (pure, unit-tested — structured recurrence, no cron-expression parsing; `computeNextRunAt` is timezone- and DST-aware). System block: `SCHEDULED_TASKS_SYSTEM_BLOCK`. Not available in incognito (errors on null chatId). All non-incognito contexts.
+
 **Document tools** — `lib/documents/documentTools.ts`. Read spreadsheets, CSVs, and Drive files; resolve paths; list directory contents. System block: `DOCUMENT_SYSTEM_BLOCK`. All contexts.
 
 **browse_page** — shared inline browser. Tool def + `BROWSER_SYSTEM_BLOCK` live in `lib/browser/browseTool.ts`. Actions: `navigate` | `act` | `extract` | `screenshot`. Bruce drives a Browserbase session server-side (`lib/browser/stagehand.ts`, `performBrowserAction`) by connecting to the **existing** session over CDP with `playwright-core` (`chromium.connectOverCDP` using the signed `connect_url` captured at create time — never creates its own session; Stagehand's v3.5 `browserbaseSessionID` reconnect was unreliable so it was replaced with a direct CDP connect). `navigate` + `screenshot` are live; `act`/`extract` are stubbed for now. Household members watch + interact via the Browserbase Live View iframe (`components/browser/BrowserPanel.tsx`). One session per chat, persisted in `browser_sessions` (`lib/browser/browserbase.ts`). Unlike other tools, `browse_page` is executed specially inside `runChatStream` (`executeBrowsePage`) so it can emit a `\x1eBROWSER_EVENT:{…}\x1e` sentinel that opens the panel the instant Bruce starts working; the client parses it in `parseStreamFrame` → `tick.browserEvent` and feeds the shared `useBrowserPanel` hook. URL bar syncs across members via Realtime on `browser_sessions.current_url`. Not available in incognito (globe button hidden; tool errors on null chatId). All non-incognito contexts. Routes inject the active-session note via `getBrowserContextBlock(chatId)` → `SystemPromptContext.browserContext`. API: `app/api/browser/session/route.ts` (POST create / DELETE release), `app/api/browser/action/route.ts` (human-side navigate). Requires `BROWSERBASE_API_KEY` + `BROWSERBASE_PROJECT_ID`.
@@ -112,6 +116,8 @@ All chat routes use the same tool set. Tool definitions live in `lib/`. System b
 ## Background Infrastructure
 
 **Vercel native cron — reminders:** `GET /api/cron/reminders`, scheduled `"* * * * *"` (every minute) in `vercel.json`. Vercel injects `Authorization: Bearer <CRON_SECRET>` in production. Handler finds reminders where `remind_at <= now`, `notified_at IS NULL`, and `completed_at IS NULL`; fires FCM to all of the user's tokens in `user_fcm_tokens`; sets `notified_at = now()`. Deep-link URL uses `reminders.chat_id` when set.
+
+**Vercel native cron — scheduled tasks:** `GET /api/cron/scheduled-tasks`, scheduled `"*/5 * * * *"` in `vercel.json` (maxDuration 300). Finds due `scheduled_tasks` (enabled, `next_run_at <= now`, max 5 per invocation, sequential), **claims each before running** by advancing `next_run_at` conditioned on the read value (overlapping invocations can't double-fire), then executes a full Bruce turn server-side as the task's owner by draining `runChatStream` — same persistence, tool traces, and prompt caching as live chat. Family-type target chats get family mode + shared memory; everything else standalone + private memory. The run injects `scheduledTaskContext` into `buildSystemPrompt` (automated-run preamble). FCM goes to all chat members for family targets, owner only otherwise. Failures write `last_error` and skip to the next occurrence — no retries. Soft-deleted/missing target chats disable the task.
 
 **DigitalOcean droplet + PM2:** long-running background jobs not suited to serverless (e.g. Google Drive sync, morning summary generation).
 

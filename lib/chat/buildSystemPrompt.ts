@@ -57,6 +57,12 @@ export interface SystemPromptContext {
    * Bruce knows the panel is open and what URL it's showing.
    */
   browserContext?: string;
+  /**
+   * Automated-run preamble injected by the scheduled-tasks cron dispatcher.
+   * Present only on standing-task runs — tells Bruce no member is live in the
+   * chat and the task prompt is the entire instruction.
+   */
+  scheduledTaskContext?: string;
   /** When true, IMAGE_SYSTEM_BLOCK is included in tool blocks. Ignored in dev mode. */
   includeImageGen?: boolean;
   /** Project metadata. Required when mode === "project". */
@@ -222,6 +228,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): SystemPromptBlocks 
   if (ctx.locationContext) volatile += `\n\n${ctx.locationContext}`;
   if (ctx.remindersContext) volatile += `\n\n${ctx.remindersContext}`;
   if (ctx.browserContext) volatile += `\n\n${ctx.browserContext}`;
+  if (ctx.scheduledTaskContext) volatile += `\n\n${ctx.scheduledTaskContext}`;
 
   return [
     { type: "text", text: stable, cache_control: { type: "ephemeral" } },
