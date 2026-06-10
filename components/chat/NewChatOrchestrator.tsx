@@ -107,6 +107,25 @@ export default function NewChatOrchestrator({
     setIsStreaming(true);
 
     try {
+      const uploadedAttachments = filesToSend.length > 0
+        ? await Promise.all(
+            filesToSend.map(async (f) => {
+              try {
+                const upRes = await fetch("/api/files/upload", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ base64: f.base64, mediaType: f.mediaType, filename: f.filename, type: f.type, isIncognito: incognito }),
+                });
+                if (upRes.ok) {
+                  const data = await upRes.json() as { file_id: string | null; url: string };
+                  return { file_id: data.file_id, url: data.url, type: f.type, filename: f.filename };
+                }
+              } catch { /* silent */ }
+              return { file_id: null, url: "", type: f.type, filename: f.filename };
+            })
+          )
+        : [];
+
       setWorkingStatus("Thinking…");
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -117,9 +136,7 @@ export default function NewChatOrchestrator({
           isIncognito: incognito,
           projectId: selectedProject?.id ?? null,
           userTimestamp: new Date().toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }),
-          attachments: filesToSend.length > 0
-            ? filesToSend.map((f) => ({ base64: f.base64, mediaType: f.mediaType, filename: f.filename, type: f.type }))
-            : undefined,
+          attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
         }),
       });
 
