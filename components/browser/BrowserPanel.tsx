@@ -119,7 +119,7 @@ export default function BrowserPanel({
     ? {
         position: "fixed",
         inset: 0,
-        zIndex: 200,
+        zIndex: "var(--z-fullscreen)" as unknown as number,
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
@@ -136,7 +136,7 @@ export default function BrowserPanel({
       <div style={styles.topBar}>
         <button
           onClick={reloadIframe}
-          style={styles.iconButton}
+          className="icon-btn" style={styles.iconButton}
           aria-label="Reload browser"
           type="button"
         >
@@ -172,7 +172,7 @@ export default function BrowserPanel({
           onClick={() => {
             if (urlBarValue) window.open(urlBarValue, "_blank", "noopener,noreferrer");
           }}
-          style={styles.iconButton}
+          className="icon-btn" style={styles.iconButton}
           aria-label="Open in a new browser tab"
           type="button"
           disabled={!urlBarValue}
@@ -190,7 +190,7 @@ export default function BrowserPanel({
 
         <button
           onClick={() => setIsFullscreen((f) => !f)}
-          style={styles.iconButton}
+          className="icon-btn" style={styles.iconButton}
           aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
           type="button"
         >
@@ -219,7 +219,7 @@ export default function BrowserPanel({
 
         <button
           onClick={onClose}
-          style={styles.iconButton}
+          className="icon-btn" style={styles.iconButton}
           aria-label="Close browser panel"
           type="button"
         >
@@ -256,7 +256,7 @@ export default function BrowserPanel({
         {disconnected && (
           <div style={styles.overlay}>
             <span style={styles.overlayText}>Browser disconnected</span>
-            <button onClick={onClose} style={styles.closeFallback} type="button">
+            <button onClick={onClose} className="hover-wash" style={styles.closeFallback} type="button">
               Close panel
             </button>
           </div>

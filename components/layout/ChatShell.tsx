@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { requestAndGetToken, listenForegroundMessages } from "@/lib/firebase/client";
 import type { User } from "@/lib/types";
 import Sidebar from "./Sidebar";
+import MobileTabBar from "./MobileTabBar";
 
 interface ForegroundToast {
   title: string;
@@ -170,7 +171,7 @@ export default function ChatShell({ user, children }: ChatShellProps) {
           </div>
           <button
             onClick={(e) => { e.stopPropagation(); dismissToast(); }}
-            style={styles.toastDismiss}
+            className="icon-btn" style={styles.toastDismiss}
             aria-label="Dismiss"
           >
             ×
@@ -209,15 +210,16 @@ export default function ChatShell({ user, children }: ChatShellProps) {
               <span style={styles.notifBannerText}>
                 Enable notifications to get reminders from Bruce.
               </span>
-              <button onClick={handleEnableNotifications} style={styles.notifBannerEnable}>
+              <button onClick={handleEnableNotifications} className="hover-wash" style={styles.notifBannerEnable}>
                 Enable
               </button>
-              <button onClick={dismissNotifBanner} style={styles.notifBannerDismiss} aria-label="Dismiss">
+              <button onClick={dismissNotifBanner} className="icon-btn" style={styles.notifBannerDismiss} aria-label="Dismiss">
                 ×
               </button>
             </div>
           )}
           {children}
+          <MobileTabBar />
         </main>
       </div>
     </ChatContext.Provider>
@@ -230,7 +232,7 @@ const styles: Record<string, React.CSSProperties> = {
     top: "calc(env(safe-area-inset-top, 0px) + 12px)",
     left: "50%",
     transform: "translateX(-50%)",
-    zIndex: 9999,
+    zIndex: "var(--z-toast)" as unknown as number,
     display: "flex",
     alignItems: "flex-start",
     gap: "12px",
@@ -299,7 +301,7 @@ const styles: Record<string, React.CSSProperties> = {
     left: 0,
     bottom: 0,
     width: "var(--sidebar-width)",
-    zIndex: 200,
+    zIndex: "var(--z-drawer)" as unknown as number,
     backgroundColor: "var(--bg-sidebar)",
     borderRight: "1px solid var(--border)",
     display: "flex",
@@ -311,7 +313,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "fixed",
     inset: 0,
     backgroundColor: "rgba(0, 0, 0, 0.45)",
-    zIndex: 199,
+    zIndex: "var(--z-drawer-backdrop)" as unknown as number,
   },
   main: {
     flex: 1,

@@ -230,7 +230,11 @@ All three chat contexts (standalone, project, family) share the same code paths.
 - **RLS is the privacy wall.** Never bypass on the client. Service role: server-side only.
 - **Incognito messages never touch the database.**
 - **No console.log in production paths.**
-- **Design tokens only.** `app/globals.css` has all tokens. Accent: `#0F6E56`. No Tailwind.
+- **Design tokens only.** `app/globals.css` has all tokens. Accent: `#0F6E56`. No Tailwind. Never hardcode a theme-dependent color (text/border/bg) in a component — it WILL break one of the two themes.
+- **Hover states:** inline styles can't express `:hover` — use the shared utility classes in `globals.css`: `className="icon-btn"` for square icon buttons, `className="hover-wash"` for rows/buttons (universal inset wash, both themes). Gated on `(hover)+(pointer: fine)` so touch never gets sticky hover.
+- **Touch targets:** visually-small controls get `className="hit-target"` (an `::after` that extends the tap area ±8px). Nothing interactive below ~34px effective hit size.
+- **Z-index:** use the token scale (`--z-drawer-backdrop`, `--z-drawer`, `--z-modal`, `--z-fullscreen`, `--z-toast`, `--z-menu`) — never ad-hoc numbers.
+- **Modals:** `role="dialog"` + `aria-modal="true"` + an Escape-close handler, always.
 - **Mobile-first.** Every component must work on iPhone.
 - **Deploy:** git push to main. Vercel auto-deploys. Never `npx vercel --prod`.
 - **Env vars:** API keys live server-side only. Required: `ANTHROPIC_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `FAL_KEY`, `JINA_API_KEY`, Google + Firebase keys, and (shared browser) `BROWSERBASE_API_KEY` + `BROWSERBASE_PROJECT_ID`. Add new ones to `.env.local` and Vercel project settings.

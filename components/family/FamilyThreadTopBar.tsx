@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ChatTopBar from "@/components/chat/ChatTopBar";
 import { getDisplayName, getProfileColor } from "@/lib/chat/senderProfile";
@@ -41,6 +41,20 @@ export default function FamilyThreadTopBar({
   const addableMembers = allMembers.filter(
     (m) => !currentMemberIds.includes(m.id) && !excludedMemberIds.includes(m.id)
   );
+
+  // Modal a11y: Escape closes whichever layer is open.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (menuOpen) { setMenuOpen(false); return; }
+      if (addMemberOpen) { setAddMemberOpen(false); setSelectedUserId(null); return; }
+      if (memberSheetOpen) { setMemberSheetOpen(false); return; }
+      if (renameOpen) { setRenameOpen(false); return; }
+      if (deleteModalOpen) { setDeleteModalOpen(false); return; }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [menuOpen, addMemberOpen, memberSheetOpen, renameOpen, deleteModalOpen]);
 
   async function handleDelete() {
     setIsDeleting(true);
@@ -96,7 +110,7 @@ export default function FamilyThreadTopBar({
       {threadMembers.length > 0 && (
         <button
           onClick={() => setMemberSheetOpen(true)}
-          style={styles.avatarStackButton}
+          className="hover-wash" style={styles.avatarStackButton}
           aria-label="View members"
         >
           {threadMembers.slice(0, 3).map((m, i) => (
@@ -157,7 +171,7 @@ export default function FamilyThreadTopBar({
 
       <button
         onClick={() => setMenuOpen((v) => !v)}
-        style={styles.menuButton}
+        className="icon-btn" style={styles.menuButton}
         aria-label="Group chat options"
       >
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -172,7 +186,7 @@ export default function FamilyThreadTopBar({
           <div style={styles.menuBackdrop} onClick={() => setMenuOpen(false)} />
           <div style={styles.dropdown}>
             <button
-              style={styles.dropdownItem}
+              className="hover-wash" style={styles.dropdownItem}
               onClick={() => {
                 setMenuOpen(false);
                 setRenameValue(currentName);
@@ -185,7 +199,7 @@ export default function FamilyThreadTopBar({
               Rename
             </button>
             <button
-              style={styles.dropdownItem}
+              className="hover-wash" style={styles.dropdownItem}
               onClick={() => {
                 setMenuOpen(false);
                 setSelectedUserId(null);
@@ -200,7 +214,7 @@ export default function FamilyThreadTopBar({
               Add member
             </button>
             <button
-              style={styles.dropdownItemDanger}
+              className="hover-wash" style={styles.dropdownItemDanger}
               onClick={() => {
                 setMenuOpen(false);
                 setDeleteModalOpen(true);
@@ -229,7 +243,7 @@ export default function FamilyThreadTopBar({
         left={
           <button
             onClick={() => router.push("/chat")}
-            style={styles.backButton}
+            className="icon-btn" style={styles.backButton}
             aria-label="Back"
           >
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -244,7 +258,7 @@ export default function FamilyThreadTopBar({
       {/* Add Member modal */}
       {addMemberOpen && (
         <div style={styles.overlay}>
-          <div style={styles.modal}>
+          <div role="dialog" aria-modal="true" style={styles.modal}>
             <p style={styles.modalTitle}>Add member</p>
             {addableMembers.length === 0 ? (
               <p style={styles.modalBody}>All household members are already in this group chat.</p>
@@ -277,7 +291,7 @@ export default function FamilyThreadTopBar({
             )}
             <div style={styles.modalActions}>
               <button
-                style={styles.cancelButton}
+                className="hover-wash" style={styles.cancelButton}
                 onClick={() => { setAddMemberOpen(false); setSelectedUserId(null); }}
                 disabled={isAdding}
               >
@@ -303,7 +317,7 @@ export default function FamilyThreadTopBar({
       {/* Rename modal */}
       {renameOpen && (
         <div style={styles.overlay}>
-          <div style={styles.modal}>
+          <div role="dialog" aria-modal="true" style={styles.modal}>
             <p style={styles.modalTitle}>Rename group chat</p>
             <input
               value={renameValue}
@@ -318,7 +332,7 @@ export default function FamilyThreadTopBar({
             />
             <div style={styles.modalActions}>
               <button
-                style={styles.cancelButton}
+                className="hover-wash" style={styles.cancelButton}
                 onClick={() => setRenameOpen(false)}
                 disabled={isRenaming}
               >
@@ -344,7 +358,7 @@ export default function FamilyThreadTopBar({
       {/* Member sheet */}
       {memberSheetOpen && (
         <div style={styles.overlay} onClick={() => setMemberSheetOpen(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <p style={styles.modalTitle}>Members</p>
             <div style={styles.memberList}>
               {threadMembers.map((m) => (
@@ -357,7 +371,7 @@ export default function FamilyThreadTopBar({
               ))}
             </div>
             <div style={styles.modalActions}>
-              <button style={styles.cancelButton} onClick={() => setMemberSheetOpen(false)}>
+              <button className="hover-wash" style={styles.cancelButton} onClick={() => setMemberSheetOpen(false)}>
                 Close
               </button>
             </div>
@@ -368,21 +382,21 @@ export default function FamilyThreadTopBar({
       {/* Delete confirmation modal */}
       {deleteModalOpen && (
         <div style={styles.overlay}>
-          <div style={styles.modal}>
+          <div role="dialog" aria-modal="true" style={styles.modal}>
             <p style={styles.modalTitle}>Delete &ldquo;{currentName}&rdquo;?</p>
             <p style={styles.modalBody}>
               This removes the group chat and all its messages for everyone.
             </p>
             <div style={styles.modalActions}>
               <button
-                style={styles.cancelButton}
+                className="hover-wash" style={styles.cancelButton}
                 onClick={() => setDeleteModalOpen(false)}
                 disabled={isDeleting}
               >
                 Cancel
               </button>
               <button
-                style={styles.deleteButton}
+                className="hover-wash" style={styles.deleteButton}
                 onClick={handleDelete}
                 disabled={isDeleting}
               >
@@ -433,13 +447,13 @@ const styles: Record<string, React.CSSProperties> = {
   menuBackdrop: {
     position: "fixed",
     inset: 0,
-    zIndex: 200,
+    zIndex: "var(--z-drawer)" as unknown as number,
   },
   dropdown: {
     position: "absolute",
     top: "calc(var(--topbar-height) - 4px)",
     right: "12px",
-    zIndex: 201,
+    zIndex: "var(--z-menu)" as unknown as number,
     backgroundColor: "var(--bg-primary)",
     border: "1px solid var(--border-strong)",
     borderRadius: "var(--radius-md)",
@@ -476,7 +490,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "fixed",
     inset: 0,
     backgroundColor: "rgba(0,0,0,0.45)",
-    zIndex: 300,
+    zIndex: "var(--z-modal)" as unknown as number,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",

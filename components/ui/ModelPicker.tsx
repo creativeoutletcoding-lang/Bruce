@@ -150,7 +150,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-primary)",
   },
   defaultBadge: {
-    fontSize: "0.6875rem",
+    fontSize: "0.75rem",
     fontWeight: "500",
     color: "var(--accent)",
     backgroundColor: "rgba(15, 110, 86, 0.1)",

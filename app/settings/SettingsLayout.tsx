@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import ModelPreference from "./ModelPreference";
 import GoogleReconnect from "./GoogleReconnect";
 import NotificationSettings from "./NotificationSettings";
@@ -25,8 +26,22 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "google",        label: "Google" },
 ];
 
+const TAB_IDS = new Set<string>(TABS.map((t) => t.id));
+
 export default function SettingsLayout({ profile }: { profile: SettingsProfile | null }) {
-  const [activeTab, setActiveTab] = useState<Tab>("profile");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // Tab lives in the URL (?tab=) so it survives refresh, deep-links, and
+  // browser Back navigates between tabs instead of exiting settings.
+  const paramTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<Tab>(
+    paramTab && TAB_IDS.has(paramTab) ? (paramTab as Tab) : "profile"
+  );
+
+  const selectTab = useCallback((tab: Tab) => {
+    setActiveTab(tab);
+    router.replace(`/settings?tab=${tab}`, { scroll: false });
+  }, [router]);
 
   return (
     <div className="settings-shell">
@@ -36,7 +51,7 @@ export default function SettingsLayout({ profile }: { profile: SettingsProfile |
           <button
             key={tab.id}
             type="button"
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => selectTab(tab.id)}
             className={`settings-nav-item${activeTab === tab.id ? " settings-nav-item-active" : ""}`}
             aria-current={activeTab === tab.id ? "page" : undefined}
           >

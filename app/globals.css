@@ -18,7 +18,7 @@
   /* Text */
   --text-primary: #111827;
   --text-secondary: #6b7280;
-  --text-tertiary: #9ca3af;
+  --text-tertiary: #71717a; /* ≥4.5:1 on white — meta text must stay AA-readable */
 
   /* Borders */
   --border: #e5e7eb;
@@ -41,6 +41,14 @@
   /* Animation */
   --transition: 150ms ease;
 
+  /* Z-index scale — keep stacking deliberate, never ad-hoc numbers */
+  --z-drawer-backdrop: 199;
+  --z-drawer: 200;
+  --z-modal: 300;
+  --z-fullscreen: 320;
+  --z-toast: 400;
+  --z-menu: 500;
+
   /* Shadows */
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07),
@@ -58,7 +66,7 @@
 
     --text-primary: #f9fafb;
     --text-secondary: #9ca3af;
-    --text-tertiary: #6b7280;
+    --text-tertiary: #7b8494; /* ≥4.5:1 on #111 */
 
     --border: #27272a;
     --border-strong: #3f3f46;
@@ -328,7 +336,7 @@ span[class*="typingDots"] > span:nth-child(3),
 @media (max-width: 768px) {
   .msg-input-container {
     padding: 0 0 calc(var(--keyboard-offset, 0px) + env(safe-area-inset-bottom, 0px)) 0 !important;
-    border-top: 1px solid #27272a !important;
+    border-top: 1px solid var(--border) !important;
     border-radius: 0 !important;
   }
 
@@ -383,6 +391,91 @@ span[class*="typingDots"] > span:nth-child(3),
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ============================================================
+   HOVER UTILITIES
+   Components use inline styles, which can't express :hover —
+   these classes supply desktop hover feedback. Gated on
+   (hover)+(pointer:fine) so touch devices never get sticky
+   hover states. !important is required to beat inline styles.
+   ============================================================ */
+
+@media (hover: hover) and (pointer: fine) {
+  /* Neutral wash that works over any background in both themes. */
+  .hover-wash:not(:disabled):hover {
+    box-shadow: inset 0 0 0 999px rgba(128, 128, 128, 0.12) !important;
+  }
+
+  .icon-btn:not(:disabled):hover {
+    background-color: var(--bg-tertiary) !important;
+    color: var(--text-primary) !important;
+  }
+}
+
+/* ============================================================
+   TOUCH HIT AREAS
+   Extends the tappable area of visually-small controls (e.g.
+   18px attachment-remove buttons) to ≥34px without changing
+   their appearance.
+   ============================================================ */
+
+.hit-target::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+/* ============================================================
+   REDUCED MOTION
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================
+   MOBILE BOTTOM TAB BAR
+   Shown only on hub screens (gated in MobileTabBar.tsx);
+   hidden on desktop via mobile-only media rules.
+   ============================================================ */
+
+.mobile-tabbar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-tabbar {
+    display: flex;
+    flex-shrink: 0;
+    height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-top: 1px solid var(--border);
+    background-color: var(--bg-primary);
+  }
+
+  .mobile-tabbar-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    color: var(--text-tertiary);
+    font-size: 0.625rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .mobile-tabbar-item--active {
+    color: var(--accent);
+  }
 }
 
 /* ============================================================
@@ -462,7 +555,7 @@ span[class*="typingDots"] > span:nth-child(3),
   color: var(--text-primary);
 }
 .admin-nav-item--active {
-  color: #ffffff;
+  color: var(--text-primary);
   font-weight: 600;
   background-color: var(--active-bg);
   border-left-color: var(--accent);

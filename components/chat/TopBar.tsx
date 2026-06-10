@@ -61,7 +61,7 @@ export default function TopBar({ title, hasMessages, onRefresh, model, onModelCh
       {onRefresh && (
         <button
           onClick={onRefresh}
-          style={styles.refreshButton}
+          className="icon-btn" style={styles.refreshButton}
           aria-label="Refresh"
           title="Refresh"
         >
@@ -75,6 +75,7 @@ export default function TopBar({ title, hasMessages, onRefresh, model, onModelCh
 
       <button
         onClick={handleIncognitoToggle}
+        className="hover-wash"
         style={{
           ...styles.incognitoButton,
           ...(incognito ? styles.incognitoButtonActive : {}),

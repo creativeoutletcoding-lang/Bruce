@@ -191,7 +191,10 @@ export default function MessageInput({
       document.documentElement.style.setProperty("--keyboard-offset", `${offset}px`);
     }
     vv.addEventListener("resize", onResize);
-    return () => vv.removeEventListener("resize", onResize);
+    return () => {
+      vv.removeEventListener("resize", onResize);
+      document.documentElement.style.setProperty("--keyboard-offset", "0px");
+    };
   }, []);
 
   const canSend = !disabled && !isStreaming && (
@@ -288,7 +291,7 @@ export default function MessageInput({
                 <div style={styles.thumbnailWrapper}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={file.previewUrl} alt="" style={styles.thumbnail} />
-                  <button onClick={() => onFileRemove?.(i)} style={styles.thumbnailClose} aria-label="Remove image">×</button>
+                  <button onClick={() => onFileRemove?.(i)} className="hit-target" style={styles.thumbnailClose} aria-label="Remove image">×</button>
                 </div>
               ) : (
                 <div style={styles.docChip}>
@@ -298,7 +301,7 @@ export default function MessageInput({
                   </svg>
                   <span style={styles.docChipName}>{file.filename}</span>
                   <span style={styles.docChipSize}>{formatFileSize(file.fileSize)}</span>
-                  <button onClick={() => onFileRemove?.(i)} style={styles.thumbnailClose} aria-label="Remove file">×</button>
+                  <button onClick={() => onFileRemove?.(i)} className="hit-target" style={styles.thumbnailClose} aria-label="Remove file">×</button>
                 </div>
               )}
             </div>
@@ -320,6 +323,7 @@ export default function MessageInput({
               </div>
               <button
                 onClick={() => setPastedAttachments(prev => prev.filter(a => a.id !== att.id))}
+                className="hit-target"
                 style={styles.pastedChipClose}
                 aria-label="Remove pasted text"
                 type="button"
@@ -353,7 +357,7 @@ export default function MessageInput({
               // No move option → keep attach a single tap (no menu).
               <button
                 onClick={() => fileInputRef.current?.click()}
-                style={styles.attachButton}
+                className="icon-btn" style={styles.attachButton}
                 aria-label="Attach file"
                 type="button"
                 disabled={disabled}
@@ -381,7 +385,7 @@ export default function MessageInput({
         {onBrowserClick && (
           <button
             onClick={() => { lightHaptic(); onBrowserClick(); }}
-            style={{ ...styles.browserButton, ...(browserActive ? styles.browserButtonActive : {}) }}
+            className="icon-btn" style={{ ...styles.browserButton, ...(browserActive ? styles.browserButtonActive : {}) }}
             aria-label="Open shared browser"
             aria-pressed={browserActive}
             type="button"
@@ -402,7 +406,7 @@ export default function MessageInput({
         {canStop ? (
           <button
             onClick={() => { lightHaptic(); onStop!(); }}
-            style={styles.stopButton}
+            className="hover-wash" style={styles.stopButton}
             aria-label="Stop generating"
             type="button"
           >
@@ -414,7 +418,7 @@ export default function MessageInput({
           <button
             onClick={() => triggerSend()}
             disabled={!canSend}
-            style={{ ...styles.sendButton, ...(!canSend ? styles.sendButtonDisabled : {}) }}
+            className="hover-wash" style={{ ...styles.sendButton, ...(!canSend ? styles.sendButtonDisabled : {}) }}
             aria-label="Send message"
           >
             <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">

@@ -149,19 +149,11 @@ function ThreadAvatarStack({ members }: { members: ThreadMemberSummary[] }) {
   );
 }
 
+// Count-gated wrapper around the canonical green dot so family rows render
+// the same unread indicator as chat rows (one system, one visual).
 function UnreadDot({ count }: { count: number }) {
   if (count <= 0) return null;
-  return (
-    <div
-      style={{
-        width: 14,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: "#ffffff",
-        flexShrink: 0,
-      }}
-    />
-  );
+  return <GreenUnreadDot />;
 }
 
 // Sidebar unread indicator — 8px solid circle, no border, brand accent.
@@ -199,6 +191,10 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   // are both keys; project ids resolve to the latest last_message_at across
   // their chats. See computeUnread() below.
   const [lastReadByChat, setLastReadByChat] = useState<Record<string, string | null>>({});
+  // First-load flags gate the empty-state copy so "No conversations yet"
+  // never flashes before data arrives.
+  const [chatsLoaded, setChatsLoaded] = useState(false);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
 
   // ── new project modal ────────────────────────────────────────────────────
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
@@ -314,18 +310,19 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       .neq("type", "incognito")
       .neq("type", "family_group")
       .neq("type", "family_thread")
-      .order("last_message_at", { ascending: false });
+      .order("last_message_at", { ascending: false })
+      // Cap embedded messages to the single latest row — fetching full
+      // histories per chat just for a 60-char preview was the sidebar's
+      // biggest payload.
+      .order("created_at", { referencedTable: "messages", ascending: false })
+      .limit(1, { referencedTable: "messages" });
 
     if (!data) return;
 
     const enriched: ChatListItem[] = data
       .filter((chat) => chat.project_id == null)
       .map((chat) => {
-        const msgs = (chat.messages as Array<{ content: string; role: string; created_at: string }>) ?? [];
-        const sorted = [...msgs].sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-        const last = sorted[0];
+        const last = (chat.messages as Array<{ content: string; role: string; created_at: string }>)?.[0];
         return {
           id: chat.id as string,
           title: chat.title as string | null,
@@ -338,6 +335,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       });
 
     setChats(enriched);
+    setChatsLoaded(true);
   }, []);
 
   const loadProjects = useCallback(async () => {
@@ -346,6 +344,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       const data: ProjectListItem[] = await res.json();
       setProjects(data);
     }
+    setProjectsLoaded(true);
   }, []);
 
   // Loads chat_members.last_read_at for the current user and computes per-chat
@@ -408,6 +407,21 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   }
 
   // ── realtime subscription + initial load ─────────────────────────────────
+  // Realtime events arrive in bursts (every household message fires one);
+  // a trailing debounce collapses each burst into a single reload pass.
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingReloadsRef = useRef<Set<() => void>>(new Set());
+  const scheduleReload = useCallback((...fns: Array<() => void>) => {
+    for (const fn of fns) pendingReloadsRef.current.add(fn);
+    if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    reloadTimerRef.current = setTimeout(() => {
+      reloadTimerRef.current = null;
+      const toRun = Array.from(pendingReloadsRef.current);
+      pendingReloadsRef.current.clear();
+      toRun.forEach((fn) => fn());
+    }, 600);
+  }, []);
+
   useEffect(() => {
     registerRefresh(loadChats);
     loadChats();
@@ -421,18 +435,21 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     const channel = supabase
       .channel("chat-list")
       .on("postgres_changes", { event: "*", schema: "public", table: "chats" },
-        () => { loadChats(); loadFamilyThreads(); loadUnreadState(); })
+        () => scheduleReload(loadChats, loadFamilyThreads, loadUnreadState))
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" },
-        () => { loadChats(); loadUnreadState(); })
+        () => scheduleReload(loadChats, loadUnreadState))
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_members" },
-        () => loadUnreadState())
+        () => scheduleReload(loadUnreadState))
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" },
-        () => loadFamilyThreads())
+        () => scheduleReload(loadFamilyThreads))
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "notifications" },
-        () => loadFamilyThreads())
+        () => scheduleReload(loadFamilyThreads))
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -456,6 +473,23 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       document.removeEventListener("touchstart", dismiss);
     };
   }, [contextMenu]);
+
+  // ── modal a11y: Escape closes whichever layer is open ────────────────────
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (contextMenu) { setContextMenu(null); return; }
+      if (showNewProjectModal) { setShowNewProjectModal(false); setNewProjectName(""); setProjectErrorMsg(""); return; }
+      if (showNewThreadModal) { setShowNewThreadModal(false); setNewThreadName(""); setThreadErrorMsg(""); return; }
+      if (showBulkDeleteConfirm) { setShowBulkDeleteConfirm(false); return; }
+      if (showProjectBulkDeleteConfirm) { setShowProjectBulkDeleteConfirm(false); return; }
+      if (showThreadBulkDeleteConfirm) { setShowThreadBulkDeleteConfirm(false); return; }
+      if (singleDeleteTarget) { setSingleDeleteTarget(null); return; }
+      if (renameTarget) { setRenameTarget(null); return; }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [contextMenu, showNewProjectModal, showNewThreadModal, showBulkDeleteConfirm, showProjectBulkDeleteConfirm, showThreadBulkDeleteConfirm, singleDeleteTarget, renameTarget]);
 
   // ── section collapse ─────────────────────────────────────────────────────
   function toggleProjects() {
@@ -1010,7 +1044,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       <div className="mobile-only" style={styles.mobileCloseRow}>
         <button
           onClick={onNavigate}
-          style={styles.mobileCloseButton}
+          className="icon-btn" style={styles.mobileCloseButton}
           aria-label="Close menu"
         >
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -1031,14 +1065,15 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           {/* ── Projects section ─────────────────────────────────────────── */}
           <div style={styles.section}>
             <div style={styles.sectionHeaderRow}>
-              <span
-                style={{ ...styles.sectionLabel, cursor: projectsSelectMode ? "default" : "pointer", flex: 1 }}
+              <button
+                type="button"
+                style={{ ...styles.sectionLabel, cursor: projectsSelectMode ? "default" : "pointer", flex: 1, textAlign: "left", padding: 0 }}
                 onClick={projectsSelectMode ? undefined : toggleProjects}
-                role={projectsSelectMode ? undefined : "button"}
                 aria-expanded={projectsSelectMode ? undefined : projectsExpanded}
+                disabled={projectsSelectMode}
               >
                 Projects
-              </span>
+              </button>
               {projectsSelectMode ? (
                 <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                   {(() => {
@@ -1058,36 +1093,44 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                             setSelectedProjectChatIds(new Set(ownedChatIds));
                           }
                         }}
-                        style={styles.sectionEditButton}
+                        className="hover-wash" style={styles.sectionEditButton}
                       >
                         {allSelected ? "Deselect All" : "Select All"}
                       </button>
                     );
                   })()}
-                  <button onClick={exitProjectsSelectMode} style={styles.sectionEditButton}>Done</button>
+                  <button onClick={exitProjectsSelectMode} className="hover-wash" style={styles.sectionEditButton}>Done</button>
                 </div>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                   {projects.length > 0 && (
                     <button
                       onClick={enterProjectsSelectMode}
-                      style={styles.sectionEditButton}
+                      className="hover-wash" style={styles.sectionEditButton}
                       aria-label="Select project chats"
                       title="Select project chats"
                     >
                       Edit
                     </button>
                   )}
-                  <svg
-                    width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                  <button
+                    type="button"
+                    className="icon-btn hit-target"
                     onClick={toggleProjects}
-                    style={{ transform: projectsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0, cursor: "pointer" }}
+                    aria-label="Toggle Projects section"
+                    aria-expanded={projectsExpanded}
+                    style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: "20px", height: "20px", borderRadius: "var(--radius-sm)", color: "var(--text-tertiary)", flexShrink: 0, cursor: "pointer" }}
                   >
-                    <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+                    <svg
+                      width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                      style={{ transform: projectsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)" }}
+                    >
+                      <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowNewProjectModal(true); }}
-                    style={styles.sectionAddButton}
+                    className="icon-btn hit-target" style={{ ...styles.sectionAddButton, position: "relative" }}
                     aria-label="New project"
                     title="New project"
                   >
@@ -1202,7 +1245,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               </>
             ) : (
               projectsExpanded && (projects.length === 0 ? (
-                <p style={styles.emptyState}>No projects yet</p>
+                projectsLoaded ? <p style={styles.emptyState}>No projects yet</p> : null
               ) : (
                 projects.map((project) => {
                   const isActive = project.id === activeProjectId;
@@ -1210,7 +1253,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     <button
                       key={project.id}
                       onClick={() => handleSelectProject(project.id)}
-                      style={{ ...styles.projectItem, ...(isActive ? styles.projectItemActive : {}) }}
+                      className="hover-wash" style={{ ...styles.projectItem, ...(isActive ? styles.projectItemActive : {}) }}
                     >
                       <span style={styles.projectItemName}>{project.name}</span>
                     </button>
@@ -1235,7 +1278,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     style={styles.sectionSearchInput}
                     aria-label="Search chats"
                   />
-                  <button onClick={dismissChatsSearch} style={styles.sectionSearchDismiss} aria-label="Clear search">
+                  <button onClick={dismissChatsSearch} className="icon-btn" style={styles.sectionSearchDismiss} aria-label="Clear search">
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                       <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                     </svg>
@@ -1243,14 +1286,14 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                 </>
               ) : (
                 <>
-                  <span
-                    style={{ ...styles.sectionLabel, cursor: "pointer", flex: 1 }}
+                  <button
+                    type="button"
+                    style={{ ...styles.sectionLabel, cursor: "pointer", flex: 1, textAlign: "left", padding: 0 }}
                     onClick={toggleChats}
-                    role="button"
                     aria-expanded={chatsExpanded}
                   >
                     Chats
-                  </span>
+                  </button>
                   {chatsSelectMode ? (
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                       <button
@@ -1261,17 +1304,17 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                             setSelectedChatIds(new Set(chats.map(c => c.id)));
                           }
                         }}
-                        style={styles.sectionEditButton}
+                        className="hover-wash" style={styles.sectionEditButton}
                       >
                         {selectedChatIds.size === chats.length && chats.length > 0 ? "Deselect All" : "Select All"}
                       </button>
-                      <button onClick={exitChatsSelectMode} style={styles.sectionEditButton}>Done</button>
+                      <button onClick={exitChatsSelectMode} className="hover-wash" style={styles.sectionEditButton}>Done</button>
                     </div>
                   ) : (
                     <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                       <button
                         onClick={(e) => { e.stopPropagation(); activateChatsSearch(); }}
-                        style={styles.sectionAddButton}
+                        className="icon-btn hit-target" style={{ ...styles.sectionAddButton, position: "relative" }}
                         aria-label="Search chats"
                         title="Search chats"
                       >
@@ -1283,23 +1326,31 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                       {chats.length > 0 && (
                         <button
                           onClick={enterChatsSelectMode}
-                          style={styles.sectionEditButton}
+                          className="hover-wash" style={styles.sectionEditButton}
                           aria-label="Select chats"
                           title="Select chats"
                         >
                           Edit
                         </button>
                       )}
-                  <svg
-                    width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                  <button
+                    type="button"
+                    className="icon-btn hit-target"
                     onClick={toggleChats}
-                    style={{ transform: chatsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0, cursor: "pointer" }}
+                    aria-label="Toggle Chats section"
+                    aria-expanded={chatsExpanded}
+                    style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: "20px", height: "20px", borderRadius: "var(--radius-sm)", color: "var(--text-tertiary)", flexShrink: 0, cursor: "pointer" }}
                   >
-                    <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+                    <svg
+                      width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                      style={{ transform: chatsExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)" }}
+                    >
+                      <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleNewChat(); }}
-                    style={styles.sectionAddButton}
+                    className="icon-btn hit-target" style={{ ...styles.sectionAddButton, position: "relative" }}
                     aria-label="New chat"
                     title="New chat"
                   >
@@ -1328,7 +1379,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                         onNavigate();
                         dismissChatsSearch();
                       }}
-                      style={styles.chatItem}
+                      className="hover-wash" style={styles.chatItem}
                     >
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={styles.chatItemTitle}>{r.chat_title}</div>
@@ -1342,7 +1393,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                 )}
               </div>
             ) : chatsExpanded && (chats.length === 0 ? (
-              <p style={styles.emptyState}>No conversations yet</p>
+              chatsLoaded ? <p style={styles.emptyState}>No conversations yet</p> : null
             ) : (
               <>
                 {chats.map((chat) => {
@@ -1399,7 +1450,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                       onTouchStart={(e) => handleItemLongPressStart(e, chat.id, "chat")}
                       onTouchEnd={handleItemLongPressEnd}
                       onTouchMove={handleItemLongPressMove}
-                      style={{ ...styles.chatItem, ...(isActive ? styles.chatItemActive : {}) }}
+                      className="hover-wash" style={{ ...styles.chatItem, ...(isActive ? styles.chatItemActive : {}) }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <div style={{ ...styles.chatItemTitle, flex: 1, minWidth: 0 }}>{chat.title ?? "Untitled"}</div>
@@ -1446,7 +1497,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     style={styles.sectionSearchInput}
                     aria-label="Search family conversations"
                   />
-                  <button onClick={dismissFamilySearch} style={styles.sectionSearchDismiss} aria-label="Clear search">
+                  <button onClick={dismissFamilySearch} className="icon-btn" style={styles.sectionSearchDismiss} aria-label="Clear search">
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                       <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                     </svg>
@@ -1454,14 +1505,15 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                 </>
               ) : (
                 <>
-                  <span
-                    style={{ ...styles.sectionLabel, cursor: threadsSelectMode ? "default" : "pointer", flex: 1 }}
+                  <button
+                    type="button"
+                    style={{ ...styles.sectionLabel, cursor: threadsSelectMode ? "default" : "pointer", flex: 1, textAlign: "left", padding: 0 }}
                     onClick={threadsSelectMode ? undefined : toggleFamily}
-                    role={threadsSelectMode ? undefined : "button"}
                     aria-expanded={threadsSelectMode ? undefined : familyExpanded}
+                    disabled={threadsSelectMode}
                   >
                     Family
-                  </span>
+                  </button>
                   {threadsSelectMode ? (
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                       <button
@@ -1472,17 +1524,17 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                             setSelectedThreadIds(new Set(familyThreads.map(t => t.id)));
                           }
                         }}
-                        style={styles.sectionEditButton}
+                        className="hover-wash" style={styles.sectionEditButton}
                       >
                         {selectedThreadIds.size === familyThreads.length && familyThreads.length > 0 ? "Deselect All" : "Select All"}
                       </button>
-                      <button onClick={exitThreadsSelectMode} style={styles.sectionEditButton}>Done</button>
+                      <button onClick={exitThreadsSelectMode} className="hover-wash" style={styles.sectionEditButton}>Done</button>
                     </div>
                   ) : (
                     <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                       <button
                         onClick={(e) => { e.stopPropagation(); activateFamilySearch(); }}
-                        style={styles.sectionAddButton}
+                        className="icon-btn hit-target" style={{ ...styles.sectionAddButton, position: "relative" }}
                         aria-label="Search family conversations"
                         title="Search family conversations"
                       >
@@ -1494,23 +1546,31 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                       {familyThreads.length > 0 && (
                         <button
                           onClick={enterThreadsSelectMode}
-                          style={styles.sectionEditButton}
+                          className="hover-wash" style={styles.sectionEditButton}
                           aria-label="Select threads"
                           title="Select threads"
                         >
                           Edit
                         </button>
                       )}
-                  <svg
-                    width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                  <button
+                    type="button"
+                    className="icon-btn hit-target"
                     onClick={toggleFamily}
-                    style={{ transform: familyExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)", color: "var(--text-tertiary)", flexShrink: 0, cursor: "pointer" }}
+                    aria-label="Toggle Family section"
+                    aria-expanded={familyExpanded}
+                    style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: "20px", height: "20px", borderRadius: "var(--radius-sm)", color: "var(--text-tertiary)", flexShrink: 0, cursor: "pointer" }}
                   >
-                    <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+                    <svg
+                      width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+                      style={{ transform: familyExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--transition)" }}
+                    >
+                      <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); openNewThreadModal(); }}
-                    style={styles.sectionAddButton}
+                    className="icon-btn hit-target" style={{ ...styles.sectionAddButton, position: "relative" }}
                     aria-label="New group chat"
                     title="New group chat"
                   >
@@ -1538,7 +1598,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                         onNavigate();
                         dismissFamilySearch();
                       }}
-                      style={styles.chatItem}
+                      className="hover-wash" style={styles.chatItem}
                     >
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={styles.chatItemTitle}>{r.chat_title}</div>
@@ -1565,7 +1625,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     onTouchStart={(e) => handleItemLongPressStart(e, familyGroup.id, "family_group")}
                     onTouchEnd={handleItemLongPressEnd}
                     onTouchMove={handleItemLongPressMove}
-                    style={{ ...styles.familyButton, ...(isFamilyActive ? styles.familyButtonActive : {}) }}
+                    className="hover-wash" style={{ ...styles.familyButton, ...(isFamilyActive ? styles.familyButtonActive : {}) }}
                   >
                     <span style={styles.familyEmoji}>🏠</span>
                     <span style={styles.familyName}>Family Chat</span>
@@ -1623,7 +1683,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                       onTouchStart={(e) => handleItemLongPressStart(e, thread.id, "thread")}
                       onTouchEnd={handleItemLongPressEnd}
                       onTouchMove={handleItemLongPressMove}
-                      style={{ ...styles.threadItem, ...(isActive ? styles.threadItemActive : {}) }}
+                      className="hover-wash" style={{ ...styles.threadItem, ...(isActive ? styles.threadItemActive : {}) }}
                     >
                       <span style={styles.threadName}>{thread.title}</span>
                       {thread.members.length > 0 && <ThreadAvatarStack members={thread.members} />}
@@ -1662,7 +1722,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         </div>
         <div style={styles.userActions}>
           {user.role === "admin" && (
-            <button onClick={() => { router.push("/admin"); onNavigate(); }} style={styles.iconButton} title="Admin">
+            <button onClick={() => { router.push("/admin"); onNavigate(); }} className="icon-btn" style={styles.iconButton} title="Admin">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4" />
                 <rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4" />
@@ -1671,13 +1731,13 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               </svg>
             </button>
           )}
-          <button onClick={() => { router.push("/settings"); onNavigate(); }} style={styles.iconButton} title="Settings">
+          <button onClick={() => { router.push("/settings"); onNavigate(); }} className="icon-btn" style={styles.iconButton} title="Settings">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.4" />
               <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M3 13l1.4-1.4M11.6 4.4 13 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
           </button>
-          <button onClick={handleSignOut} style={styles.iconButton} title="Sign out">
+          <button onClick={handleSignOut} className="icon-btn" style={styles.iconButton} title="Sign out">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l3-3-3-3M13 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -1693,7 +1753,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             position: "fixed",
             top: contextMenu.y,
             left: contextMenu.x,
-            zIndex: 9999,
+            zIndex: "var(--z-menu)" as unknown as number,
             backgroundColor: "var(--bg-primary)",
             border: "1px solid var(--border)",
             borderRadius: "var(--radius-md)",
@@ -1704,7 +1764,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         >
           {contextMenu.kind === "chat" && (
             <button
-              style={{ ...styles.contextMenuItem, color: "var(--text-primary)", borderBottom: "1px solid var(--border)" }}
+              className="hover-wash" style={{ ...styles.contextMenuItem, color: "var(--text-primary)", borderBottom: "1px solid var(--border)" }}
               onClick={() => {
                 openRename(contextMenu.id);
                 setContextMenu(null);
@@ -1714,7 +1774,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             </button>
           )}
           <button
-            style={styles.contextMenuItem}
+            className="hover-wash" style={styles.contextMenuItem}
             onClick={() => {
               setSingleDeleteTarget({ id: contextMenu.id, kind: contextMenu.kind });
               setContextMenu(null);
@@ -1729,12 +1789,12 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       {/* ── Single delete confirmation ─────────────────────────────────────── */}
       {singleDeleteTarget && (
         <div style={styles.modalOverlay} onClick={() => setSingleDeleteTarget(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <span style={styles.modalTitle}>
                 {singleDeleteTarget.kind === "thread" ? "Delete this thread?" : "Delete this chat?"}
               </span>
-              <button style={styles.modalClose} onClick={() => setSingleDeleteTarget(null)}>×</button>
+              <button className="icon-btn" style={styles.modalClose} onClick={() => setSingleDeleteTarget(null)}>×</button>
             </div>
             <div style={styles.modalBody}>
               <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>
@@ -1743,14 +1803,14 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               <div style={{ display: "flex", gap: "8px" }}>
                 <button
                   onClick={() => setSingleDeleteTarget(null)}
-                  style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
+                  className="hover-wash" style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSingleDelete}
                   disabled={isDeletingSingle}
-                  style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingSingle ? styles.createButtonDisabled : {}) }}
+                  className="hover-wash" style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingSingle ? styles.createButtonDisabled : {}) }}
                 >
                   {isDeletingSingle ? "Deleting…" : "Delete"}
                 </button>
@@ -1763,10 +1823,10 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       {/* ── Rename chat modal ────────────────────────────────────────────────── */}
       {renameTarget && (
         <div style={styles.modalOverlay} onClick={() => setRenameTarget(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <span style={styles.modalTitle}>Rename chat</span>
-              <button style={styles.modalClose} onClick={() => setRenameTarget(null)}>×</button>
+              <button className="icon-btn" style={styles.modalClose} onClick={() => setRenameTarget(null)}>×</button>
             </div>
             <div style={styles.modalBody}>
               <input
@@ -1784,14 +1844,14 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               <div style={{ display: "flex", gap: "8px" }}>
                 <button
                   onClick={() => setRenameTarget(null)}
-                  style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
+                  className="hover-wash" style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleRenameSave}
                   disabled={isRenameSaving || !renameInput.trim()}
-                  style={{ ...styles.createButton, flex: 1, ...(isRenameSaving || !renameInput.trim() ? styles.createButtonDisabled : {}) }}
+                  className="hover-wash" style={{ ...styles.createButton, flex: 1, ...(isRenameSaving || !renameInput.trim() ? styles.createButtonDisabled : {}) }}
                 >
                   {isRenameSaving ? "Saving…" : "Save"}
                 </button>
@@ -1804,12 +1864,12 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       {/* ── Standalone chats bulk delete confirmation ─────────────────────── */}
       {showBulkDeleteConfirm && (
         <div style={styles.modalOverlay} onClick={() => setShowBulkDeleteConfirm(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <span style={styles.modalTitle}>
                 Delete {selectedChatIds.size} {selectedChatIds.size === 1 ? "chat" : "chats"}?
               </span>
-              <button style={styles.modalClose} onClick={() => setShowBulkDeleteConfirm(false)}>×</button>
+              <button className="icon-btn" style={styles.modalClose} onClick={() => setShowBulkDeleteConfirm(false)}>×</button>
             </div>
             <div style={styles.modalBody}>
               <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>
@@ -1818,14 +1878,14 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               <div style={{ display: "flex", gap: "8px" }}>
                 <button
                   onClick={() => setShowBulkDeleteConfirm(false)}
-                  style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
+                  className="hover-wash" style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleBulkDelete}
                   disabled={isDeletingBulk}
-                  style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingBulk ? styles.createButtonDisabled : {}) }}
+                  className="hover-wash" style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingBulk ? styles.createButtonDisabled : {}) }}
                 >
                   {isDeletingBulk ? "Deleting…" : "Delete"}
                 </button>
@@ -1838,7 +1898,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       {/* ── Projects + chats bulk delete confirmation ─────────────────────── */}
       {showProjectBulkDeleteConfirm && (
         <div style={styles.modalOverlay} onClick={() => setShowProjectBulkDeleteConfirm(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <span style={styles.modalTitle}>
                 {selectedProjectIds.size > 0 && selectedProjectChatIds.size > 0
@@ -1847,7 +1907,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     ? `Delete ${selectedProjectIds.size} ${selectedProjectIds.size === 1 ? "project" : "projects"}?`
                     : `Delete ${selectedProjectChatIds.size} ${selectedProjectChatIds.size === 1 ? "chat" : "chats"}?`}
               </span>
-              <button style={styles.modalClose} onClick={() => setShowProjectBulkDeleteConfirm(false)}>×</button>
+              <button className="icon-btn" style={styles.modalClose} onClick={() => setShowProjectBulkDeleteConfirm(false)}>×</button>
             </div>
             <div style={styles.modalBody}>
               <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>
@@ -1858,14 +1918,14 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               <div style={{ display: "flex", gap: "8px" }}>
                 <button
                   onClick={() => setShowProjectBulkDeleteConfirm(false)}
-                  style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
+                  className="hover-wash" style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleProjectBulkDelete}
                   disabled={isDeletingProjectChats}
-                  style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingProjectChats ? styles.createButtonDisabled : {}) }}
+                  className="hover-wash" style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingProjectChats ? styles.createButtonDisabled : {}) }}
                 >
                   {isDeletingProjectChats ? "Deleting…" : "Delete"}
                 </button>
@@ -1878,12 +1938,12 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       {/* ── Family threads bulk delete confirmation ──────────────────────── */}
       {showThreadBulkDeleteConfirm && (
         <div style={styles.modalOverlay} onClick={() => setShowThreadBulkDeleteConfirm(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <span style={styles.modalTitle}>
                 Delete {selectedThreadIds.size} {selectedThreadIds.size === 1 ? "chat" : "chats"}?
               </span>
-              <button style={styles.modalClose} onClick={() => setShowThreadBulkDeleteConfirm(false)}>×</button>
+              <button className="icon-btn" style={styles.modalClose} onClick={() => setShowThreadBulkDeleteConfirm(false)}>×</button>
             </div>
             <div style={styles.modalBody}>
               <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>
@@ -1892,14 +1952,14 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               <div style={{ display: "flex", gap: "8px" }}>
                 <button
                   onClick={() => setShowThreadBulkDeleteConfirm(false)}
-                  style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
+                  className="hover-wash" style={{ ...styles.createButton, backgroundColor: "var(--bg-secondary)", color: "var(--text-primary)", flex: 1 }}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleThreadBulkDelete}
                   disabled={isDeletingThreads}
-                  style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingThreads ? styles.createButtonDisabled : {}) }}
+                  className="hover-wash" style={{ ...styles.createButton, backgroundColor: "#c0392b", flex: 1, ...(isDeletingThreads ? styles.createButtonDisabled : {}) }}
                 >
                   {isDeletingThreads ? "Deleting…" : "Delete"}
                 </button>
@@ -1915,11 +1975,11 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           style={styles.modalOverlay}
           onClick={() => { setShowNewThreadModal(false); setNewThreadName(""); setThreadErrorMsg(""); }}
         >
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <span style={styles.modalTitle}>New group chat</span>
               <button
-                style={styles.modalClose}
+                className="icon-btn" style={styles.modalClose}
                 onClick={() => { setShowNewThreadModal(false); setNewThreadName(""); setThreadErrorMsg(""); }}
               >
                 ×
@@ -1945,7 +2005,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                         <button
                           key={member.id}
                           onClick={() => toggleThreadMember(member.id)}
-                          style={{ ...styles.memberPickerRow, ...(checked ? styles.memberPickerRowChecked : {}) }}
+                          className="hover-wash" style={{ ...styles.memberPickerRow, ...(checked ? styles.memberPickerRowChecked : {}) }}
                         >
                           <div style={styles.memberPickerCheck}>
                             {checked && (
@@ -1983,11 +2043,11 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           style={styles.modalOverlay}
           onClick={() => { setShowNewProjectModal(false); setNewProjectName(""); setProjectErrorMsg(""); }}
         >
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <span style={styles.modalTitle}>New project</span>
               <button
-                style={styles.modalClose}
+                className="icon-btn" style={styles.modalClose}
                 onClick={() => { setShowNewProjectModal(false); setNewProjectName(""); setProjectErrorMsg(""); }}
               >
                 ×
@@ -2176,7 +2236,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   projectItemActive: {
     backgroundColor: "var(--active-bg)",
-    color: "#fff",
+    color: "var(--text-primary)",
     fontWeight: "normal",
   },
   projectItemName: {
@@ -2230,7 +2290,7 @@ const styles: Record<string, React.CSSProperties> = {
   chatItemActive: {
     backgroundColor: "var(--active-bg)",
     borderLeft: "2px solid #0F6E56",
-    color: "#fff",
+    color: "var(--text-primary)",
     fontWeight: "normal",
   },
   chatItemSelected: {
@@ -2330,7 +2390,7 @@ const styles: Record<string, React.CSSProperties> = {
   familyButtonActive: {
     backgroundColor: "var(--active-bg)",
     borderLeft: "2px solid #0F6E56",
-    color: "#fff",
+    color: "var(--text-primary)",
     fontWeight: "normal",
   },
   familyEmoji: {
@@ -2364,7 +2424,7 @@ const styles: Record<string, React.CSSProperties> = {
   threadItemActive: {
     backgroundColor: "var(--active-bg)",
     borderLeft: "2px solid #0F6E56",
-    color: "#fff",
+    color: "var(--text-primary)",
     fontWeight: "normal",
   },
   threadName: {
@@ -2428,7 +2488,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "fixed",
     inset: 0,
     backgroundColor: "rgba(0,0,0,0.45)",
-    zIndex: 300,
+    zIndex: "var(--z-modal)" as unknown as number,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
