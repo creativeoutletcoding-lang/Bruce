@@ -4,7 +4,10 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import {
   assembleMemoryBlock,
   buildMemberCombination,
+  HAIKU_MODEL,
 } from "@/lib/anthropic";
+import { formatAssistantReplay } from "@/lib/chat/toolTrace";
+import { executeReactionTool } from "@/lib/chat/reactionTools";
 import { parsePastedAttachments } from "@/lib/chat/pastedText";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import { getBrowserContextBlock } from "@/lib/browser/browserbase";
@@ -18,7 +21,13 @@ import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
 
-// ── Bruce engagement logic (server-side, hard gate) ──────────────────────────
+// ── Bruce engagement logic (server-side gate) ────────────────────────────────
+// Two stages: cheap regex fast-paths for the unambiguous cases, then a Haiku
+// micro-classifier for everything else so the participation rule in the system
+// prompt (respond / react / stay silent) is actually exercised — the old
+// regex-only gate meant Bruce never even saw a message that didn't name him.
+
+export type EngagementDecision = "respond" | "react_thumbs" | "react_heart" | "silent";
 
 function isDirectlyAddressed(message: string): boolean {
   return /\bbruce\b/i.test(message);
@@ -30,11 +39,47 @@ function bruceAskedQuestion(history: Array<{ role: string; content: string }>): 
   return last.role === "assistant" && last.content.includes("?");
 }
 
-function shouldBruceRespond(
-  currentMessage: string,
-  history: Array<{ role: string; content: string }>
-): boolean {
-  return isDirectlyAddressed(currentMessage) || bruceAskedQuestion(history);
+const GATE_PROMPT = `You are the engagement gate for Bruce, a family group-chat AI assistant. Given recent conversation and the newest message, decide how Bruce should engage. Reply with exactly one word:
+
+RESPOND — a member asks for information, a suggestion, a recommendation, a lookup, or a task is clearly directed at the assistant even without naming it.
+REACT_THUMBS — the message is purely informational (news, an update, a confirmation) where a silent thumbs-up acknowledgment is appropriate and text would add nothing.
+REACT_HEART — the message is warm, personal, or emotionally significant: a kind gesture, a family moment, something lovingly shared.
+SILENT — members are talking to each other, venting, celebrating together, or the assistant's input was not invited.
+
+Lean toward SILENT over reacting — reactions still signal presence and feel intrusive if overused. When in doubt, stay silent.`;
+
+async function classifyEngagement(
+  anthropic: Anthropic,
+  message: string,
+  senderName: string,
+  history: Array<{ role: string; content: string; sender_id: string | null }>
+): Promise<EngagementDecision> {
+  if (isDirectlyAddressed(message)) return "respond";
+  if (bruceAskedQuestion(history)) return "respond";
+  try {
+    const transcript = history
+      .slice(-6)
+      .map((m) => `${m.sender_id === null ? "Bruce" : "Member"}: ${m.content.slice(0, 200)}`)
+      .join("\n");
+    const res = await anthropic.messages.create({
+      model: HAIKU_MODEL,
+      max_tokens: 8,
+      system: GATE_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: `Recent conversation:\n${transcript || "(none)"}\n\nNewest message, from ${senderName}: ${message.slice(0, 500)}\n\nDecision:`,
+        },
+      ],
+    });
+    const word = (res.content[0]?.type === "text" ? res.content[0].text : "").trim().toUpperCase();
+    if (word.startsWith("RESPOND")) return "respond";
+    if (word.startsWith("REACT_THUMBS")) return "react_thumbs";
+    if (word.startsWith("REACT_HEART")) return "react_heart";
+    return "silent";
+  } catch {
+    return "silent"; // classifier failure falls back to the old default: stay out
+  }
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -93,6 +138,10 @@ export async function POST(request: NextRequest) {
     metadata: Record<string, unknown> | null;
   }>).map((m) => {
     const text = m.content ?? "";
+    if (m.role === "assistant") {
+      // Replay the turn's tool trace so follow-ups keep the grounding.
+      return { role: m.role, content: formatAssistantReplay(text, m.metadata), sender_id: m.sender_id };
+    }
     const metaAttachments = m.metadata?.attachments as Array<{ type: string; filename?: string }> | undefined;
     if (metaAttachments && metaAttachments.length > 0 && !text.trim()) {
       const desc = metaAttachments
@@ -103,7 +152,11 @@ export async function POST(request: NextRequest) {
     return { role: m.role, content: text, sender_id: m.sender_id };
   }).filter((m) => m.content.trim().length > 0);
 
-  const willRespond = shouldBruceRespond(message, history);
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  // Kick off the engagement decision now; it runs in parallel with the
+  // attachment upload + message insert below and is awaited where it's used.
+  const engagementPromise = classifyEngagement(anthropic, displayMessage, senderName, history);
 
   const attachmentMeta: Array<{ url: string; type: string; filename?: string }> = [];
   for (let i = 0; i < attachments.length; i++) {
@@ -186,7 +239,24 @@ export async function POST(request: NextRequest) {
     )
   );
 
-  if (!willRespond) {
+  const engagement = await engagementPromise;
+
+  if (engagement === "react_thumbs" || engagement === "react_heart") {
+    // Acknowledge with a reaction instead of text — no model turn needed.
+    if (latestUserMessageId) {
+      await executeReactionTool(
+        latestUserMessageId,
+        chatId,
+        engagement === "react_heart" ? "❤️" : "👍"
+      ).catch(() => {});
+    }
+    return new Response(null, {
+      status: 200,
+      headers: { "X-Bruce-Responded": "false" },
+    });
+  }
+
+  if (engagement === "silent") {
     return new Response(null, {
       status: 200,
       headers: { "X-Bruce-Responded": "false" },
@@ -258,14 +328,12 @@ export async function POST(request: NextRequest) {
     { role: "user" as const, content: userContent },
   ]);
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
   const bruceNotifRecipients = familyMemberIds;
 
   const stream = runChatStream({
     anthropic,
     model: "claude-sonnet-4-6",
-    maxTokens: 2048,
+    maxTokens: 16000,
     systemPrompt,
     initialMessages: anthropicMessages,
     tools: TOOLS_FULL,

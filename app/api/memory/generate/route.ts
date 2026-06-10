@@ -1,7 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { classifyMemory, buildMemberCombination } from "@/lib/anthropic";
+import { classifyMemory, buildMemberCombination, HAIKU_MODEL } from "@/lib/anthropic";
+
+const CATEGORIES = new Set(["professional", "preference", "personal", "context"]);
+
+// Parse a "category: memory text" line from the extraction model. Falls back
+// to keyword classification when the model omits or mangles the prefix.
+function parseMemoryLine(line: string): { category: string; content: string } {
+  const match = /^(professional|preference|personal|context)\s*:\s*(.+)$/i.exec(line);
+  if (match && CATEGORIES.has(match[1].toLowerCase())) {
+    return { category: match[1].toLowerCase(), content: match[2].trim() };
+  }
+  return { category: classifyMemory(line), content: line };
+}
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -111,18 +123,18 @@ export async function POST(request: NextRequest) {
   let raw: string;
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+      model: HAIKU_MODEL,
       max_tokens: 1024,
       messages: [
         {
           role: "user",
           content: `Review this conversation and identify facts, preferences, decisions, situations, or context worth remembering about ${subjectDescription}.
 
-Write each memory as a clean, concise statement in the third person. ${isMultiMember ? `Reference people by name. Example: "${exampleName} and ${exampleName2} prefer to meet on Thursdays."` : `Example: "${exampleName} prefers direct responses with no preamble."`}
+Write each memory as a clean, concise statement in the third person. ${isMultiMember ? `Reference people by name. Example: "preference: ${exampleName} and ${exampleName2} prefer to meet on Thursdays."` : `Example: "preference: ${exampleName} prefers direct responses with no preamble."`}
 
 Return only memories that clear a meaningful threshold — not every detail, only things genuinely useful to know in future conversations.
 
-Format: one memory per line, no bullets, no numbering, no preamble.
+Format: one memory per line, prefixed with its category and a colon. Category must be one of: professional, preference, personal, context. No bullets, no numbering, no preamble.
 
 If nothing is worth remembering, return the single word: NONE
 
@@ -150,7 +162,8 @@ ${transcript}`,
   if (!isMultiMember) {
     // Private memory — scoped to the single member
     const ownerId = memberIds[0] ?? user.id;
-    for (const content of lines) {
+    for (const line of lines) {
+      const { category, content } = parseMemoryLine(line);
       const { data: existing } = await adminSupabase
         .from("memory")
         .select("id")
@@ -166,7 +179,7 @@ ${transcript}`,
         content,
         tier: "active",
         relevance_score: 50,
-        category: classifyMemory(content),
+        category,
       });
       if (!error) generated++;
     }
@@ -175,7 +188,8 @@ ${transcript}`,
     const combo = buildMemberCombination(memberIds);
     const memProjectId = projectIsolateMemory ? projectId : null;
 
-    for (const content of lines) {
+    for (const line of lines) {
+      const { category, content } = parseMemoryLine(line);
       const query = adminSupabase
         .from("memory")
         .select("id")
@@ -196,7 +210,7 @@ ${transcript}`,
         content,
         tier: "active",
         relevance_score: 50,
-        category: classifyMemory(content),
+        category,
       });
       if (!error) generated++;
     }

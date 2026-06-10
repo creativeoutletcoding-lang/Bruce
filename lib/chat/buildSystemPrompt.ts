@@ -1,5 +1,5 @@
 // Single entry point for Bruce's system prompt across every chat context.
-// Routes pass a SystemPromptContext and get back the full prompt string —
+// Routes pass a SystemPromptContext and get back an array of system blocks —
 // they never assemble prompt fragments themselves.
 //
 // Shared layers (identity, household, member context, formatting, tool
@@ -7,13 +7,25 @@
 // blocks (project chats), participation/group rules (group + family), the
 // three-tier confirmation rule (family), and dev workspace situational
 // context.
+//
+// PROMPT CACHING: the return value is two text blocks. Block 1 holds every
+// layer that is stable across a chat's messages (identity, household, market
+// intelligence, chat context incl. project instructions/files, tool blocks)
+// and carries cache_control — Anthropic caches the prefix through this block,
+// which also covers the tools array. Block 2 holds the volatile per-message
+// layers (member/session layer with timestamp + memory, location, reminders,
+// browser context) and is re-read every call. Keep anything that changes
+// per-message OUT of block 1 or the cache will never hit.
 
+import type Anthropic from "@anthropic-ai/sdk";
 import {
   LAYER_IDENTITY,
   LAYER_HOUSEHOLD,
   buildMemberLayer,
 } from "@/lib/anthropic";
 import { buildToolSystemBlocks } from "@/lib/chat/streamHandler";
+
+export type SystemPromptBlocks = Anthropic.Messages.TextBlockParam[];
 
 export type SystemPromptMode = "standalone" | "project" | "family" | "dev";
 
@@ -190,30 +202,29 @@ ${GROUP_FORMAT}
 ${FAMILY_THREE_TIER}`;
 }
 
-export function buildSystemPrompt(ctx: SystemPromptContext): string {
+export function buildSystemPrompt(ctx: SystemPromptContext): SystemPromptBlocks {
   const memberLayer = buildMemberLayer(ctx.userName, ctx.userTimestamp, ctx.memoryBlock);
 
   if (ctx.mode === "dev") {
-    const sections = [LAYER_IDENTITY, LAYER_HOUSEHOLD, memberLayer, ...(ctx.extraSections ?? [])];
-    return sections.join("\n\n");
+    const stable = [LAYER_IDENTITY, LAYER_HOUSEHOLD, ...(ctx.extraSections ?? [])].join("\n\n");
+    return [
+      { type: "text", text: stable, cache_control: { type: "ephemeral" } },
+      { type: "text", text: memberLayer },
+    ];
   }
 
   const chatContext = buildChatContextBlock(ctx);
-  let prompt = [LAYER_IDENTITY, LAYER_HOUSEHOLD, memberLayer, MARKET_INTELLIGENCE, chatContext].join("\n\n");
+  const stable =
+    [LAYER_IDENTITY, LAYER_HOUSEHOLD, MARKET_INTELLIGENCE, chatContext].join("\n\n") +
+    buildToolSystemBlocks({ includeImageGen: !!ctx.includeImageGen });
 
-  if (ctx.locationContext) {
-    prompt += `\n\n${ctx.locationContext}`;
-  }
+  let volatile = memberLayer;
+  if (ctx.locationContext) volatile += `\n\n${ctx.locationContext}`;
+  if (ctx.remindersContext) volatile += `\n\n${ctx.remindersContext}`;
+  if (ctx.browserContext) volatile += `\n\n${ctx.browserContext}`;
 
-  if (ctx.remindersContext) {
-    prompt += `\n\n${ctx.remindersContext}`;
-  }
-
-  if (ctx.browserContext) {
-    prompt += `\n\n${ctx.browserContext}`;
-  }
-
-  prompt += buildToolSystemBlocks({ includeImageGen: !!ctx.includeImageGen });
-
-  return prompt;
+  return [
+    { type: "text", text: stable, cache_control: { type: "ephemeral" } },
+    { type: "text", text: volatile },
+  ];
 }

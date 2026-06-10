@@ -5,7 +5,9 @@ import {
   assembleMemoryBlock,
   buildMemberCombination,
   generateChatTitle,
+  generateSmartTitle,
 } from "@/lib/anthropic";
+import { formatAssistantReplay } from "@/lib/chat/toolTrace";
 import { parsePastedAttachments } from "@/lib/chat/pastedText";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import { getBrowserContextBlock } from "@/lib/browser/browserbase";
@@ -119,17 +121,24 @@ export async function POST(request: NextRequest, { params }: Props) {
   type HistoryEntry = { role: string; content: string | Anthropic.Messages.ContentBlockParam[] };
   let history: HistoryEntry[] = [];
   if (chatId) {
-    const { data: msgs } = await supabase
+    // Window the replay: last 40 messages (see /api/chat — same rationale).
+    const { data: msgsDesc } = await supabase
       .from("messages")
       .select("role, content, metadata, file_ids")
       .eq("chat_id", chatId)
-      .order("created_at", { ascending: true });
-    history = (msgs ?? []).map((m) => {
+      .order("created_at", { ascending: false })
+      .limit(40);
+    const msgs = (msgsDesc ?? []).reverse();
+    history = msgs.map((m) => {
       const meta = m.metadata as Record<string, unknown> | null;
       if (meta?.content_type === "image") {
         return { role: m.role as string, content: "[image generated]" };
       }
       const text = (m.content as string) ?? "";
+      if (m.role === "assistant") {
+        // Replay the turn's tool trace so follow-ups keep the grounding.
+        return { role: "assistant", content: formatAssistantReplay(text, meta) };
+      }
       const metaAttachments = meta?.attachments as Array<{ type: string; filename?: string }> | undefined;
       const fileIds = m.file_ids as (string | null)[] | null;
 
@@ -215,6 +224,14 @@ export async function POST(request: NextRequest, { params }: Props) {
       .update({ title: chatTitle })
       .eq("id", currentChatId!);
     if (titleErr) console.error("[api/projects/chat] Failed to save title:", titleErr);
+
+    // Real title via Haiku, in parallel with the response stream.
+    const titleChatId = currentChatId!;
+    void generateSmartTitle(displayMessage).then((smart) => {
+      if (smart) {
+        return adminSupabase.from("chats").update({ title: smart }).eq("id", titleChatId);
+      }
+    }).catch(() => {});
   }
 
   const attachmentMeta = attachments.map((att) => ({

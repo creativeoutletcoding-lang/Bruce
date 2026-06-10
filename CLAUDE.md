@@ -119,7 +119,9 @@ All chat routes use the same tool set. Tool definitions live in `lib/`. System b
 
 ## System Prompt Builders
 
-**Single entry point:** `buildSystemPrompt(ctx: SystemPromptContext)` in `lib/chat/buildSystemPrompt.ts`. Routes pass a `SystemPromptContext` and get back the full prompt string — they never assemble prompt fragments, append tool blocks, or concatenate identity/household/member layers themselves.
+**Single entry point:** `buildSystemPrompt(ctx: SystemPromptContext)` in `lib/chat/buildSystemPrompt.ts`. Routes pass a `SystemPromptContext` and get back `SystemPromptBlocks` (an `Anthropic TextBlockParam[]`) — they never assemble prompt fragments, append tool blocks, or concatenate identity/household/member layers themselves.
+
+**PROMPT CACHING RULE:** `buildSystemPrompt` returns exactly two blocks. Block 1 holds every layer stable across a chat's messages (identity, household, MARKET_INTELLIGENCE, chat context incl. project instructions/files, tool system blocks) and carries `cache_control: {type: "ephemeral"}` — the cache prefix through this block also covers the tools array. Block 2 holds the volatile per-message layers (member layer with timestamp + memory, location, reminders, browser context). Never put anything that changes per-message into block 1 — it will silently kill the cache. `runChatStream` additionally marks the last message of each API call with a cache breakpoint (`withCacheBreakpoint`) so the conversation prefix is cached incrementally across user turns and across tool-loop iterations.
 
 **Shared constants** exported from `lib/anthropic/index.ts` and imported by `buildSystemPrompt.ts`:
 - `LAYER_IDENTITY` — Bruce's character and core identity
@@ -154,7 +156,7 @@ Two types: **private** (one member + Bruce) and **shared** (multiple members). A
 
 **Loading order:** private core (max 20) → private active (max 15 by relevance score) → global shared core → global shared active → project-isolated core/active (if `isolate_memory` on). Budget: 500 words. Relevance scores incremented on every load.
 
-**Generation:** `app/api/memory/generate/route.ts` — called with `keepalive: true` on component unmount. Sends conversation to Claude, generates a memory entry. Determines type (private vs shared) from chat type and member count.
+**Generation:** `app/api/memory/generate/route.ts` — called with `keepalive: true` on component unmount AND on `pagehide` (iOS PWA kills pages without unmounting; `useChatMemory` fires on whichever happens first, once per mount). Extraction runs on `HAIKU_MODEL`; the model returns `category: memory` lines (professional|preference|personal|context), parsed by `parseMemoryLine` with keyword `classifyMemory` as fallback. Determines type (private vs shared) from chat type and member count.
 
 **Admin access:** `/admin/memory` shows aggregate counts per member via `get_memory_metrics()` (SECURITY DEFINER function, migration 018). No content access ever.
 
@@ -203,12 +205,20 @@ All three chat contexts (standalone, project, family) share the same code paths.
 
 **Streaming status indicator:** the working-status strip is rendered once, in the shared `MessageList` (driven by its `streamingStatus` prop), so it appears identically in standalone, project, and family chat. It is NOT a top-bar concern — `TopBar` no longer carries a `statusText` prop, and `MessageBubble` does not render status. **Status lifecycle** (in `streamHandler`, via `\x1eSTATUS:text\x1e` sentinels; client takes the *last* one, empty = clear): if no text/tool has streamed 1.5s into a reply, show **"Thinking…"**; a native web-search `server_tool_use` block switches it to **"Searching the web…"**; the first text token clears it. `firstTextSeen` is response-wide so "Thinking…" only ever appears before the first text token (no mid-reply flashes; fast replies never show it).
 
+**Family engagement gate:** `/api/family/chat` decides Bruce's engagement in two stages — regex fast-paths (message contains "bruce", or Bruce's last message asked a question → respond), then a `HAIKU_MODEL` micro-classifier (`classifyEngagement`) returning RESPOND / REACT_THUMBS / REACT_HEART / SILENT per the participation rule. React decisions insert a Bruce reaction directly via `executeReactionTool` and return `X-Bruce-Responded: false` — no full model turn. Classifier failure falls back to SILENT.
+
+**Chat titles:** new chats get an instant truncated placeholder (`generateChatTitle`), then `generateSmartTitle` (HAIKU_MODEL) runs in parallel with the response stream and updates the `chats` row — the sidebar picks it up on the post-stream refresh.
+
 **Unread indicators:** `chat_members.last_read_at` (migration 024) is updated to `now()` whenever a chat is opened via `POST /api/chats/mark-read`. The sidebar queries `chat_members` on mount and renders an 8px `#0F6E56` dot when `chats.last_message_at > last_read_at` and the latest message wasn't sent by the current user.
 
 ## Build Conventions
 
-- **Model:** always `claude-sonnet-4-6`. Never hardcode another.
+- **Model:** conversation always uses `claude-sonnet-4-6` (or the member's `preferred_model`). Structured side-tasks (chat titles, memory extraction, the family engagement gate) use `HAIKU_MODEL` (`claude-haiku-4-5-20251001`, exported from `lib/anthropic`). Never hardcode any other model id.
 - **Streaming:** all chat responses stream via Anthropic SDK streaming helpers.
+- **History windowing:** chat routes replay at most the last 40 messages (descending fetch + reverse). Never load unbounded history into model context.
+- **Tool traces:** `runChatStream` persists a compact trace of the turn's tool calls in `messages.metadata.tool_trace` (capped via `lib/chat/toolTrace.ts`); the three chat routes replay it through `formatAssistantReplay()` so follow-up turns keep tool grounding. New chat routes must do the same.
+- **History sanitization:** `sanitizeAlternatingMessages` (in `lib/chat/sanitizeMessages.ts`, re-exported from `streamHandler`) MERGES adjacent same-role messages — never drops content.
+- **Tests:** `npm test` (vitest). Pure stream-protocol/sanitize/trace logic is covered in `lib/chat/__tests__/` — extend these when touching the streaming protocol.
 - **No `any` types.** Use `lib/types.ts`.
 - **API keys never leave the server.** API routes and DigitalOcean jobs only.
 - **RLS is the privacy wall.** Never bypass on the client. Service role: server-side only.

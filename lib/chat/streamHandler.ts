@@ -48,6 +48,13 @@ import {
   executeReactionTool,
 } from "@/lib/chat/reactionTools";
 import { BROWSE_PAGE_TOOL, BROWSER_SYSTEM_BLOCK } from "@/lib/browser/browseTool";
+import {
+  truncateTraceResult,
+  TOOL_TRACE_MAX_ENTRIES,
+  type ToolTraceEntry,
+} from "@/lib/chat/toolTrace";
+
+export { sanitizeAlternatingMessages } from "@/lib/chat/sanitizeMessages";
 
 // ── Tool sets ────────────────────────────────────────────────────────────────
 // Standalone + project chats get the full tool set including image generation.
@@ -121,7 +128,8 @@ export interface StreamRunOptions {
   anthropic: Anthropic;
   model: string;
   maxTokens?: number;
-  systemPrompt: string;
+  /** Plain string or cache-structured blocks from buildSystemPrompt. */
+  systemPrompt: string | Anthropic.Messages.TextBlockParam[];
   initialMessages: Anthropic.Messages.MessageParam[];
   tools: typeof TOOLS_FULL;
   /** Anthropic user id, needed to scope tool execution to the right Google account. */
@@ -372,6 +380,36 @@ async function executeOneTool(
   return executeCalendarTool(name, input, userId);
 }
 
+// ── Prompt-cache breakpoint ──────────────────────────────────────────────────
+// Marks the last content block of the last message with cache_control so the
+// conversation prefix (tools + system + all prior messages) is cached and
+// extended incrementally — both across user turns and across the iterations of
+// the tool loop below, where the same growing prefix is otherwise re-read at
+// full price on every tool round-trip. Returns a shallow copy; the caller's
+// array is never mutated, so marks don't accumulate across iterations.
+
+function withCacheBreakpoint(
+  messages: Anthropic.Messages.MessageParam[]
+): Anthropic.Messages.MessageParam[] {
+  if (messages.length === 0) return messages;
+  const last = messages[messages.length - 1];
+  const content = last.content;
+  let newContent: Anthropic.Messages.ContentBlockParam[];
+  if (typeof content === "string") {
+    if (!content.trim()) return messages;
+    newContent = [{ type: "text", text: content, cache_control: { type: "ephemeral" } }];
+  } else if (Array.isArray(content) && content.length > 0) {
+    const lastBlock = content[content.length - 1];
+    newContent = [
+      ...content.slice(0, -1),
+      { ...lastBlock, cache_control: { type: "ephemeral" } } as Anthropic.Messages.ContentBlockParam,
+    ];
+  } else {
+    return messages;
+  }
+  return [...messages.slice(0, -1), { role: last.role, content: newContent }];
+}
+
 // ── Stream runner ────────────────────────────────────────────────────────────
 // Returns a ReadableStream the route can return directly. Caller is responsible
 // for setting response headers (Content-Type, X-Chat-Id, etc.).
@@ -395,6 +433,9 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
       const encoder = new TextEncoder();
       let fullResponse = "";
       let pendingTag = "";
+      // Compact record of this turn's tool calls, persisted in metadata so
+      // history replay keeps the grounding (see lib/chat/toolTrace.ts).
+      const toolTrace: ToolTraceEntry[] = [];
 
       // ── Streaming status lifecycle ("Thinking…" → "Searching the web…" → clear) ─
       // STATUS sentinels are \x1eSTATUS:text\x1e; the client shows the latest and
@@ -495,7 +536,7 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
             model,
             max_tokens: maxTokens ?? 2048,
             system: systemPrompt,
-            messages: currentMessages,
+            messages: withCacheBreakpoint(currentMessages),
             tools,
           }, { signal: clientAbort.signal });
 
@@ -622,6 +663,10 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
               }
               const isToolError = result.startsWith("Error:");
 
+              if (tc.name !== "react_to_message" && !isToolError) {
+                toolTrace.push({ tool: tc.name, result: truncateTraceResult(result) });
+              }
+
               // react_to_message is a silent action — no task-progress card.
               if (tc.name !== "react_to_message") {
                 const stepLabel = TOOL_STEP_LABELS[tc.name] ?? tc.name;
@@ -692,6 +737,9 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
             metadata.content_type = "task";
             metadata.task_data = taskData;
           }
+          if (toolTrace.length > 0) {
+            metadata.tool_trace = toolTrace.slice(-TOOL_TRACE_MAX_ENTRIES);
+          }
           await persistAssistant(finalClean, metadata);
           if (onComplete && finalClean) await onComplete(finalClean).catch(() => {});
         }
@@ -720,21 +768,3 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
   });
 }
 
-// ── History sanitization ─────────────────────────────────────────────────────
-// Anthropic rejects non-alternating user/assistant messages. Failed previous
-// turns can leave the DB with two user messages in a row; collapse those.
-
-export function sanitizeAlternatingMessages(
-  raw: Anthropic.Messages.MessageParam[]
-): Anthropic.Messages.MessageParam[] {
-  return raw
-    .reduce<Anthropic.Messages.MessageParam[]>((acc, msg) => {
-      if (acc.length > 0 && acc[acc.length - 1].role === msg.role) {
-        acc[acc.length - 1] = msg;
-      } else {
-        acc.push(msg);
-      }
-      return acc;
-    }, [])
-    .filter((_, i, arr) => i !== 0 || arr[0].role === "user");
-}

@@ -10,9 +10,12 @@ interface UseChatMemoryOptions {
   disabled?: boolean;
 }
 
-// Fire-and-forget memory generation on component unmount. Uses keepalive so the
-// browser still ships the request after navigation. Only fires once per mount,
-// and only when there are at least two messages to summarize.
+// Fire-and-forget memory generation on component unmount OR pagehide. Unmount
+// alone is unreliable on iOS PWA — the page is often killed without React ever
+// unmounting, so conversations silently generated no memory. pagehide fires
+// reliably on iOS when the app is backgrounded/killed. Uses keepalive so the
+// browser still ships the request after navigation. Fires at most once per
+// mount, and only when there are at least two messages to summarize.
 export function useChatMemory({ chatId, messageCount, disabled = false }: UseChatMemoryOptions) {
   const firedRef = useRef(false);
   const countRef = useRef(messageCount);
@@ -22,7 +25,7 @@ export function useChatMemory({ chatId, messageCount, disabled = false }: UseCha
   useEffect(() => { disabledRef.current = disabled; }, [disabled]);
 
   useEffect(() => {
-    return () => {
+    const fire = () => {
       if (disabledRef.current) return;
       if (firedRef.current) return;
       if (countRef.current < 2) return;
@@ -33,6 +36,11 @@ export function useChatMemory({ chatId, messageCount, disabled = false }: UseCha
         body: JSON.stringify({ chatId }),
         keepalive: true,
       }).catch(() => {});
+    };
+    window.addEventListener("pagehide", fire);
+    return () => {
+      window.removeEventListener("pagehide", fire);
+      fire();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

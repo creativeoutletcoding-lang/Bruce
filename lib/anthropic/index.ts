@@ -1,6 +1,12 @@
 // Anthropic helpers — memory assembly, system prompts, image generation block
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { after } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+
+// Fast/cheap model for structured side-tasks (chat titles, memory extraction,
+// the family engagement gate). Conversation itself always uses the member's
+// preferred model — never this one.
+export const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 
 // ── Memory assembly constants ─────────────────────────────────────────────────
 
@@ -234,17 +240,21 @@ export async function assembleMemoryBlock(
   const loadedIds = loadedItems.map((m) => m.id);
 
   if (loadedItems.length > 0) {
-    Promise.all(
-      loadedItems.map((m) =>
-        serviceRole
-          .from("memory")
-          .update({
-            relevance_score: Math.min(m.relevance_score + 1, 100),
-            last_accessed: new Date().toISOString(),
-          })
-          .eq("id", m.id)
+    // after() keeps the function instance alive until these writes land —
+    // a bare fire-and-forget can be frozen mid-flight on serverless.
+    after(() =>
+      Promise.all(
+        loadedItems.map((m) =>
+          serviceRole
+            .from("memory")
+            .update({
+              relevance_score: Math.min(m.relevance_score + 1, 100),
+              last_accessed: new Date().toISOString(),
+            })
+            .eq("id", m.id)
+        )
       )
-    ).then();
+    );
   }
 
   return { block: formatMemoryBlock(loadedItems), loadedIds };
@@ -354,6 +364,31 @@ export function classifyMemory(content: string): string {
   return "context";
 }
 
+// Immediate placeholder title — shown until generateSmartTitle lands.
 export function generateChatTitle(message: string): string {
   return message.replace(/\n/g, " ").trim().substring(0, 40);
+}
+
+// Real title via Haiku. Called fire-and-forget alongside the response stream
+// (the function instance stays alive while streaming, so the update lands
+// mid-stream and the sidebar picks it up on the post-stream refresh).
+export async function generateSmartTitle(message: string): Promise<string | null> {
+  try {
+    const Anthropic = (await import("@anthropic-ai/sdk")).default;
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const res = await anthropic.messages.create({
+      model: HAIKU_MODEL,
+      max_tokens: 30,
+      messages: [
+        {
+          role: "user",
+          content: `Write a 2-5 word title for a conversation that starts with this message. Output only the title — no quotes, no trailing punctuation.\n\nMessage: ${message.slice(0, 500)}`,
+        },
+      ],
+    });
+    const text = res.content[0]?.type === "text" ? res.content[0].text.trim() : "";
+    return text ? text.replace(/^["']|["']$/g, "").slice(0, 60) : null;
+  } catch {
+    return null; // placeholder title stays — never block or fail the chat for a title
+  }
 }
