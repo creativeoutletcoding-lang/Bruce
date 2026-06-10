@@ -15,6 +15,35 @@ import MessageContextMenu, { type MenuAnchor } from "./MessageContextMenu";
 
 export type { MessageAttachment };
 
+const URL_RE = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g;
+
+function linkifyText(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  URL_RE.lastIndex = 0;
+  while ((match = URL_RE.exec(text)) !== null) {
+    // Strip trailing punctuation that's unlikely to be part of the URL
+    const url = match[0].replace(/[.,;:!?)]+$/, "");
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push(
+      <a
+        key={match.index}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={styles.link}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {url}
+      </a>
+    );
+    last = match.index + url.length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length > 0 ? parts : [text];
+}
+
 interface MessageBubbleProps {
   role: MessageRole;
   content: string;
@@ -479,7 +508,7 @@ export default function MessageBubble({
                 dangerouslySetInnerHTML={{ __html: marked(displayContent) as string }}
               />
             ) : (
-              <span style={styles.content}>{displayContent}</span>
+              <span style={styles.content}>{linkifyText(displayContent)}</span>
             )}
             {interrupted && (
               <div style={styles.interruptedNote}>Stopped</div>
@@ -604,6 +633,12 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.3,
   },
   content: { display: "inline" },
+  link: {
+    color: "var(--accent)",
+    textDecoration: "underline",
+    textUnderlineOffset: "2px",
+    wordBreak: "break-all" as const,
+  },
   timestamp: {
     fontSize: "0.6875rem",
     color: "var(--text-tertiary)",
