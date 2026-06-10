@@ -6,8 +6,5 @@
     "app/api/images/generate/route.ts": { "maxDuration": 120 },
     "app/api/cron/scheduled-tasks/route.ts": { "maxDuration": 300 }
   },
-  "crons": [
-    { "path": "/api/cron/reminders", "schedule": "* * * * *" },
-    { "path": "/api/cron/scheduled-tasks", "schedule": "*/5 * * * *" }
-  ]
+  "crons": []
 }
