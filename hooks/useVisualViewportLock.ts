@@ -45,21 +45,41 @@ export function useVisualViewportLock() {
       // Pinch-zoomed states report a shrunken visual viewport — don't let
       // accessibility zoom collapse the shell.
       if (vv.scale && Math.abs(vv.scale - 1) > 0.01) return;
-      root.style.setProperty("--app-height", `${Math.round(vv.height)}px`);
-      root.style.setProperty("--vv-offset-top", `${Math.round(vv.offsetTop)}px`);
       const keyboardOpen = window.innerHeight - vv.height > 50;
+      root.style.setProperty("--app-height", `${Math.round(vv.height)}px`);
+      // Only follow the visual-viewport offset while the keyboard is actually
+      // open. When it's closed, transient page-level scrolls (scrollIntoView
+      // on chat open, rubber-banding) briefly report a nonzero offsetTop —
+      // tracking those would shift the fixed shell and snap it back, which
+      // reads as a jump on open. Pin to 0 instead.
+      root.style.setProperty(
+        "--vv-offset-top",
+        keyboardOpen ? `${Math.round(vv.offsetTop)}px` : "0px"
+      );
       root.style.setProperty(
         "--kb-safe-bottom",
         keyboardOpen ? "0px" : "env(safe-area-inset-bottom, 0px)"
       );
     };
 
+    // Coalesce the burst of resize/scroll events iOS fires during the keyboard
+    // transition into one update per frame — avoids layout thrash and jitter.
+    let rafId = 0;
+    const schedule = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        update();
+      });
+    };
+
     update();
-    vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
+    vv.addEventListener("resize", schedule);
+    vv.addEventListener("scroll", schedule);
     return () => {
-      vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
+      if (rafId) cancelAnimationFrame(rafId);
+      vv.removeEventListener("resize", schedule);
+      vv.removeEventListener("scroll", schedule);
       root.style.removeProperty("--app-height");
       root.style.removeProperty("--vv-offset-top");
       root.style.removeProperty("--kb-safe-bottom");
