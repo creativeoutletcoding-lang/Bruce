@@ -374,6 +374,37 @@ export async function moveFile(
   }
 }
 
+/**
+ * Move a Drive file to the trash (recoverable for ~30 days). Takes Google
+ * Drive file IDs only — never Gmail message IDs. Returns the trashed file's
+ * name so Bruce can confirm exactly what was trashed.
+ */
+export async function trashFile(
+  userId: string,
+  fileId: string
+): Promise<{ fileId: string; fileName: string }> {
+  const token = await getValidToken(userId);
+
+  const { signal, clear } = makeAbortSignal(DRIVE_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(`${DRIVE_API}/files/${fileId}?fields=id,name,trashed`, {
+      method: "PATCH",
+      signal,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ trashed: true }),
+    });
+  } finally {
+    clear();
+  }
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Drive trash failed: ${res.status} — ${err}`);
+  }
+  const file = (await res.json()) as { id: string; name: string };
+  return { fileId: file.id, fileName: file.name };
+}
+
 export async function exportAsPDF(
   userId: string,
   fileId: string,

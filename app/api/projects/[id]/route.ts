@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { logInstructionsWrite } from "@/lib/projects/instructionsAudit";
 import { NextRequest, NextResponse } from "next/server";
 import type { ProjectDetail, ProjectMemberDetail, File as BruceFile } from "@/lib/types";
 
@@ -81,7 +82,7 @@ export async function PATCH(request: NextRequest, { params }: Props) {
 
   const { data: project } = await supabase
     .from("projects")
-    .select("owner_id")
+    .select("owner_id, instructions")
     .eq("id", id)
     .single();
 
@@ -116,6 +117,18 @@ export async function PATCH(request: NextRequest, { params }: Props) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Audit every instructions write (owner edits are intentional and may
+  // shorten the text — they are logged, not blocked).
+  if (body.instructions !== undefined) {
+    await logInstructionsWrite({
+      projectId: id,
+      chatId: null,
+      source: "manual",
+      oldLength: ((project.instructions as string | null) ?? "").length,
+      newLength: body.instructions.length,
+    });
+  }
 
   return NextResponse.json(updated);
 }

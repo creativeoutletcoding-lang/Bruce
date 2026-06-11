@@ -179,6 +179,7 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   update_spreadsheet_cells: "Update cells",
   format_spreadsheet_tab: "Format tab",
   generate_csv: "Generate CSV",
+  trash_drive_file: "Trash Drive file",
   create_document: "Create document",
   update_document: "Update document",
   append_document: "Append to document",
