@@ -7,7 +7,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createSheet, addTab, readSheet, updateCells, formatTab } from "@/lib/documents/sheets";
 import { createDoc, readDoc, updateDoc, appendDoc } from "@/lib/documents/docs";
-import { listFiles, moveFile, exportAsPDF, createFolder, resolvePathDebug, trashFile } from "@/lib/documents/drive";
+import { listFiles, moveFile, exportAsPDF, createFolder, resolvePathDebug } from "@/lib/documents/drive";
 import { generateCSV, readCSV } from "@/lib/documents/csv";
 import { getFileContent } from "@/lib/google/drive";
 import type { TabFormatSpec, SheetData } from "@/lib/documents/sheets";
@@ -294,8 +294,6 @@ export const DOCUMENT_TOOLS: Anthropic.Messages.Tool[] = [
     description:
       "Generate a CSV file from structured data and save it to Bruce Drive. " +
       "Use for payroll exports, data dumps, reports, or anything that needs to be opened in Excel/Sheets. " +
-      "Overwrites in place: if a file with the same name already exists in the target folder " +
-      "(or a file_id is passed), that file is updated — same fileId, no duplicate copies. " +
       "Confirm before generating — describe the file and ask first.",
     input_schema: {
       type: "object" as const,
@@ -304,12 +302,6 @@ export const DOCUMENT_TOOLS: Anthropic.Messages.Tool[] = [
         folder_path: {
           type: "string",
           description: "Bruce Drive folder path. Default: 'Personal'.",
-        },
-        file_id: {
-          type: "string",
-          description:
-            "Optional Google Drive file ID of an existing CSV to overwrite in place. " +
-            "When omitted, a same-named file in the target folder is overwritten automatically.",
         },
         columns: {
           type: "array",
@@ -344,22 +336,6 @@ export const DOCUMENT_TOOLS: Anthropic.Messages.Tool[] = [
       required: ["file_id"],
     },
   },
-  {
-    name: "trash_drive_file",
-    description:
-      "Google Drive file IDs only — never Gmail message IDs. " +
-      "Moves the file to Drive trash (recoverable for 30 days). " +
-      "Confirm before trashing files the user created. Duplicates you created " +
-      "yourself in the current session may be trashed without confirmation when " +
-      "the user asked for cleanup.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        file_id: { type: "string", description: "Google Drive file ID of the file to trash." },
-      },
-      required: ["file_id"],
-    },
-  },
 ];
 
 // ── Tool name set for routing ──────────────────────────────────
@@ -387,9 +363,6 @@ You can create and manage Google Sheets, Google Docs, and CSV files in the Bruce
 - Updating or appending a document: medium stakes — describe the change and confirm.
 - Overwriting a document (update_document): high stakes — always read first, describe exactly what changes, get explicit yes.
 - Exporting or generating: medium stakes — describe the output and confirm.
-- Trashing a Drive file (trash_drive_file): confirm before trashing files the user created — name the file and ask. Duplicate files you created yourself in the current session may be trashed without confirmation when the user asked for cleanup. trash_drive_file takes Google Drive file IDs only — never Gmail message IDs (and delete_email takes Gmail message IDs only — never Drive file IDs).
-
-**CSV overwrite behavior:** generate_csv overwrites in place — a same-named file in the target folder (or an explicit file_id) is updated with the same fileId rather than duplicated. The result reports action: "created" or "updated".
 
 **After confirmation:** call the tool immediately — do not say "I'll now create..." or otherwise announce the tool call. Report the result (title, URL) once the tool returns.
 
@@ -626,12 +599,10 @@ export async function executeDocumentTool(
         data,
         columns,
         input.file_name as string,
-        (input.folder_path as string | undefined) ?? "Personal",
-        input.file_id as string | undefined
+        (input.folder_path as string | undefined) ?? "Personal"
       );
       return JSON.stringify({
         success: true,
-        action: result.action,
         file_id: result.fileId,
         file_name: result.fileName,
         url: result.webViewLink,
@@ -642,16 +613,6 @@ export async function executeDocumentTool(
     case "read_csv": {
       const result = await readCSV(userId, input.file_id as string);
       return JSON.stringify(result);
-    }
-
-    case "trash_drive_file": {
-      const result = await trashFile(userId, input.file_id as string);
-      return JSON.stringify({
-        success: true,
-        trashed: true,
-        file_id: result.fileId,
-        file_name: result.fileName,
-      });
     }
 
     default:

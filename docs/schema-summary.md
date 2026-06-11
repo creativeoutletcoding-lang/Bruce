@@ -1,5 +1,5 @@
 # Bruce Database Schema — Live Reference
-_Reflects schema.sql + migrations 001–035 (all applied; verified against prod 2026-06-10)_
+_Reflects schema.sql + migrations 001–034_
 
 ---
 
@@ -226,27 +226,6 @@ Every persisted message in every chat. Incognito messages never reach this table
   - `messages_delete` — sender_id = uid (own messages only)
   - `family_thread_messages_select` — membership-gated family thread access
   - `family_thread_messages_insert` — membership-gated insert
-
-### metadata shape (assistant rows)
-
-For assistant messages, `content` holds **the final reply only**. Bruce's working process lives in `metadata`:
-
-```jsonc
-{
-  "working_log": [                  // ordered, chronological (2026-06-10)
-    { "type": "narration",  "text": "Let me read the sheet…" },           // capped 600 chars
-    { "type": "tool_use",   "tool": "read_spreadsheet", "label": "Read spreadsheet" },
-    { "type": "tool_result","tool": "read_spreadsheet", "result": "{...}", "is_error": false } // capped 600 chars
-  ],                                 // max 24 entries (lib/chat/toolTrace.ts caps)
-  "tool_trace": [ ... ],             // LEGACY (pre working_log) — read-only fallback in formatAssistantReplay
-  "content_type": "task" | "image",  // task card / generated image rows
-  "task_data": { "task": "...", "steps": [...] },
-  "web_search_used": true, "browse_url_used": false,
-  "interrupted": true                // user pressed Stop mid-stream
-}
-```
-
-`working_log` is produced by structural narration routing in `runChatStream` (any text block followed by a tool_use in the same turn = narration; final text block = reply) and rendered by the collapsed WorkingLog container via `normalizeMessage` → `workingLogToDisplay`. `formatAssistantReplay` replays it (narration + tool results) into history for follow-up turns.
 
 ---
 
@@ -490,68 +469,6 @@ Shared inline browser. One active Browserbase session per chat — Bruce drives 
 
 ---
 
-## reactions
-
-Thumbs-up / heart reactions on messages by members and Bruce (`user_id = NULL` = Bruce). `chat_id` denormalized for realtime channel filtering. Migration 030.
-
-| Column | Type | Nullable | Default |
-|--------|------|----------|---------|
-| id | UUID | NOT NULL | gen_random_uuid() (PK) |
-| message_id | UUID | NOT NULL | — (FK → messages, ON DELETE CASCADE) |
-| chat_id | UUID | NOT NULL | — (FK → chats, ON DELETE CASCADE) |
-| user_id | UUID | nullable | — (FK → users CASCADE; NULL = Bruce) |
-| type | TEXT | NOT NULL | `'thumbs_up'` |
-| created_at | TIMESTAMPTZ | NOT NULL | now() |
-
-- **Indexes:** `idx_reactions_message_id`, `idx_reactions_chat_id`
-- **Partial unique:** `reactions_bruce_unique (message_id, type) WHERE user_id IS NULL`; `reactions_member_unique (message_id, user_id, type) WHERE user_id IS NOT NULL`
-- **RLS:** enabled — select via `is_chat_member(chat_id)`; insert/delete own rows only (`user_id = auth.uid()`). Bruce reactions written via service role.
-
----
-
-## member_exclusions
-
-Mutual exclusion pairs — two members who must never share a chat or project (e.g. Nana ↔ Grampy). Migration 031.
-
-| Column | Type | Nullable | Default |
-|--------|------|----------|---------|
-| id | UUID | NOT NULL | gen_random_uuid() (PK) |
-| user_id_a | UUID | NOT NULL | — (FK → users, ON DELETE CASCADE) |
-| user_id_b | UUID | NOT NULL | — (FK → users, ON DELETE CASCADE) |
-| created_by | UUID | NOT NULL | — (FK → users) |
-| created_at | TIMESTAMPTZ | NOT NULL | now() |
-
-- **Constraint:** `no_self_exclusion CHECK (user_id_a <> user_id_b)`
-- **Unique expression index:** `unique_exclusion_pair` on `(LEAST(a,b), GREATEST(a,b))` of the UUID pair (as text)
-- **RLS:** enabled — `admin_only` for all operations
-- **Enforcement:** SECURITY DEFINER triggers `enforce_chat_member_exclusion` (BEFORE INSERT ON chat_members) and `enforce_project_member_exclusion` (BEFORE INSERT ON project_members) raise `member_exclusion_violation`; API routes catch it and return 409.
-
----
-
-## scheduled_tasks
-
-Proactive standing tasks — recurring Bruce runs that post into a target chat (morning briefings, weekly summaries). A task runs as its owner and can never see or post anything the owner couldn't by hand. Migration 035.
-
-| Column | Type | Nullable | Default |
-|--------|------|----------|---------|
-| id | UUID | NOT NULL | gen_random_uuid() (PK) |
-| user_id | UUID | NOT NULL | — (FK → users, ON DELETE CASCADE) |
-| chat_id | UUID | NOT NULL | — (FK → chats, ON DELETE CASCADE — target chat) |
-| prompt | TEXT | NOT NULL | — |
-| schedule | JSONB | NOT NULL | — (`{type: daily\|weekly\|monthly, time: "HH:MM", weekday?, day?}`) |
-| timezone | TEXT | NOT NULL | `'America/New_York'` |
-| next_run_at | TIMESTAMPTZ | NOT NULL | — (precomputed UTC) |
-| enabled | BOOLEAN | NOT NULL | TRUE |
-| last_run_at | TIMESTAMPTZ | nullable | — |
-| last_error | TEXT | nullable | — |
-| created_at | TIMESTAMPTZ | NOT NULL | NOW() |
-
-- **Index:** `scheduled_tasks_due_idx` on `next_run_at WHERE enabled = TRUE`
-- **RLS:** enabled — `scheduled_tasks_own` (ALL: `user_id = auth.uid()`); the cron dispatcher uses the service role
-- **Cron:** `GET /api/cron/scheduled-tasks` claims each due task by advancing `next_run_at` (conditioned on the read value) before running a full Bruce turn server-side via `runChatStream`.
-
----
-
 ## Helper Functions
 
 | Function | Returns | Notes |
@@ -561,8 +478,6 @@ Proactive standing tasks — recurring Bruce runs that post into a target chat (
 | `is_chat_member(c_id UUID)` | BOOLEAN | True if auth.uid() owns or is a member of that chat. |
 | `update_updated_at()` | TRIGGER | Sets NEW.updated_at = NOW() before UPDATE. |
 | `get_memory_metrics()` | TABLE | Aggregate memory counts per member (total, by tier, by type). SECURITY DEFINER — admin panel only, no content access. Migration 018/019. |
-| `check_chat_member_exclusion()` | TRIGGER | Raises `member_exclusion_violation` when an excluded pair would share a chat. SECURITY DEFINER. Migration 031. |
-| `check_project_member_exclusion()` | TRIGGER | Same enforcement for project_members. SECURITY DEFINER. Migration 031. |
 
 ---
 

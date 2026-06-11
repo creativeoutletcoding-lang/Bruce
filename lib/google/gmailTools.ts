@@ -148,15 +148,14 @@ export const GMAIL_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "delete_email",
     description:
-      "Move an email message to Gmail Trash. Gmail message IDs only — never " +
-      "Google Drive file IDs (use trash_drive_file for Drive files). " +
+      "Move a message to Trash. " +
       "IMPORTANT: This is high stakes. Always name the message (sender and subject) and ask the user to explicitly confirm before calling. No exceptions.",
     input_schema: {
       type: "object" as const,
       properties: {
         message_id: {
           type: "string",
-          description: "The Gmail message ID to move to Trash. Get this from get_email — never pass a Google Drive file ID.",
+          description: "The message ID to move to Trash. Get this from get_email.",
         },
       },
       required: ["message_id"],

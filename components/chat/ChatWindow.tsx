@@ -13,7 +13,6 @@ import type { FileAttachment } from "./MessageInput";
 import type { ChatMessage, MessageAttachment, NormalizedMessage } from "@/lib/chat/types";
 import type { MessageRole, MovableProject } from "@/lib/types";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
-import { workingLogToDisplay } from "@/lib/chat/workingLog";
 import { modelLabel } from "@/lib/models";
 import {
   consumeStream,
@@ -42,7 +41,6 @@ interface ChatWindowProps {
 }
 
 function toChatMessage(n: NormalizedMessage): ChatMessage {
-  const workingLog = workingLogToDisplay(n.working_log);
   return {
     id: n.id,
     role: n.role,
@@ -54,7 +52,6 @@ function toChatMessage(n: NormalizedMessage): ChatMessage {
     attachmentFilename: n.attachment_filename ?? undefined,
     sender_id: n.sender_id ?? undefined,
     pastedAttachments: (n.metadata?.pastedAttachments as PastedAttachmentData[] | undefined),
-    workingLog: workingLog.length > 0 ? workingLog : undefined,
   };
 }
 
@@ -271,7 +268,7 @@ export default function ChatWindow({
       const { accumulated, aborted } = await consumeStream({
         response: res,
         signal: abort.signal,
-        onTick: ({ display, task, workingStatus: ws, browserEvent, workingLog }) => {
+        onTick: ({ display, task, workingStatus: ws, browserEvent }) => {
           if (!hasFirstContent && (display.trim() || task)) {
             hasFirstContent = true;
             setWorkingStatus(null);
@@ -281,7 +278,7 @@ export default function ChatWindow({
           setMessages((prev) =>
             prev.map((m) =>
               m.id === streamMsgId
-                ? { ...m, content: display, workingLog: workingLog.length > 0 ? workingLog : undefined, ...(task !== null ? { taskData: task } : {}) }
+                ? { ...m, content: display, ...(task !== null ? { taskData: task } : {}) }
                 : m
             )
           );
@@ -290,8 +287,7 @@ export default function ChatWindow({
 
       setWorkingStatus(null);
 
-      const { display: finalText, task: finalTask, workingLog: finalLog } = finalizeStream(accumulated);
-      const finalWorkingLog = finalLog.length > 0 ? finalLog : undefined;
+      const { display: finalText, task: finalTask } = finalizeStream(accumulated);
 
       const imageReq = !aborted ? extractImageRequest(accumulated) : null;
 
@@ -355,15 +351,15 @@ export default function ChatWindow({
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? { ...m, content: finalText, isStreaming: false, taskData: resolvedTask, workingLog: finalWorkingLog, ...(aborted ? { interrupted: true } : {}), created_at: new Date().toISOString() }
+              ? { ...m, content: finalText, isStreaming: false, taskData: resolvedTask, ...(aborted ? { interrupted: true } : {}), created_at: new Date().toISOString() }
               : m
           )
         );
-      } else if (finalText || finalWorkingLog) {
+      } else if (finalText) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? { ...m, content: finalText, isStreaming: false, workingLog: finalWorkingLog, ...(aborted ? { interrupted: true } : {}), created_at: new Date().toISOString() }
+              ? { ...m, content: finalText, isStreaming: false, ...(aborted ? { interrupted: true } : {}), created_at: new Date().toISOString() }
               : m
           )
         );

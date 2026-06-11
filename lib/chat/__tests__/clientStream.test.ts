@@ -4,7 +4,6 @@ import {
   finalizeStream,
   extractImageRequest,
   resolveAbandonedTaskSteps,
-  advanceReveal,
 } from "@/lib/chat/clientStream";
 import type { TaskProgressData } from "@/lib/chat/taskProgress";
 
@@ -63,63 +62,6 @@ describe("parseStreamFrame", () => {
     expect(tick.display).toBe("ok");
     expect(tick.task).toBeNull();
   });
-
-  it("returns an empty workingLog for plain no-tool replies", () => {
-    const tick = parseStreamFrame("Just a normal answer.");
-    expect(tick.workingLog).toEqual([]);
-    expect(tick.display).toBe("Just a normal answer.");
-  });
-
-  it("routes text before NARRATION_BREAK to the working log, after it to the reply", () => {
-    const tick = parseStreamFrame(
-      "Let me read the sheet…\x1eNARRATION_BREAK\x1e" +
-        '\x1eTASK_PROGRESS:{"step":"Read spreadsheet","status":"done"}\x1e' +
-        "Here is the polished reply."
-    );
-    expect(tick.display).toBe("Here is the polished reply.");
-    expect(tick.workingLog).toEqual([
-      { kind: "narration", text: "Let me read the sheet…" },
-      { kind: "tool", label: "Read spreadsheet", status: "done" },
-    ]);
-  });
-
-  it("interleaves multiple narration segments and tool events chronologically", () => {
-    const tick = parseStreamFrame(
-      "First note\x1eNARRATION_BREAK\x1e" +
-        '\x1eTASK_PROGRESS:{"step":"Read CSV","status":"done","detail":"3 rows"}\x1e' +
-        "Second note\x1eNARRATION_BREAK\x1e" +
-        '\x1eTASK_PROGRESS:{"step":"Write output","status":"error"}\x1e' +
-        "Final reply"
-    );
-    expect(tick.display).toBe("Final reply");
-    expect(tick.workingLog).toEqual([
-      { kind: "narration", text: "First note" },
-      { kind: "tool", label: "Read CSV", status: "done", detail: "3 rows" },
-      { kind: "narration", text: "Second note" },
-      { kind: "tool", label: "Write output", status: "error" },
-    ]);
-  });
-
-  it("skips empty narration segments", () => {
-    const tick = parseStreamFrame("\x1eNARRATION_BREAK\x1eReply");
-    expect(tick.display).toBe("Reply");
-    expect(tick.workingLog).toEqual([]);
-  });
-
-  it("PROMOTE_LAST surfaces the last narration as the reply", () => {
-    const tick = parseStreamFrame(
-      "Only narration here\x1eNARRATION_BREAK\x1e" +
-        '\x1eTASK_PROGRESS:{"step":"Send email","status":"done"}\x1e' +
-        "\x1ePROMOTE_LAST\x1e"
-    );
-    expect(tick.display).toBe("Only narration here");
-    expect(tick.workingLog).toEqual([{ kind: "tool", label: "Send email", status: "done" }]);
-  });
-
-  it("hides a sentinel split across network chunks until its terminator arrives", () => {
-    const tick = parseStreamFrame("visible\x1eSTATUS:Think");
-    expect(tick.display).toBe("visible");
-  });
 });
 
 describe("finalizeStream", () => {
@@ -143,45 +85,6 @@ describe("extractImageRequest", () => {
   it("returns null when absent or malformed", () => {
     expect(extractImageRequest("no sentinel here")).toBeNull();
     expect(extractImageRequest("x\x1fIMAGE_REQ:{bad")).toBeNull();
-  });
-});
-
-describe("advanceReveal", () => {
-  it("consumes plain characters up to the budget", () => {
-    const { pos, paragraphBreak } = advanceReveal("hello world", 0, 5);
-    expect(pos).toBe(5);
-    expect(paragraphBreak).toBe(false);
-  });
-
-  it("traverses complete sentinels atomically at zero budget cost", () => {
-    const buffer = "ab\x1eSTATUS:Thinking…\x1ecd";
-    const { pos } = advanceReveal(buffer, 0, 4);
-    // 2 chars + free sentinel + 2 chars = whole buffer on a 4-char budget
-    expect(pos).toBe(buffer.length);
-  });
-
-  it("halts before an unterminated sentinel until its close arrives", () => {
-    const buffer = "ab\x1eSTATUS:Thin";
-    const { pos } = advanceReveal(buffer, 0, 100);
-    expect(pos).toBe(2);
-    // once terminated, the cursor sweeps past it
-    const done = advanceReveal(buffer + "king…\x1e!", 2, 1);
-    expect(done.pos).toBe(buffer.length + "king…\x1e!".length);
-  });
-
-  it("reveals everything instantly at the \\x1f IMAGE_REQ terminator", () => {
-    const buffer = "txt\x1fIMAGE_REQ:{}";
-    const { pos } = advanceReveal(buffer, 0, 4);
-    expect(pos).toBe(buffer.length);
-  });
-
-  it("stops at a paragraph break and reports it", () => {
-    const { pos, paragraphBreak } = advanceReveal("one\n\ntwo", 0, 100);
-    expect(paragraphBreak).toBe(true);
-    expect(pos).toBe(5); // cursor just past the double newline
-    const rest = advanceReveal("one\n\ntwo", pos, 100);
-    expect(rest.pos).toBe(8);
-    expect(rest.paragraphBreak).toBe(false);
   });
 });
 

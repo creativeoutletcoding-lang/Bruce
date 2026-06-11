@@ -15,8 +15,6 @@ const ImageMessageSkeleton = dynamic(
   { ssr: false }
 );
 const TaskCard = dynamic(() => import("./TaskCard"), { ssr: false });
-const WorkingLog = dynamic(() => import("./WorkingLog"), { ssr: false });
-const AssistantMarkdown = dynamic(() => import("./AssistantMarkdown"), { ssr: false });
 
 export type { ChatMessage, MessageAttachment };
 
@@ -202,16 +200,9 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                   return (
                     <div key={msg.id} style={{ padding: "2px 16px" }}>
                       <TaskCard data={data} isStreaming={false} />
-                      {msg.workingLog && msg.workingLog.length > 0 && (
-                        <div style={{ paddingTop: "6px" }}>
-                          <WorkingLog items={msg.workingLog} />
-                        </div>
-                      )}
                       {msg.content && (
-                        <div style={{ paddingTop: "6px", fontSize: "0.9375rem", lineHeight: "1.55", color: "var(--text-primary)", wordBreak: "break-word" }}>
-                          {/* Markdown, same renderer as MessageBubble — plain text here
-                              displayed literal **asterisks** on history reload. */}
-                          <AssistantMarkdown content={msg.content} />
+                        <div style={{ paddingTop: "6px", fontSize: "0.9375rem", lineHeight: "1.55", color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>
+                          {msg.content}
                         </div>
                       )}
                     </div>
@@ -274,9 +265,6 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                   // react_to_message tool can react to any member message.
                   reactions={reactionsMap?.[msg.id]}
                   onReact={onReact && !msg.id.startsWith("tmp-") ? (type) => onReact(msg.id, type) : undefined}
-                  // While streaming, the live working log renders in
-                  // StreamingStatusBar (like the task card) — not in the bubble.
-                  workingLog={msg.isStreaming ? undefined : msg.workingLog}
                 />
                 );
               }
@@ -317,7 +305,6 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
         streamingStatus={streamingStatus ?? ""}
         taskProgress={liveTaskProgress}
         isStreaming={isStreamingNow}
-        workingLog={streamingMsg?.workingLog}
       />
     </div>
   );

@@ -335,10 +335,7 @@ span[class*="typingDots"] > span:nth-child(3),
 
 @media (max-width: 768px) {
   .msg-input-container {
-    /* The shell shrinks to the visual viewport above the keyboard
-       (useVisualViewportLock), so the only bottom inset needed is the home
-       indicator — and only while the keyboard is closed. */
-    padding: 0 0 var(--kb-safe-bottom, env(safe-area-inset-bottom, 0px)) 0 !important;
+    padding: 0 0 calc(var(--keyboard-offset, 0px) + env(safe-area-inset-bottom, 0px)) 0 !important;
     border-top: 1px solid var(--border) !important;
     border-radius: 0 !important;
   }

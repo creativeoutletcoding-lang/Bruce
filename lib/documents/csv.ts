@@ -24,8 +24,6 @@ export interface CSVResult {
   fileName: string;
   webViewLink: string;
   rowCount: number;
-  /** "updated" when an existing same-named file (or explicit fileId) was overwritten in place. */
-  action: "created" | "updated";
 }
 
 export interface ReadCSVResult {
@@ -112,95 +110,23 @@ function makeAbortSignal(ms: number): { signal: AbortSignal; clear: () => void }
 
 // ── Public API ───────────────────────────────────────────────
 
-// Find a non-trashed file by exact name inside a folder. Used so repeated
-// generate_csv calls overwrite the same file instead of accumulating copies.
-async function findFileInFolder(
-  token: string,
-  folderId: string,
-  name: string
-): Promise<{ id: string; webViewLink: string } | null> {
-  const q = encodeURIComponent(
-    `name = '${name.replace(/'/g, "\\'")}' and '${folderId}' in parents and trashed = false`
-  );
-  const res = await fetch(
-    `${DRIVE_API}/files?q=${q}&fields=files(id,webViewLink)&pageSize=1`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!res.ok) return null; // fall back to create on lookup failure
-  const body = (await res.json()) as { files?: Array<{ id: string; webViewLink: string }> };
-  return body.files?.[0] ?? null;
-}
-
-// Overwrite an existing Drive file's content in place (same fileId).
-async function updateCSVContent(
-  token: string,
-  fileId: string,
-  csvContent: string
-): Promise<{ id: string; webViewLink: string }> {
-  const { signal, clear } = makeAbortSignal(CSV_TIMEOUT_MS);
-  let res: Response;
-  try {
-    res = await fetch(
-      `${UPLOAD_API}/files/${fileId}?uploadType=media&fields=id,webViewLink`,
-      {
-        method: "PATCH",
-        signal,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "text/csv; charset=UTF-8",
-        },
-        body: csvContent,
-      }
-    );
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new Error(`Drive CSV update timed out after ${CSV_TIMEOUT_MS / 1000}s`);
-    }
-    throw err;
-  } finally {
-    clear();
-  }
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`CSV update failed ${res.status}: ${err}`);
-  }
-  return (await res.json()) as { id: string; webViewLink: string };
-}
-
 export async function generateCSV(
   userId: string,
   data: Record<string, string | number | null>[],
   columns: CSVColumn[],
   fileName: string,
-  folderPath = "Personal",
-  explicitFileId?: string
+  folderPath = "Personal"
 ): Promise<CSVResult> {
   console.error(`[csv.generateCSV] start fileName="${fileName}" folderPath="${folderPath}" rows=${data.length}`);
 
   const token = await getValidToken(userId);
   console.error(`[csv.generateCSV] got token`);
 
-  const csvName = fileName.endsWith(".csv") ? fileName : `${fileName}.csv`;
-  const csvContent = serializeCSV(data, columns);
-
-  // Overwrite in place: an explicit fileId, or a same-named non-trashed file
-  // already in the target folder, is updated instead of duplicated.
-  if (explicitFileId) {
-    const file = await updateCSVContent(token, explicitFileId, csvContent);
-    console.error(`[csv.generateCSV] updated fileId=${file.id} (explicit)`);
-    return { fileId: file.id, fileName: csvName, webViewLink: file.webViewLink, rowCount: data.length, action: "updated" };
-  }
-
   const folderId = await resolveFolderPath(userId, folderPath);
   console.error(`[csv.generateCSV] resolved folder "${folderPath}" → ${folderId}`);
 
-  const existing = await findFileInFolder(token, folderId, csvName);
-  if (existing) {
-    const file = await updateCSVContent(token, existing.id, csvContent);
-    console.error(`[csv.generateCSV] updated fileId=${file.id} (same name in folder)`);
-    return { fileId: file.id, fileName: csvName, webViewLink: file.webViewLink ?? existing.webViewLink, rowCount: data.length, action: "updated" };
-  }
-
+  const csvName = fileName.endsWith(".csv") ? fileName : `${fileName}.csv`;
+  const csvContent = serializeCSV(data, columns);
   console.error(`[csv.generateCSV] serialized ${csvContent.length} chars, uploading to folderId=${folderId}`);
 
   const boundary = `bruce_csv_${Date.now()}`;
@@ -258,7 +184,6 @@ export async function generateCSV(
     fileName: csvName,
     webViewLink: file.webViewLink,
     rowCount: data.length,
-    action: "created",
   };
 }
 

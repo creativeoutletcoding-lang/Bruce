@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { marked } from "marked";
 import { lightHaptic } from "@/lib/utils/haptics";
 import { getDisplayName, getProfileColor } from "@/lib/chat/senderProfile";
 import type { MessageRole } from "@/lib/types";
@@ -11,9 +12,6 @@ import { stripPastedSummaries } from "@/lib/chat/pastedText";
 import AttachmentBlock from "./AttachmentBlock";
 import AttachmentViewer, { type ViewerContent } from "./AttachmentViewer";
 import MessageContextMenu, { type MenuAnchor } from "./MessageContextMenu";
-import WorkingLog from "./WorkingLog";
-import AssistantMarkdown from "./AssistantMarkdown";
-import type { WorkingLogDisplayItem } from "@/lib/chat/workingLog";
 
 export type { MessageAttachment };
 
@@ -74,8 +72,6 @@ interface MessageBubbleProps {
   // Reactions
   reactions?: ReactionEntry[];
   onReact?: (type: string) => void;
-  /** Working-log container (narration + tool lines) rendered above the reply. */
-  workingLog?: WorkingLogDisplayItem[];
 }
 
 const REVEAL_WIDTH = 80;
@@ -180,7 +176,6 @@ export default function MessageBubble({
   showBruceLabel = false,
   reactions,
   onReact,
-  workingLog,
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
@@ -489,11 +484,6 @@ export default function MessageBubble({
           <ReactionRow reactions={reactions!} isUser={isUser} />
         )}
 
-        {/* Working-log container — Bruce's process, collapsed above the reply */}
-        {role === "assistant" && workingLog && workingLog.length > 0 && (
-          <WorkingLog items={workingLog} isStreaming={isStreaming} />
-        )}
-
         {/* Bubble */}
         {displayContent && (
           <div
@@ -513,7 +503,10 @@ export default function MessageBubble({
             }
           >
             {role === "assistant" ? (
-              <AssistantMarkdown content={displayContent} />
+              <div
+                className="bruce-md"
+                dangerouslySetInnerHTML={{ __html: marked(displayContent) as string }}
+              />
             ) : (
               <span style={styles.content}>{linkifyText(displayContent)}</span>
             )}

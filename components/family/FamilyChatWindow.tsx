@@ -22,7 +22,6 @@ import { useBrowserPanel } from "@/hooks/useBrowserPanel";
 import BrowserPanel from "@/components/browser/BrowserPanel";
 import { getDisplayName } from "@/lib/chat/senderProfile";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
-import { workingLogToDisplay } from "@/lib/chat/workingLog";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -49,7 +48,6 @@ function toChatMessage(
   const attachments = metaAttachments?.length
     ? metaAttachments
     : (n.image_url ? [{ url: n.image_url, type: n.attachment_type ?? "image", filename: n.attachment_filename ?? undefined }] : undefined);
-  const workingLog = workingLogToDisplay(n.working_log);
   return {
     id: n.id,
     role: n.role,
@@ -61,7 +59,6 @@ function toChatMessage(
     senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
     senderColorHex: senderInfo?.color_hex,
     pastedAttachments: (n.metadata?.pastedAttachments as PastedAttachmentData[] | undefined),
-    workingLog: workingLog.length > 0 ? workingLog : undefined,
   };
 }
 
@@ -316,13 +313,13 @@ export default function FamilyChatWindow({
       const { accumulated, aborted } = await consumeStream({
         response: res,
         signal: abort.signal,
-        onTick: ({ display, task, workingStatus: ws, browserEvent, workingLog }) => {
+        onTick: ({ display, task, workingStatus: ws, browserEvent }) => {
           if (ws !== null) setWorkingStatus(ws);
           if (browserEvent) applyBrowserEvent(browserEvent);
           setMessages((prev) =>
             prev.map((m) =>
               m.id === streamMsgId
-                ? { ...m, content: display, workingLog: workingLog.length > 0 ? workingLog : undefined, ...(task !== null ? { taskData: task } : {}) }
+                ? { ...m, content: display, ...(task !== null ? { taskData: task } : {}) }
                 : m
             )
           );
@@ -331,23 +328,22 @@ export default function FamilyChatWindow({
 
       setWorkingStatus(null);
 
-      const { display: finalDisplay, task: finalTask, workingLog: finalLog } = finalizeStream(accumulated);
-      const finalWorkingLog = finalLog.length > 0 ? finalLog : undefined;
+      const { display: finalDisplay, task: finalTask } = finalizeStream(accumulated);
 
       if (finalTask) {
         const resolved = resolveAbandonedTaskSteps(finalTask, aborted ? "interrupted" : "incomplete");
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? { ...m, content: finalDisplay, isStreaming: false, taskData: resolved, workingLog: finalWorkingLog, ...(aborted ? { interrupted: true } : {}) }
+              ? { ...m, content: finalDisplay, isStreaming: false, taskData: resolved, ...(aborted ? { interrupted: true } : {}) }
               : m
           )
         );
-      } else if (finalDisplay || finalWorkingLog) {
+      } else if (finalDisplay) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? { ...m, content: finalDisplay, isStreaming: false, workingLog: finalWorkingLog, ...(aborted ? { interrupted: true } : {}) }
+              ? { ...m, content: finalDisplay, isStreaming: false, ...(aborted ? { interrupted: true } : {}) }
               : m
           )
         );
