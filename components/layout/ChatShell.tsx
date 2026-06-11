@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { requestAndGetToken, listenForegroundMessages } from "@/lib/firebase/client";
+import { useVisualViewportLock } from "@/hooks/useVisualViewportLock";
 import type { User } from "@/lib/types";
 import Sidebar from "./Sidebar";
 
@@ -39,6 +40,9 @@ interface ChatShellProps {
 
 export default function ChatShell({ user, children }: ChatShellProps) {
   const router = useRouter();
+  // Size the shell to the visual viewport and lock document scroll —
+  // see hooks/useVisualViewportLock.ts.
+  useVisualViewportLock();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [incognito, setIncognito] = useState(false);
   // isMounted gates the toast so it never renders during SSR or the initial
@@ -280,7 +284,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   shell: {
     display: "flex",
-    height: "100%",
+    height: "var(--app-height, 100dvh)",
     overflow: "hidden",
     backgroundColor: "var(--bg-primary)",
   },

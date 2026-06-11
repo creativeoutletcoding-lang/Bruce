@@ -202,19 +202,6 @@ export default function MessageInput({
     }
   }, [value, onSend]);
 
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    function onResize() {
-      const offset = window.innerHeight - (vv?.height ?? window.innerHeight);
-      document.documentElement.style.setProperty("--keyboard-offset", `${offset}px`);
-    }
-    vv.addEventListener("resize", onResize);
-    return () => {
-      vv.removeEventListener("resize", onResize);
-      document.documentElement.style.setProperty("--keyboard-offset", "0px");
-    };
-  }, []);
 
   const canSend = !disabled && !isStreaming && (
     value.trim().length > 0 || attachedFiles.length > 0 || pastedAttachments.length > 0
@@ -482,7 +469,7 @@ export default function MessageInput({
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    padding: "12px 12px calc(12px + var(--keyboard-offset, 0px) + env(safe-area-inset-bottom, 0px))",
+    padding: "12px 12px calc(12px + var(--kb-safe-bottom, env(safe-area-inset-bottom, 0px)))",
     borderTop: "1px solid var(--border)",
     backgroundColor: "var(--bg-primary)",
     flexShrink: 0,

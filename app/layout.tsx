@@ -22,6 +22,9 @@ export const viewport: Viewport = {
   maximumScale: 1,
   themeColor: ACCENT_COLOR,
   viewportFit: "cover",
+  // Android Chrome: resize the page when the keyboard opens instead of
+  // overlaying it. iOS ignores this — useVisualViewportLock covers it there.
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({
