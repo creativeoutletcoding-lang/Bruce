@@ -283,6 +283,13 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: "-2px",
   },
   shell: {
+    // Pinned to the visual viewport (useVisualViewportLock). position:fixed +
+    // top:offset means the shell follows iOS's keyboard-driven viewport shift
+    // instead of fighting it — the conversation never scrolls off-screen.
+    position: "fixed",
+    top: "var(--vv-offset-top, 0px)",
+    left: 0,
+    right: 0,
     display: "flex",
     height: "var(--app-height, 100dvh)",
     overflow: "hidden",

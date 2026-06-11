@@ -157,38 +157,19 @@ export default function MessageInput({
   browserActive = false,
   browserOpening = false,
 }: MessageInputProps) {
-  const divRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachmentErrors, setAttachmentErrors] = useState<string[]>([]);
   const [isFocused, setIsFocused] = useState(false);
   const [pastedAttachments, setPastedAttachments] = useState<PastedAttachment[]>([]);
   const pendingSendRef = useRef(false);
   const pendingContentRef = useRef("");
-  // Tracks the last value we pushed into the div from onInput so we can tell
-  // apart user-typing (no DOM sync needed) from external resets (clear after send).
-  const lastInputValueRef = useRef("");
 
-  // Sync the div content from parent state whenever the value changes externally
-  // (e.g. cleared after send, or filled by retry). During normal typing, the user
-  // drives the div directly and we only call onChange — no DOM write needed.
   useEffect(() => {
-    const el = divRef.current;
+    const el = textareaRef.current;
     if (!el) return;
-    if (value !== lastInputValueRef.current) {
-      el.innerText = value;
-      lastInputValueRef.current = value;
-      if (value && document.activeElement === el) {
-        requestAnimationFrame(() => {
-          const sel = window.getSelection();
-          if (!sel || !el.childNodes.length) return;
-          const range = document.createRange();
-          range.selectNodeContents(el);
-          range.collapse(false);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        });
-      }
-    }
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 400)}px`;
   }, [value]);
 
   // After parent re-renders with the prepended content, fire the real onSend.
@@ -228,13 +209,7 @@ export default function MessageInput({
     }
   }
 
-  function handleInput(e: React.FormEvent<HTMLDivElement>) {
-    const text = e.currentTarget.innerText.replace(/\n$/, "");
-    lastInputValueRef.current = text;
-    onChange(text);
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     const isMobile = window.matchMedia("(pointer: coarse)").matches;
     if (e.key === "Enter" && !e.shiftKey && !isMobile) {
       e.preventDefault();
@@ -242,33 +217,17 @@ export default function MessageInput({
     }
   }
 
-  function handlePaste(e: React.ClipboardEvent<HTMLDivElement>) {
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     const text = e.clipboardData.getData("text/plain");
+    if (text.length <= PASTE_THRESHOLD) return;
+
     e.preventDefault();
-
-    if (text.length > PASTE_THRESHOLD) {
-      const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
-      const lineCount = text.split("\n").length;
-      setPastedAttachments(prev => [
-        ...prev,
-        { id: `paste-${Date.now()}`, filename: "pasted-text.txt", content: text, wordCount, lineCount },
-      ]);
-      return;
-    }
-
-    // Insert plain text at cursor, discarding any HTML clipboard content.
-    const sel = window.getSelection();
-    if (sel?.rangeCount) {
-      sel.deleteFromDocument();
-      sel.getRangeAt(0).insertNode(document.createTextNode(text));
-      sel.collapseToEnd();
-    }
-    const el = divRef.current;
-    if (el) {
-      const newText = el.innerText.replace(/\n$/, "");
-      lastInputValueRef.current = newText;
-      onChange(newText);
-    }
+    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+    const lineCount = text.split("\n").length;
+    setPastedAttachments(prev => [
+      ...prev,
+      { id: `paste-${Date.now()}`, filename: "pasted-text.txt", content: text, wordCount, lineCount },
+    ]);
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -397,21 +356,18 @@ export default function MessageInput({
             )}
           </>
         )}
-        <div
-          ref={divRef}
-          role="textbox"
-          aria-label="Message input"
-          aria-multiline="true"
-          contentEditable
-          suppressContentEditableWarning
-          onInput={handleInput}
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
-          data-placeholder={placeholder}
-          className="msg-input-div"
+          placeholder={placeholder}
+          rows={1}
           style={styles.textarea}
+          aria-label="Message input"
         />
         {onBrowserClick && (
           <button
@@ -630,18 +586,19 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     background: "transparent",
     color: "var(--text-primary)",
-    fontSize: "0.9375rem",
+    // 16px exactly — anything smaller makes iOS auto-zoom into the field on
+    // focus, which is part of the keyboard-open jump.
+    fontSize: "1rem",
     lineHeight: "1.5",
+    resize: "none",
     outline: "none",
     minHeight: "44px",
     maxHeight: "400px",
     overflowY: "auto",
     padding: "6px 0",
     caretColor: "var(--accent)",
+    WebkitAppearance: "none",
     borderRadius: "var(--radius-sm)",
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-    cursor: "text",
   },
   inputRowFocused: {
     borderColor: "#0F6E56",
