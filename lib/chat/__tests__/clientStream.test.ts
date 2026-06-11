@@ -4,6 +4,7 @@ import {
   finalizeStream,
   extractImageRequest,
   resolveAbandonedTaskSteps,
+  advanceReveal,
 } from "@/lib/chat/clientStream";
 import type { TaskProgressData } from "@/lib/chat/taskProgress";
 
@@ -142,6 +143,45 @@ describe("extractImageRequest", () => {
   it("returns null when absent or malformed", () => {
     expect(extractImageRequest("no sentinel here")).toBeNull();
     expect(extractImageRequest("x\x1fIMAGE_REQ:{bad")).toBeNull();
+  });
+});
+
+describe("advanceReveal", () => {
+  it("consumes plain characters up to the budget", () => {
+    const { pos, paragraphBreak } = advanceReveal("hello world", 0, 5);
+    expect(pos).toBe(5);
+    expect(paragraphBreak).toBe(false);
+  });
+
+  it("traverses complete sentinels atomically at zero budget cost", () => {
+    const buffer = "ab\x1eSTATUS:Thinking…\x1ecd";
+    const { pos } = advanceReveal(buffer, 0, 4);
+    // 2 chars + free sentinel + 2 chars = whole buffer on a 4-char budget
+    expect(pos).toBe(buffer.length);
+  });
+
+  it("halts before an unterminated sentinel until its close arrives", () => {
+    const buffer = "ab\x1eSTATUS:Thin";
+    const { pos } = advanceReveal(buffer, 0, 100);
+    expect(pos).toBe(2);
+    // once terminated, the cursor sweeps past it
+    const done = advanceReveal(buffer + "king…\x1e!", 2, 1);
+    expect(done.pos).toBe(buffer.length + "king…\x1e!".length);
+  });
+
+  it("reveals everything instantly at the \\x1f IMAGE_REQ terminator", () => {
+    const buffer = "txt\x1fIMAGE_REQ:{}";
+    const { pos } = advanceReveal(buffer, 0, 4);
+    expect(pos).toBe(buffer.length);
+  });
+
+  it("stops at a paragraph break and reports it", () => {
+    const { pos, paragraphBreak } = advanceReveal("one\n\ntwo", 0, 100);
+    expect(paragraphBreak).toBe(true);
+    expect(pos).toBe(5); // cursor just past the double newline
+    const rest = advanceReveal("one\n\ntwo", pos, 100);
+    expect(rest.pos).toBe(8);
+    expect(rest.paragraphBreak).toBe(false);
   });
 });
 

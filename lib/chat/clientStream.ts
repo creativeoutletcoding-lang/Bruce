@@ -9,9 +9,9 @@ import type { WorkingLogDisplayItem } from "@/lib/chat/workingLog";
 
 export type { WorkingLogDisplayItem };
 
-// RAF ≈ 16ms at 60 fps — the primary flush mechanism, synchronized to the
-// browser's paint cycle. The constant is kept as a fallback for non-browser
-// environments (SSR edge cases).
+// RAF ≈ 16ms at 60 fps — the reveal loop runs on the browser's paint cycle.
+// The constant is the fallback frame interval for non-browser environments
+// (SSR edge cases).
 export const STREAM_FLUSH_INTERVAL_MS = 16;
 
 // 60ms pause inserted before rendering content that follows a paragraph break
@@ -19,6 +19,21 @@ export const STREAM_FLUSH_INTERVAL_MS = 16;
 // feel considered rather than continuous. Only applies mid-stream; the final
 // render at stream end always flushes immediately.
 export const PARAGRAPH_PAUSE_MS = 60;
+
+// ── Smooth reveal cadence ────────────────────────────────────────────────────
+// Network chunks land in a buffer; a rAF loop reveals them at a smooth
+// character cadence. The reveal rate scales with the backlog so rendering
+// never lags the network by more than ~MAX_RENDER_LAG_MS and never crawls on
+// long replies; the stream end flushes instantly.
+
+/** Rendering may trail the network by at most this long. */
+export const MAX_RENDER_LAG_MS = 1500;
+/** Baseline reveal rate — chars per 16ms frame (~190 chars/s). */
+export const MIN_REVEAL_CHARS_PER_FRAME = 3;
+/** Narration catches up faster than reply text (lighter cadence). */
+export const NARRATION_REVEAL_BOOST = 4;
+/** Skip the paragraph pause while this far behind the network. */
+const PARAGRAPH_PAUSE_BACKLOG_LIMIT = 2000;
 
 // Single tokenizer over every \x1e-framed sentinel. One pass preserves the
 // chronological interleave of narration segments and tool events for the
@@ -198,10 +213,46 @@ export function resolveAbandonedTaskSteps(
   };
 }
 
+// ── Reveal cursor advancement (pure, unit-tested) ────────────────────────────
+// Walk the buffer from `from`, consuming up to `budget` plain characters.
+// Sentinels (\x1e…\x1e) traverse atomically at zero budget cost — a task tick
+// or status change never waits on the character cadence, and the cursor can
+// never stop inside one (an unterminated sentinel halts the cursor before its
+// opening \x1e until the terminator arrives). \x1f marks the IMAGE_REQ
+// payload — terminal, revealed instantly. Stops early at a paragraph break
+// (`paragraphBreak: true`) so the caller can insert a breathing pause.
+
+export function advanceReveal(
+  buffer: string,
+  from: number,
+  budget: number
+): { pos: number; paragraphBreak: boolean } {
+  let pos = from;
+  let remaining = budget;
+  while (pos < buffer.length && remaining > 0) {
+    const ch = buffer[pos];
+    if (ch === "\x1f") return { pos: buffer.length, paragraphBreak: false };
+    if (ch === "\x1e") {
+      const close = buffer.indexOf("\x1e", pos + 1);
+      if (close === -1) return { pos, paragraphBreak: false }; // incomplete — wait
+      pos = close + 1;
+      continue; // sentinels are free
+    }
+    pos++;
+    remaining--;
+    if (ch === "\n" && buffer[pos] === "\n") {
+      return { pos: pos + 1, paragraphBreak: true };
+    }
+  }
+  return { pos, paragraphBreak: false };
+}
+
 // ── Shared stream consumer ───────────────────────────────────────────────────
-// Reads the response body, fires onTick on a fixed flush interval, and returns
-// the final accumulated string. Centralizes the duplicated reader/flush-loop
-// across all three chat contexts so smooth-streaming fixes apply everywhere.
+// Reads the response body into a buffer and reveals it through a rAF loop at
+// a smooth character cadence with adaptive catch-up (see constants above).
+// parseStreamFrame runs on the revealed prefix once per frame — never per
+// network chunk. Centralized here so every chat context (standalone, project,
+// family, new-chat) streams identically.
 
 export interface ConsumeStreamOptions {
   response: Response;
@@ -224,39 +275,56 @@ export async function consumeStream({
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let accumulated = "";
-  let lastRenderedLength = 0;
-  let pendingFlush = false;
+  let revealedPos = 0;
   let aborted = false;
+  let readDone = false;
 
-  // RAF handle for the 1-frame render buffer; null when no frame is queued.
-  let rafHandle: number | null = null;
-  // Timeout handle for the 60ms paragraph-breathing pause; null when no pause is pending.
-  let pauseHandle: ReturnType<typeof setTimeout> | null = null;
-
-  const flush = () => {
-    if (!pendingFlush) return;
-    pendingFlush = false;
-    lastRenderedLength = accumulated.length;
-    onTick(parseStreamFrame(accumulated));
+  const hasRaf = typeof requestAnimationFrame === "function";
+  const schedule = (cb: (ts: number) => void): number =>
+    hasRaf
+      ? requestAnimationFrame(cb)
+      : (setTimeout(() => cb(Date.now()), STREAM_FLUSH_INTERVAL_MS) as unknown as number);
+  const cancel = (handle: number) => {
+    if (hasRaf) cancelAnimationFrame(handle);
+    else clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
   };
 
-  // Schedule a flush at the next animation frame, or after a 60ms paragraph
-  // pause if new content crosses a double-newline boundary.
-  //
-  // Rules:
-  // - Paragraph break detected → cancel any pending RAF, (re)set the 60ms pause
-  // - No paragraph break and nothing is scheduled → queue a RAF
-  // - No paragraph break but a pause is already running → leave it alone
-  const scheduleFlush = (hasParagraphBreak: boolean) => {
-    if (hasParagraphBreak) {
-      if (rafHandle !== null) { cancelAnimationFrame(rafHandle); rafHandle = null; }
-      if (pauseHandle !== null) clearTimeout(pauseHandle);
-      pauseHandle = setTimeout(() => {
-        pauseHandle = null;
-        rafHandle = requestAnimationFrame(() => { rafHandle = null; flush(); });
-      }, PARAGRAPH_PAUSE_MS);
-    } else if (pauseHandle === null && rafHandle === null) {
-      rafHandle = requestAnimationFrame(() => { rafHandle = null; flush(); });
+  let frameHandle: number | null = null;
+  let lastFrameTs = 0;
+  let pauseUntil = 0;
+
+  const frame = (ts: number) => {
+    frameHandle = null;
+    const dt = lastFrameTs > 0 ? Math.min(ts - lastFrameTs, 100) : STREAM_FLUSH_INTERVAL_MS;
+    lastFrameTs = ts;
+
+    const backlog = accumulated.length - revealedPos;
+    if (backlog > 0 && ts >= pauseUntil) {
+      // Adaptive catch-up: reveal enough each frame to clear the current
+      // backlog within MAX_RENDER_LAG_MS, floored at the baseline cadence.
+      let budget = Math.max(
+        MIN_REVEAL_CHARS_PER_FRAME,
+        Math.ceil((backlog * dt) / MAX_RENDER_LAG_MS)
+      );
+      // Narration runs at a lighter cadence — when a narration break is still
+      // ahead of the cursor, the text being revealed belongs to the working
+      // log, so sweep through it faster than reply text.
+      if (accumulated.indexOf("\x1eNARRATION_BREAK\x1e", revealedPos) !== -1) {
+        budget *= NARRATION_REVEAL_BOOST;
+      }
+      const { pos, paragraphBreak } = advanceReveal(accumulated, revealedPos, budget);
+      if (pos !== revealedPos) {
+        revealedPos = pos;
+        onTick(parseStreamFrame(accumulated.slice(0, revealedPos)));
+      }
+      if (paragraphBreak && backlog < PARAGRAPH_PAUSE_BACKLOG_LIMIT) {
+        pauseUntil = ts + PARAGRAPH_PAUSE_MS;
+      }
+    }
+
+    // Keep the loop alive while the network is open or a backlog remains.
+    if (!readDone || revealedPos < accumulated.length) {
+      frameHandle = schedule(frame);
     }
   };
 
@@ -274,19 +342,17 @@ export async function consumeStream({
       const { value, done } = await reader.read();
       if (done) break;
       accumulated += decoder.decode(value, { stream: true });
-      pendingFlush = true;
-      // 1-char lookback so a \n split across chunk boundaries is still caught.
-      const windowStart = Math.max(0, lastRenderedLength - 1);
-      scheduleFlush(accumulated.slice(windowStart).includes("\n\n"));
+      if (frameHandle === null) frameHandle = schedule(frame);
     }
   } catch (err) {
     if (!aborted) throw err;
   } finally {
-    // Cancel any in-flight scheduled flush — the final render below is immediate.
-    if (rafHandle !== null) { cancelAnimationFrame(rafHandle); rafHandle = null; }
-    if (pauseHandle !== null) { clearTimeout(pauseHandle); pauseHandle = null; }
+    readDone = true;
+    if (frameHandle !== null) { cancel(frameHandle); frameHandle = null; }
     if (signal) signal.removeEventListener("abort", onAbort);
-    // Final synchronous flush so the caller sees the last bytes.
+    // Stream over (complete or aborted) — flush instantly and synchronously
+    // so the caller sees every byte without waiting on the cadence.
+    revealedPos = accumulated.length;
     onTick(parseStreamFrame(accumulated));
   }
 

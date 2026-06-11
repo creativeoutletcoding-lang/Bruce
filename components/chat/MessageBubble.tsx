@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { marked } from "marked";
 import { lightHaptic } from "@/lib/utils/haptics";
 import { getDisplayName, getProfileColor } from "@/lib/chat/senderProfile";
 import type { MessageRole } from "@/lib/types";
@@ -13,6 +12,7 @@ import AttachmentBlock from "./AttachmentBlock";
 import AttachmentViewer, { type ViewerContent } from "./AttachmentViewer";
 import MessageContextMenu, { type MenuAnchor } from "./MessageContextMenu";
 import WorkingLog from "./WorkingLog";
+import AssistantMarkdown from "./AssistantMarkdown";
 import type { WorkingLogDisplayItem } from "@/lib/chat/workingLog";
 
 export type { MessageAttachment };
@@ -513,10 +513,7 @@ export default function MessageBubble({
             }
           >
             {role === "assistant" ? (
-              <div
-                className="bruce-md"
-                dangerouslySetInnerHTML={{ __html: marked(displayContent) as string }}
-              />
+              <AssistantMarkdown content={displayContent} />
             ) : (
               <span style={styles.content}>{linkifyText(displayContent)}</span>
             )}

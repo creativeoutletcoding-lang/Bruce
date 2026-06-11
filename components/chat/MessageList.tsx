@@ -16,6 +16,7 @@ const ImageMessageSkeleton = dynamic(
 );
 const TaskCard = dynamic(() => import("./TaskCard"), { ssr: false });
 const WorkingLog = dynamic(() => import("./WorkingLog"), { ssr: false });
+const AssistantMarkdown = dynamic(() => import("./AssistantMarkdown"), { ssr: false });
 
 export type { ChatMessage, MessageAttachment };
 
@@ -207,8 +208,10 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
                         </div>
                       )}
                       {msg.content && (
-                        <div style={{ paddingTop: "6px", fontSize: "0.9375rem", lineHeight: "1.55", color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>
-                          {msg.content}
+                        <div style={{ paddingTop: "6px", fontSize: "0.9375rem", lineHeight: "1.55", color: "var(--text-primary)", wordBreak: "break-word" }}>
+                          {/* Markdown, same renderer as MessageBubble — plain text here
+                              displayed literal **asterisks** on history reload. */}
+                          <AssistantMarkdown content={msg.content} />
                         </div>
                       )}
                     </div>
