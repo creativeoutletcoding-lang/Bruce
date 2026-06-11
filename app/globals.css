@@ -333,6 +333,13 @@ span[class*="typingDots"] > span:nth-child(3),
    MOBILE INPUT BAR — flat, edge-to-edge, no pill
    ============================================================ */
 
+/* contenteditable placeholder — shown when the div is empty */
+.msg-input-div:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
 @media (max-width: 768px) {
   .msg-input-container {
     padding: 0 0 calc(var(--keyboard-offset, 0px) + env(safe-area-inset-bottom, 0px)) 0 !important;
