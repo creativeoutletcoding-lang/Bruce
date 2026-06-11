@@ -183,19 +183,10 @@ export default function MessageInput({
     }
   }, [value, onSend]);
 
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    function onResize() {
-      const offset = window.innerHeight - (vv?.height ?? window.innerHeight);
-      document.documentElement.style.setProperty("--keyboard-offset", `${offset}px`);
-    }
-    vv.addEventListener("resize", onResize);
-    return () => {
-      vv.removeEventListener("resize", onResize);
-      document.documentElement.style.setProperty("--keyboard-offset", "0px");
-    };
-  }, []);
+  // Keyboard handling lives in useVisualViewportLock (mounted by ChatShell):
+  // the shell shrinks to the visual viewport, so this bar sits directly above
+  // the keyboard with no measured padding. --kb-safe-bottom covers the home
+  // indicator only while the keyboard is closed.
 
   const canSend = !disabled && !isStreaming && (
     value.trim().length > 0 || attachedFiles.length > 0 || pastedAttachments.length > 0
@@ -381,6 +372,8 @@ export default function MessageInput({
           rows={1}
           style={styles.textarea}
           aria-label="Message input"
+          autoComplete="off"
+          autoCapitalize="sentences"
         />
         {onBrowserClick && (
           <button
@@ -438,7 +431,7 @@ export default function MessageInput({
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    padding: "12px 12px calc(12px + var(--keyboard-offset, 0px) + env(safe-area-inset-bottom, 0px))",
+    padding: "12px 12px calc(12px + var(--kb-safe-bottom, env(safe-area-inset-bottom, 0px)))",
     borderTop: "1px solid var(--border)",
     backgroundColor: "var(--bg-primary)",
     flexShrink: 0,
@@ -599,7 +592,9 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     background: "transparent",
     color: "var(--text-primary)",
-    fontSize: "0.9375rem",
+    // 16px minimum — anything smaller makes iOS auto-zoom into the input on
+    // focus, which is one cause of the keyboard viewport jump.
+    fontSize: "1rem",
     lineHeight: "1.5",
     resize: "none",
     outline: "none",
