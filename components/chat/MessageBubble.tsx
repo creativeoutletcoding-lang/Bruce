@@ -12,6 +12,8 @@ import { stripPastedSummaries } from "@/lib/chat/pastedText";
 import AttachmentBlock from "./AttachmentBlock";
 import AttachmentViewer, { type ViewerContent } from "./AttachmentViewer";
 import MessageContextMenu, { type MenuAnchor } from "./MessageContextMenu";
+import WorkingLog from "./WorkingLog";
+import type { WorkingLogDisplayItem } from "@/lib/chat/workingLog";
 
 export type { MessageAttachment };
 
@@ -72,6 +74,8 @@ interface MessageBubbleProps {
   // Reactions
   reactions?: ReactionEntry[];
   onReact?: (type: string) => void;
+  /** Working-log container (narration + tool lines) rendered above the reply. */
+  workingLog?: WorkingLogDisplayItem[];
 }
 
 const REVEAL_WIDTH = 80;
@@ -176,6 +180,7 @@ export default function MessageBubble({
   showBruceLabel = false,
   reactions,
   onReact,
+  workingLog,
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
@@ -482,6 +487,11 @@ export default function MessageBubble({
             top corner via marginBottom: -22px + zIndex: 1. */}
         {hasReactions && (
           <ReactionRow reactions={reactions!} isUser={isUser} />
+        )}
+
+        {/* Working-log container — Bruce's process, collapsed above the reply */}
+        {role === "assistant" && workingLog && workingLog.length > 0 && (
+          <WorkingLog items={workingLog} isStreaming={isStreaming} />
         )}
 
         {/* Bubble */}

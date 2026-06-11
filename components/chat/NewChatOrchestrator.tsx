@@ -146,13 +146,13 @@ export default function NewChatOrchestrator({
 
       const { accumulated } = await consumeStream({
         response: res,
-        onTick: ({ display, task, workingStatus: ws }) => {
+        onTick: ({ display, task, workingStatus: ws, workingLog }) => {
           if (ws !== null) setWorkingStatus(ws);
           if (display.trim()) setWorkingStatus(null);
           setMessages((prev) =>
             prev.map((m) =>
               m.id === streamMsgId
-                ? { ...m, content: display, ...(task !== null ? { taskData: task } : {}) }
+                ? { ...m, content: display, workingLog: workingLog.length > 0 ? workingLog : undefined, ...(task !== null ? { taskData: task } : {}) }
                 : m
             )
           );
@@ -161,7 +161,8 @@ export default function NewChatOrchestrator({
 
       setWorkingStatus(null);
 
-      const { display: finalText, task: finalTask } = finalizeStream(accumulated);
+      const { display: finalText, task: finalTask, workingLog: finalLog } = finalizeStream(accumulated);
+      const finalWorkingLog = finalLog.length > 0 ? finalLog : undefined;
       const imageReq = extractImageRequest(accumulated);
 
       // Finalize stream placeholder
@@ -170,15 +171,15 @@ export default function NewChatOrchestrator({
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? { ...m, content: finalText, isStreaming: false, taskData: resolved, created_at: new Date().toISOString() }
+              ? { ...m, content: finalText, isStreaming: false, taskData: resolved, workingLog: finalWorkingLog, created_at: new Date().toISOString() }
               : m
           )
         );
-      } else if (finalText) {
+      } else if (finalText || finalWorkingLog) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? { ...m, content: finalText, isStreaming: false, created_at: new Date().toISOString() }
+              ? { ...m, content: finalText, isStreaming: false, workingLog: finalWorkingLog, created_at: new Date().toISOString() }
               : m
           )
         );

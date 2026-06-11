@@ -5,6 +5,9 @@ import {
   stripTaskProgressTags,
 } from "@/lib/chat/taskProgress";
 import type { TaskProgressData, TaskStepStatus } from "@/lib/chat/taskProgress";
+import type { WorkingLogDisplayItem } from "@/lib/chat/workingLog";
+
+export type { WorkingLogDisplayItem };
 
 // RAF ≈ 16ms at 60 fps — the primary flush mechanism, synchronized to the
 // browser's paint cycle. The constant is kept as a fallback for non-browser
@@ -17,10 +20,11 @@ export const STREAM_FLUSH_INTERVAL_MS = 16;
 // render at stream end always flushes immediately.
 export const PARAGRAPH_PAUSE_MS = 60;
 
-const STATUS_RE = /\x1eSTATUS:[^\x1e]*\x1e/g;
-const TASK_PROGRESS_RE = /\x1eTASK_PROGRESS:([^\x1e]+)\x1e/g;
-const TASK_PROGRESS_STRIP_RE = /\x1eTASK_PROGRESS:[^\x1e]*\x1e/g;
-const BROWSER_EVENT_STRIP_RE = /\x1eBROWSER_EVENT:[^\x1e]*\x1e/g;
+// Single tokenizer over every \x1e-framed sentinel. One pass preserves the
+// chronological interleave of narration segments and tool events for the
+// working-log container. NARRATION_BREAK and PROMOTE_LAST carry no payload.
+const SENTINEL_RE =
+  /\x1e(?:STATUS:([^\x1e]*)|TASK_PROGRESS:([^\x1e]*)|BROWSER_EVENT:([^\x1e]*)|NARRATION_BREAK|PROMOTE_LAST)\x1e/g;
 
 export interface BrowserEvent {
   sessionId: string;
@@ -35,96 +39,128 @@ export interface StreamTick {
   workingStatus: string | null;
   /** Latest shared-browser event (panel open/update), or null if none yet. */
   browserEvent: BrowserEvent | null;
+  /** Chronological working-log items (narration + tool lines). Empty when the turn used no tools. */
+  workingLog: WorkingLogDisplayItem[];
 }
 
-// Parse the accumulated bytes so far, returning the user-visible text, any
-// task-progress data, and the latest STATUS sentinel. The IMAGE_REQ sentinel
-// (separator \x1f) is treated as a stream terminator — everything before it
-// is display text; the suffix is parsed by the caller after the read loop.
+// Strip the in-text XML blocks (task progress incl. unclosed, image requests)
+// from a text segment. Sentinels are handled by the tokenizer, not here.
+function cleanSegment(raw: string): string {
+  return stripTaskProgressTags(raw).replace(/<image_request>[\s\S]*?<\/image_request>/g, "");
+}
+
+// Parse the accumulated bytes so far, returning the user-visible reply text,
+// the working log, any task-progress data, and the latest STATUS sentinel.
+// Narration routing: text before each NARRATION_BREAK belongs to the working
+// log; only the text after the last break is the reply. The IMAGE_REQ
+// sentinel (separator \x1f) is treated as a stream terminator — everything
+// before it is display text; the suffix is parsed by the caller after the
+// read loop.
 export function parseStreamFrame(accumulated: string): StreamTick {
   const sentinelIdx = accumulated.indexOf("\x1f");
   const raw = sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated;
 
-  // The LAST status sentinel wins — the server emits a sequence ("Thinking…" →
-  // "Searching the web…" → "" to clear), and only the most recent reflects the
-  // current state. An empty payload ("") clears the indicator (renders hidden).
+  // The LAST status / browser event wins — only the most recent reflects the
+  // current state. An empty STATUS payload ("") clears the indicator.
   let workingStatus: string | null = null;
-  const statusRe = /\x1eSTATUS:([^\x1e]*)\x1e/g;
-  let statusMatch: RegExpExecArray | null;
-  while ((statusMatch = statusRe.exec(raw)) !== null) workingStatus = statusMatch[1];
+  let browserEvent: BrowserEvent | null = null;
+  let promote = false;
+  const workingLog: WorkingLogDisplayItem[] = [];
 
-  // Build live task progress from \x1eTASK_PROGRESS:{...}\x1e sentinels.
-  // Each sentinel carries one step completion event; we accumulate them into a
-  // TaskProgressData so the task card ticks as each tool call finishes.
-  // Prefer this over XML-tag extraction during streaming — the sentinels are
-  // emitted immediately after each tool executes, not at final-text time.
-  let sentinelTask: TaskProgressData | null = null;
-  {
-    TASK_PROGRESS_RE.lastIndex = 0;
-    const stepOrder: string[] = [];
-    const stepMap = new Map<string, { status: TaskStepStatus; detail?: string }>();
-    let m: RegExpExecArray | null;
-    while ((m = TASK_PROGRESS_RE.exec(raw)) !== null) {
+  // Task card accumulation — each TASK_PROGRESS sentinel carries one step
+  // completion event, deduped by step label so the card ticks live. The
+  // working log keeps every event as its own chronological line instead.
+  const stepOrder: string[] = [];
+  const stepMap = new Map<string, { status: TaskStepStatus; detail?: string }>();
+
+  let currentText = "";
+  let cursor = 0;
+  SENTINEL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = SENTINEL_RE.exec(raw)) !== null) {
+    currentText += raw.slice(cursor, m.index);
+    cursor = m.index + m[0].length;
+    if (m[0] === "\x1eNARRATION_BREAK\x1e") {
+      const text = cleanSegment(currentText).trim();
+      if (text) workingLog.push({ kind: "narration", text });
+      currentText = "";
+    } else if (m[0] === "\x1ePROMOTE_LAST\x1e") {
+      promote = true;
+    } else if (m[1] !== undefined) {
+      workingStatus = m[1];
+    } else if (m[2] !== undefined) {
       try {
-        const ev = JSON.parse(m[1]) as { step: string; status: string; detail?: string };
+        const ev = JSON.parse(m[2]) as { step: string; status: string; detail?: string };
         if (!stepMap.has(ev.step)) stepOrder.push(ev.step);
         stepMap.set(ev.step, { status: ev.status as TaskStepStatus, detail: ev.detail });
+        workingLog.push({
+          kind: "tool",
+          label: ev.step,
+          status: ev.status === "error" ? "error" : "done",
+          ...(ev.detail ? { detail: ev.detail } : {}),
+        });
       } catch { /* skip malformed */ }
-    }
-    if (stepOrder.length > 0) {
-      sentinelTask = {
-        task: "",
-        steps: stepOrder.map((label) => {
-          const s = stepMap.get(label)!;
-          return { id: label, label, status: s.status, ...(s.detail ? { detail: s.detail } : {}) };
-        }),
-      };
+    } else if (m[3] !== undefined) {
+      try {
+        browserEvent = JSON.parse(m[3]) as BrowserEvent;
+      } catch { /* skip malformed */ }
     }
   }
+  // Tail after the last sentinel. A lone \x1e here is a sentinel split across
+  // network chunks — hide it (and anything after) until its terminator arrives.
+  let tail = raw.slice(cursor);
+  const loneIdx = tail.indexOf("\x1e");
+  if (loneIdx !== -1) tail = tail.slice(0, loneIdx);
+  currentText += tail;
 
-  // Shared-browser event — the LAST one wins (panel reflects current state).
-  let browserEvent: BrowserEvent | null = null;
-  {
-    const re = /\x1eBROWSER_EVENT:([^\x1e]+)\x1e/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(raw)) !== null) {
-      try {
-        browserEvent = JSON.parse(m[1]) as BrowserEvent;
-      } catch { /* skip malformed */ }
-    }
+  let sentinelTask: TaskProgressData | null = null;
+  if (stepOrder.length > 0) {
+    sentinelTask = {
+      task: "",
+      steps: stepOrder.map((label) => {
+        const s = stepMap.get(label)!;
+        return { id: label, label, status: s.status, ...(s.detail ? { detail: s.detail } : {}) };
+      }),
+    };
   }
 
   // XML-based extraction for the final turn (Bruce's summary text may include
   // a <task_progress> block with the full task name and resolved step list).
-  const xmlTask = extractLatestTaskProgress(raw);
+  // Prefer XML when available; fall back to sentinel-built state.
+  const task = extractLatestTaskProgress(raw) ?? sentinelTask;
 
-  // Prefer XML when available (it has the task name and canonical step IDs);
-  // fall back to sentinel-built state during execution.
-  const task = xmlTask ?? sentinelTask;
+  let display = cleanSegment(currentText).trimStart();
 
-  const display = stripTaskProgressTags(raw)
-    .replace(STATUS_RE, "")
-    .replace(TASK_PROGRESS_STRIP_RE, "")
-    .replace(BROWSER_EVENT_STRIP_RE, "")
-    .replace(/<image_request>[\s\S]*?<\/image_request>/g, "")
-    .trimStart();
+  // The server promoted the last narration segment to the reply (the final
+  // turn produced no text after its tools). Mirror it: pop the segment from
+  // the working log and surface it as the reply.
+  if (promote && !display.trim()) {
+    for (let i = workingLog.length - 1; i >= 0; i--) {
+      const item = workingLog[i];
+      if (item.kind === "narration") {
+        display = item.text;
+        workingLog.splice(i, 1);
+        break;
+      }
+    }
+  }
 
-  return { display, task, workingStatus, browserEvent };
+  return { display, task, workingStatus, browserEvent, workingLog };
 }
 
 export interface FinalizedStream {
   display: string;
   task: TaskProgressData | null;
+  workingLog: WorkingLogDisplayItem[];
 }
 
-// Compute the final user-visible text and task-progress data once the stream
-// has fully accumulated. Reuses parseStreamFrame's canonical stripping (task
-// XML tags incl. unclosed, STATUS sentinels, TASK_PROGRESS sentinels, and the
-// image_request block) so every chat context finalizes identically. The only
+// Compute the final user-visible text, working log, and task-progress data
+// once the stream has fully accumulated. Reuses parseStreamFrame's canonical
+// routing/stripping so every chat context finalizes identically. The only
 // difference from a live tick is a full trim() rather than trimStart().
 export function finalizeStream(accumulated: string): FinalizedStream {
-  const { display, task } = parseStreamFrame(accumulated);
-  return { display: display.trim(), task };
+  const { display, task, workingLog } = parseStreamFrame(accumulated);
+  return { display: display.trim(), task, workingLog };
 }
 
 export interface ImageReqPayload {

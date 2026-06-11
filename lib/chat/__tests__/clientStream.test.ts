@@ -62,6 +62,63 @@ describe("parseStreamFrame", () => {
     expect(tick.display).toBe("ok");
     expect(tick.task).toBeNull();
   });
+
+  it("returns an empty workingLog for plain no-tool replies", () => {
+    const tick = parseStreamFrame("Just a normal answer.");
+    expect(tick.workingLog).toEqual([]);
+    expect(tick.display).toBe("Just a normal answer.");
+  });
+
+  it("routes text before NARRATION_BREAK to the working log, after it to the reply", () => {
+    const tick = parseStreamFrame(
+      "Let me read the sheet…\x1eNARRATION_BREAK\x1e" +
+        '\x1eTASK_PROGRESS:{"step":"Read spreadsheet","status":"done"}\x1e' +
+        "Here is the polished reply."
+    );
+    expect(tick.display).toBe("Here is the polished reply.");
+    expect(tick.workingLog).toEqual([
+      { kind: "narration", text: "Let me read the sheet…" },
+      { kind: "tool", label: "Read spreadsheet", status: "done" },
+    ]);
+  });
+
+  it("interleaves multiple narration segments and tool events chronologically", () => {
+    const tick = parseStreamFrame(
+      "First note\x1eNARRATION_BREAK\x1e" +
+        '\x1eTASK_PROGRESS:{"step":"Read CSV","status":"done","detail":"3 rows"}\x1e' +
+        "Second note\x1eNARRATION_BREAK\x1e" +
+        '\x1eTASK_PROGRESS:{"step":"Write output","status":"error"}\x1e' +
+        "Final reply"
+    );
+    expect(tick.display).toBe("Final reply");
+    expect(tick.workingLog).toEqual([
+      { kind: "narration", text: "First note" },
+      { kind: "tool", label: "Read CSV", status: "done", detail: "3 rows" },
+      { kind: "narration", text: "Second note" },
+      { kind: "tool", label: "Write output", status: "error" },
+    ]);
+  });
+
+  it("skips empty narration segments", () => {
+    const tick = parseStreamFrame("\x1eNARRATION_BREAK\x1eReply");
+    expect(tick.display).toBe("Reply");
+    expect(tick.workingLog).toEqual([]);
+  });
+
+  it("PROMOTE_LAST surfaces the last narration as the reply", () => {
+    const tick = parseStreamFrame(
+      "Only narration here\x1eNARRATION_BREAK\x1e" +
+        '\x1eTASK_PROGRESS:{"step":"Send email","status":"done"}\x1e' +
+        "\x1ePROMOTE_LAST\x1e"
+    );
+    expect(tick.display).toBe("Only narration here");
+    expect(tick.workingLog).toEqual([{ kind: "tool", label: "Send email", status: "done" }]);
+  });
+
+  it("hides a sentinel split across network chunks until its terminator arrives", () => {
+    const tick = parseStreamFrame("visible\x1eSTATUS:Think");
+    expect(tick.display).toBe("visible");
+  });
 });
 
 describe("finalizeStream", () => {

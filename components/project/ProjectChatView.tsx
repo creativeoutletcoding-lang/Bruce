@@ -24,6 +24,7 @@ import { useBrowserPanel } from "@/hooks/useBrowserPanel";
 import BrowserPanel from "@/components/browser/BrowserPanel";
 import { getDisplayName } from "@/lib/chat/senderProfile";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
+import { workingLogToDisplay } from "@/lib/chat/workingLog";
 
 type ReactionRow = { message_id: string; user_id: string | null; type: string };
 
@@ -49,6 +50,7 @@ function toChatMessage(
   const attachments = metaAttachments?.length
     ? metaAttachments
     : (n.image_url ? [{ url: n.image_url, type: n.attachment_type ?? "image", filename: n.attachment_filename ?? undefined }] : undefined);
+  const workingLog = workingLogToDisplay(n.working_log);
   return {
     id: n.id,
     role: n.role,
@@ -63,6 +65,7 @@ function toChatMessage(
     senderName: senderInfo ? getDisplayName(senderInfo.name) : undefined,
     senderColorHex: senderInfo?.color_hex,
     pastedAttachments: (n.metadata?.pastedAttachments as PastedAttachmentData[] | undefined),
+    workingLog: workingLog.length > 0 ? workingLog : undefined,
   };
 }
 
@@ -333,7 +336,7 @@ export default function ProjectChatView({
       const { accumulated, aborted } = await consumeStream({
         response: res,
         signal: abort.signal,
-        onTick: ({ display, task, workingStatus: ws, browserEvent }) => {
+        onTick: ({ display, task, workingStatus: ws, browserEvent, workingLog }) => {
           if (!hasFirstContent && (display.trim() || task)) {
             hasFirstContent = true;
             setWorkingStatus(null);
@@ -343,7 +346,7 @@ export default function ProjectChatView({
           setMessages((prev) =>
             prev.map((m) =>
               m.id === streamMsgId
-                ? { ...m, content: display, ...(task !== null ? { taskData: task } : {}) }
+                ? { ...m, content: display, workingLog: workingLog.length > 0 ? workingLog : undefined, ...(task !== null ? { taskData: task } : {}) }
                 : m
             )
           );
@@ -352,7 +355,8 @@ export default function ProjectChatView({
 
       setWorkingStatus(null);
 
-      const { display: finalText, task: finalTask } = finalizeStream(accumulated);
+      const { display: finalText, task: finalTask, workingLog: finalLog } = finalizeStream(accumulated);
+      const finalWorkingLog = finalLog.length > 0 ? finalLog : undefined;
 
       const imageReq = !aborted ? extractImageRequest(accumulated) : null;
 
@@ -416,15 +420,15 @@ export default function ProjectChatView({
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? { ...m, content: finalText, isStreaming: false, taskData: resolvedTask, ...(aborted ? { interrupted: true } : {}), created_at: new Date().toISOString() }
+              ? { ...m, content: finalText, isStreaming: false, taskData: resolvedTask, workingLog: finalWorkingLog, ...(aborted ? { interrupted: true } : {}), created_at: new Date().toISOString() }
               : m
           )
         );
-      } else if (finalText) {
+      } else if (finalText || finalWorkingLog) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamMsgId
-              ? { ...m, content: finalText, isStreaming: false, ...(aborted ? { interrupted: true } : {}), created_at: new Date().toISOString() }
+              ? { ...m, content: finalText, isStreaming: false, workingLog: finalWorkingLog, ...(aborted ? { interrupted: true } : {}), created_at: new Date().toISOString() }
               : m
           )
         );

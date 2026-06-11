@@ -54,10 +54,11 @@ import {
 } from "@/lib/chat/reactionTools";
 import { BROWSE_PAGE_TOOL, BROWSER_SYSTEM_BLOCK } from "@/lib/browser/browseTool";
 import {
-  truncateTraceResult,
-  TOOL_TRACE_MAX_ENTRIES,
-  type ToolTraceEntry,
-} from "@/lib/chat/toolTrace";
+  NARRATION_BREAK_SENTINEL,
+  PROMOTE_LAST_SENTINEL,
+  createWorkingLogRecorder,
+  extractToolDetail,
+} from "@/lib/chat/workingLog";
 
 export { sanitizeAlternatingMessages } from "@/lib/chat/sanitizeMessages";
 
@@ -324,22 +325,6 @@ async function executeBrowsePage(
   }
 }
 
-function extractStepDetail(toolName: string, result: string): string | undefined {
-  try {
-    const parsed = JSON.parse(result) as Record<string, unknown>;
-    if (typeof parsed.tab_name === "string") return `Tab ${parsed.tab_name}`;
-    if (typeof parsed.title === "string") return parsed.title;
-    if (typeof parsed.file_name === "string") {
-      const rows = typeof parsed.row_count === "number" ? ` (${parsed.row_count} rows)` : "";
-      return `${parsed.file_name}${rows}`;
-    }
-    if (Array.isArray(parsed.files)) return `${(parsed.files as unknown[]).length} files`;
-    if (typeof parsed.row_count === "number") return `${parsed.row_count} rows`;
-  } catch { /* ignore */ }
-  if (toolName === "web_search" || toolName === "browse_url") return undefined;
-  return undefined;
-}
-
 // ── Tool dispatch ────────────────────────────────────────────────────────────
 
 async function executeOneTool(
@@ -444,9 +429,6 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
       const encoder = new TextEncoder();
       let fullResponse = "";
       let pendingTag = "";
-      // Compact record of this turn's tool calls, persisted in metadata so
-      // history replay keeps the grounding (see lib/chat/toolTrace.ts).
-      const toolTrace: ToolTraceEntry[] = [];
 
       // ── Streaming status lifecycle ("Thinking…" → "Searching the web…" → clear) ─
       // STATUS sentinels are \x1eSTATUS:text\x1e; the client shows the latest and
@@ -533,6 +515,20 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
         return s.trim();
       }
 
+      // ── Structural narration/reply routing ──────────────────────────────
+      // Any text streamed before a tool_use block in the same turn is working
+      // narration, not reply. The recorder owns the split (see
+      // lib/chat/workingLog.ts); NARRATION_BREAK tells the client to move the
+      // segment into the working-log container. This is the architectural
+      // guarantee — TASK_PROGRESS_SYSTEM_BLOCK only reduces narration volume.
+      const workingLog = createWorkingLogRecorder(cleanText);
+      function emitNarrationBreak() {
+        flushPending(); // buffered tail bytes belong to the narration segment
+        if (workingLog.breakSegment()) {
+          controller.enqueue(encoder.encode(NARRATION_BREAK_SENTINEL));
+        }
+      }
+
       try {
         let currentMessages = [...initialMessages];
         let webSearchUsed = false;
@@ -564,6 +560,7 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
             if (!firstTextSeen) { firstTextSeen = true; clearThinkingTimer(); }
             clearStatusIfShown(); // first real text clears Thinking…/Searching…
             fullResponse += text;
+            workingLog.addText(text);
             handleText(text);
           });
 
@@ -572,11 +569,14 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
           // we can switch the status to "Searching the web…" while Anthropic searches.
           stream.on("streamEvent", (event) => {
             const e = event as { type?: string; content_block?: { type?: string; name?: string } };
-            if (
-              e.type === "content_block_start" &&
-              e.content_block?.type === "server_tool_use" &&
-              e.content_block?.name === "web_search"
-            ) {
+            if (e.type !== "content_block_start") return;
+            const blockType = e.content_block?.type;
+            // A tool block is starting — text streamed so far in this turn is
+            // narration, on block boundary, regardless of what the model said.
+            if (blockType === "tool_use" || blockType === "server_tool_use") {
+              emitNarrationBreak();
+            }
+            if (blockType === "server_tool_use" && e.content_block?.name === "web_search") {
               clearThinkingTimer();
               webSearchUsed = true;
               controller.enqueue(encoder.encode(SEARCH_STATUS_SENTINEL));
@@ -619,6 +619,11 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
           // response is persisted once after the loop. Connection death is
           // still safe — the catch handler below saves fullResponse.
           maxTokensContinues = 0;
+
+          // Defensive: text streamed after the last tool_use block start (rare
+          // but possible) is still part of a turn that ends in tool calls —
+          // route it to the working log before the tools execute.
+          emitNarrationBreak();
 
           if (toolCalls.some((tc) => tc.name === "browse_url")) {
             browseUrlUsed = true;
@@ -674,16 +679,14 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
               }
               const isToolError = result.startsWith("Error:");
 
-              if (tc.name !== "react_to_message" && !isToolError) {
-                toolTrace.push({ tool: tc.name, result: truncateTraceResult(result) });
-              }
-
-              // react_to_message is a silent action — no task-progress card.
+              // react_to_message is a silent action — no task-progress card,
+              // no working-log entry.
               if (tc.name !== "react_to_message") {
                 const stepLabel = TOOL_STEP_LABELS[tc.name] ?? tc.name;
+                workingLog.addToolCall(tc.name, stepLabel, result, isToolError);
                 const detail = isToolError
                   ? result.slice(0, 100)
-                  : extractStepDetail(tc.name, result);
+                  : extractToolDetail(result);
                 const sentinelPayload = JSON.stringify({
                   step: stepLabel,
                   status: isToolError ? "error" : "done",
@@ -733,12 +736,14 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
           }
         }
 
-        // Persist the entire conversation across all turns as one row. This
-        // is what keeps the bubble continuous: the optimistic client message
-        // built up over the stream maps 1:1 to the row written here.
+        // Persist one row per turn: messages.content holds the final reply
+        // ONLY; narration + tool steps live in metadata.working_log. If the
+        // last turn produced no text, the last narration segment is promoted
+        // so Bruce never says nothing (PROMOTE_LAST mirrors it client-side).
         const taskData = extractLatestTaskProgress(fullResponse);
-        const finalClean = cleanText(fullResponse);
-        if (finalClean || taskData) {
+        const { reply, log, promoted } = workingLog.finish();
+        if (promoted) controller.enqueue(encoder.encode(PROMOTE_LAST_SENTINEL));
+        if (reply || taskData || log.length > 0) {
           const metadata: Record<string, unknown> = {};
           if (webSearchUsed || browseUrlUsed) {
             metadata.web_search_used = webSearchUsed;
@@ -748,11 +753,11 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
             metadata.content_type = "task";
             metadata.task_data = taskData;
           }
-          if (toolTrace.length > 0) {
-            metadata.tool_trace = toolTrace.slice(-TOOL_TRACE_MAX_ENTRIES);
+          if (log.length > 0) {
+            metadata.working_log = log;
           }
-          await persistAssistant(finalClean, metadata);
-          if (onComplete && finalClean) await onComplete(finalClean).catch(() => {});
+          await persistAssistant(reply, metadata);
+          if (onComplete && reply) await onComplete(reply).catch(() => {});
         }
 
         controller.close();
@@ -761,17 +766,25 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
         if (clientAbort.signal.aborted) {
           // Client disconnected — persist whatever was generated and close cleanly.
           // Do NOT call controller.error() so the response closes without a noisy error.
-          const clean = cleanText(fullResponse);
-          if (clean) await persistAssistant(clean, { interrupted: true }).catch(() => {});
+          // The recorder routes in-flight narration to working_log; the partial
+          // reply (text since the last tool turn) stays in content.
+          const { reply, log } = workingLog.finish();
+          if (reply || log.length > 0) {
+            const metadata: Record<string, unknown> = { interrupted: true };
+            if (log.length > 0) metadata.working_log = log;
+            await persistAssistant(reply, metadata).catch(() => {});
+          }
           controller.close();
           return;
         }
         console.error("[streamHandler] Stream error:", err instanceof Error ? err.message : String(err));
         // Best-effort: save whatever the model produced up to the failure so
         // the user doesn't lose visible work.
-        if (fullResponse.trim()) {
-          const clean = cleanText(fullResponse);
-          if (clean) await persistAssistant(clean, null);
+        {
+          const { reply, log } = workingLog.finish();
+          if (reply || log.length > 0) {
+            await persistAssistant(reply, log.length > 0 ? { working_log: log } : null).catch(() => {});
+          }
         }
         controller.error(err);
       }

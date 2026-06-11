@@ -7,8 +7,9 @@
 import type { MessageRole } from "@/lib/types";
 import type { TaskProgressData } from "@/lib/chat/taskProgress";
 import type { PastedAttachmentData } from "@/lib/chat/pastedText";
+import type { WorkingLogEntry, WorkingLogDisplayItem } from "@/lib/chat/workingLog";
 
-export type { PastedAttachmentData };
+export type { PastedAttachmentData, WorkingLogEntry, WorkingLogDisplayItem };
 
 export interface NormalizedMessage {
   id: string;
@@ -20,6 +21,8 @@ export interface NormalizedMessage {
   attachment_type: string | null;
   attachment_filename: string | null;
   metadata: Record<string, unknown> | null;
+  /** Ordered narration + tool entries from metadata.working_log (null when absent). */
+  working_log: WorkingLogEntry[] | null;
 }
 
 export interface MessageAttachment {
@@ -59,4 +62,6 @@ export interface ChatMessage {
   senderColorHex?: string;
   taskData?: TaskProgressData | null;
   pastedAttachments?: PastedAttachmentData[];
+  /** Chronological working-log display items (narration + tool lines). */
+  workingLog?: WorkingLogDisplayItem[];
 }
