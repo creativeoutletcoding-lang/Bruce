@@ -5,12 +5,19 @@
  * web/desktop code paths are never touched. Capacitor plugins are loaded lazily
  * via dynamic import so they stay out of the SSR/web bundle entry path.
  */
-import { Capacitor } from "@capacitor/core";
-
 /** True only inside the Capacitor iOS WKWebView shell. False in every browser. */
 export function isNative(): boolean {
+  // Read the global the native runtime injects, behind a typeof-window guard, so
+  // @capacitor/core is never pulled into the SSR/build module graph of any page
+  // that imports this adapter (login, settings, /auth/native-callback). On the
+  // server `window` is undefined → false; in a plain browser the global is absent
+  // → false; only the native shell injects window.Capacitor.isNativePlatform().
+  if (typeof window === "undefined") return false;
   try {
-    return Capacitor.isNativePlatform();
+    const cap = (window as Window & {
+      Capacitor?: { isNativePlatform?: () => boolean };
+    }).Capacitor;
+    return cap?.isNativePlatform?.() ?? false;
   } catch {
     return false;
   }
