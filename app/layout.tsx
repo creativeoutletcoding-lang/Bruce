@@ -5,9 +5,9 @@ import { ACCENT_COLOR } from "@/lib/utils/constants";
 export const metadata: Metadata = {
   title: "Bruce",
   description: "Johnson Household AI",
-  manifest: "/manifest.json?v=3",
+  manifest: "/manifest.json?v=4",
   icons: {
-    apple: [{ url: "/apple-touch-icon.png?v=3", sizes: "180x180" }],
+    apple: [{ url: "/apple-touch-icon.png?v=4", sizes: "180x180" }],
   },
   appleWebApp: {
     capable: true,
