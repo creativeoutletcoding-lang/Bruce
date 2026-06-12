@@ -11,9 +11,11 @@
  *      the OS routes back into the app (still via @capacitor/app appUrlOpen),
  *   4. close the system browser, and
  *   5. navigate the webview to /auth/native-callback?code=…, whose page calls
- *      completeNativeOAuth() to finish the PKCE exchange client-side.
+ *      completeNativeOAuth(). The browser client's detectSessionInUrl performs
+ *      ONE PKCE exchange on init; completeNativeOAuth only waits for the session
+ *      (it must not exchange again — that would consume the verifier twice).
  */
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { NATIVE_OAUTH_CALLBACK_URL, loadApp, loadBrowser } from "./index";
 
@@ -96,23 +98,33 @@ export async function nativeGoogleOAuth(
 }
 
 /**
- * Finish the PKCE flow from the native-callback page: exchange the code for a
- * Supabase session client-side (the verifier cookie set in step 1 above survives
- * the reload), then persist the Google connector tokens so server-side tools can
- * use them. Returns when the session is established; the caller routes onward.
+ * Finish the PKCE flow from the native-callback page, then persist the Google
+ * connector tokens so server-side tools can use them.
+ *
+ * IMPORTANT — single exchange only. The @supabase/ssr browser client has
+ * `detectSessionInUrl` enabled, so simply creating it on the
+ * /auth/native-callback?code=… page triggers exactly ONE deterministic PKCE
+ * exchange during init (consuming the single-use code + verifier). We must NOT
+ * call `exchangeCodeForSession` ourselves — that previously raced the
+ * auto-exchange and threw on the already-consumed verifier, surfacing a false
+ * "Sign in failed" even though the session was established. Instead we just wait
+ * for the session the auto-exchange produces.
  */
-export async function completeNativeOAuth(code: string): Promise<void> {
+export async function completeNativeOAuth(): Promise<void> {
   const supabase = createClient();
 
-  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-  if (error) throw error;
-  if (!data.session) throw new Error("exchangeCodeForSession returned no session");
+  // Wait for the session the detectSessionInUrl auto-exchange produces.
+  const session = await waitForSession(supabase);
+  if (!session) {
+    throw new Error("native OAuth: no session after callback auto-exchange");
+  }
 
   // Persist provider tokens (Calendar/Gmail/Drive). The web flow does this in the
   // server /auth/callback route; the native path bypasses it, so mirror it here.
-  // Best-effort — a storage failure must not block an otherwise-successful login.
-  const accessToken = data.session.provider_token ?? null;
-  const refreshToken = data.session.provider_refresh_token ?? null;
+  // The one-time provider_token/refresh ride on the SIGNED_IN session captured
+  // below. Best-effort — a storage failure must not block a successful login.
+  const accessToken = session.provider_token ?? null;
+  const refreshToken = session.provider_refresh_token ?? null;
   if (accessToken || refreshToken) {
     try {
       await fetch("/api/native/google-tokens", {
@@ -124,4 +136,43 @@ export async function completeNativeOAuth(code: string): Promise<void> {
       /* non-fatal: session is established; connector tokens can be re-granted */
     }
   }
+}
+
+/**
+ * Resolve with the session produced by the detectSessionInUrl auto-exchange.
+ * `onAuthStateChange` delivers SIGNED_IN (carrying the one-time provider tokens);
+ * `getSession()` is the fallback in case the exchange settled before we
+ * subscribed. Resolves null if no session appears within the timeout (a genuine
+ * auth failure — e.g. the auto-exchange errored on a bad/expired code).
+ */
+function waitForSession(
+  supabase: SupabaseClient,
+  timeoutMs = 15000
+): Promise<Session | null> {
+  return new Promise<Session | null>((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) finish(session);
+    });
+
+    function finish(session: Session | null) {
+      if (settled) return;
+      settled = true;
+      subscription.unsubscribe();
+      clearTimeout(timer);
+      resolve(session);
+    }
+
+    // The auto-exchange may have already settled before we subscribed; getSession
+    // awaits client init (including the exchange) and returns the result.
+    void supabase.auth.getSession().then(({ data }) => {
+      if (data.session) finish(data.session);
+    });
+
+    timer = setTimeout(() => finish(null), timeoutMs);
+  });
 }

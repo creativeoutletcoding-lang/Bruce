@@ -28,13 +28,15 @@ function NativeCallbackContent() {
       return;
     }
 
-    const code = new URLSearchParams(window.location.search).get("code");
-    if (!code) {
+    // No code in the URL → nothing to exchange; bounce to login.
+    if (!new URLSearchParams(window.location.search).has("code")) {
       router.replace("/login?error=auth");
       return;
     }
 
-    completeNativeOAuth(code)
+    // completeNativeOAuth relies on the client's detectSessionInUrl auto-exchange
+    // (it reads ?code= from this URL itself) — we don't pass or re-exchange the code.
+    completeNativeOAuth()
       .then(() => router.replace("/chat"))
       .catch(() => router.replace("/login?error=auth"));
   }, [router]);
