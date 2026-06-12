@@ -151,13 +151,14 @@ function waitForSession(
 ): Promise<Session | null> {
   return new Promise<Session | null>((resolve) => {
     let settled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) finish(session);
     });
+
+    const timer = setTimeout(() => finish(null), timeoutMs);
 
     function finish(session: Session | null) {
       if (settled) return;
@@ -172,7 +173,5 @@ function waitForSession(
     void supabase.auth.getSession().then(({ data }) => {
       if (data.session) finish(data.session);
     });
-
-    timer = setTimeout(() => finish(null), timeoutMs);
   });
 }
