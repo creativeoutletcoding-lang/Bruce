@@ -17,12 +17,16 @@ export function isNative(): boolean {
 }
 
 /**
- * Custom URL scheme + path that Google/Supabase redirect back to after consent.
- * The scheme `app.heybruce` must be registered in the iOS app's Info.plist
- * (CFBundleURLSchemes) and as an authorized redirect URI on the Google OAuth
- * client. See docs/oauth-spike.md for the manual registration steps.
+ * Universal Link that Google/Supabase redirect back to after consent.
+ *
+ * Google's web OAuth client rejects custom URL schemes for sensitive scopes, so
+ * the callback is an https Universal Link instead of `app.heybruce://`. iOS routes
+ * this URL into the app (via @capacitor/app `appUrlOpen`) when the device has the
+ * Associated Domains entitlement `applinks:heybruce.app` AND heybruce.app serves a
+ * valid /.well-known/apple-app-site-association naming this path. See
+ * docs/oauth-spike.md for the manual registration steps.
  */
-export const OAUTH_DEEP_LINK = "app.heybruce://auth/callback";
+export const NATIVE_OAUTH_CALLBACK_URL = "https://heybruce.app/auth/native-callback";
 
 /** Lazy loader for @capacitor/browser (system browser, not the in-app webview). */
 export async function loadBrowser() {

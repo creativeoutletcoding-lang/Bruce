@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "67A695J9C9.app.heybruce.shell",
+        "paths": [ "/auth/native-callback" ]
+      }
+    ]
+  }
+}
