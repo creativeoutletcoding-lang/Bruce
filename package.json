@@ -16,6 +16,8 @@
     "@anthropic-ai/sdk": "^0.100.1",
     "@browserbasehq/sdk": "^2.14.0",
     "@browserbasehq/stagehand": "^3.5.0",
+    "@capacitor/app": "^6.0.3",
+    "@capacitor/browser": "^6.0.6",
     "@fal-ai/client": "^1.10.1",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.4",
