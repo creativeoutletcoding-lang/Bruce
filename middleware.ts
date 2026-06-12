@@ -34,6 +34,9 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isPublic =
     pathname === "/" ||
+    // Apple App Site Association — must be publicly reachable as application/json
+    // with NO redirect, or Universal Links silently fail to validate.
+    pathname.startsWith("/.well-known/") ||
     pathname.startsWith("/privacy") ||
     pathname.startsWith("/terms") ||
     pathname.startsWith("/login") ||
@@ -59,6 +62,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest\\.json|sw\\.js).*)",
+    // Exclude /.well-known/ so the AASA file is served untouched (no redirect, no auth).
+    "/((?!_next/static|_next/image|favicon.ico|manifest\\.json|sw\\.js|\\.well-known).*)",
   ],
 };

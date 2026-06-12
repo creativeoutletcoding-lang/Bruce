@@ -16,6 +16,15 @@ const nextConfig = {
   async headers() {
     return [
       {
+        // Apple requires the AASA file served as application/json over https with
+        // no redirect. The file has no extension, so set the type explicitly.
+        source: "/.well-known/apple-app-site-association",
+        headers: [
+          { key: "Content-Type", value: "application/json" },
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        ],
+      },
+      {
         source: "/manifest.json",
         headers: [
           {
