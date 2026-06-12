@@ -6,6 +6,23 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Build phases retired + native iOS shell approved — 2026-06-11
+
+**Build phases retired.** The phase-numbered structure (Phase 1–6) is removed from CLAUDE.md and will not be used going forward. Bruce is in continuous refinement; there is no concept of a phase boundary or "phase complete" milestone.
+
+**Native iOS shell approved.** The Capacitor remote-URL model is approved and sequenced (see `docs/capacitor-plan.md`). This wraps the existing web app in a native WKWebView pointed at `https://heybruce.app` — it is not a rewrite, not a parallel version, and not a new codebase. One codebase. iPhones get the native shell; desktop remains browser-based and is first-class.
+
+**Full-native rewrite explicitly rejected.** A SwiftUI or React Native rewrite was considered and rejected. Reasons: it would destroy deploy velocity (every change needs a native build + App Store cycle), abandon the desktop-first experience, and rebuild a working product for parity rather than adding new capability. The remote-URL shell gives 95% of the native wins (keyboard, push, biometric) at 5% of the cost.
+
+**Shell sequencing.** Work proceeds in this order:
+1. Finish web loose ends: FCM iPhone verification, morning summary cron, calendar write path.
+2. Google OAuth spike (§3 of capacitor-plan.md) — system browser + deep-link PKCE for both Supabase login and connector token grants. This is the gate; nothing else in the shell build can proceed until it is proven out.
+3. Shell build: keyboard resize mode + kill accessory bar, native push wired to existing `user_fcm_tokens` + `notifyUser()`, biometric gate, `lib/native/` adapter.
+4. Native-only features: share sheet, notification actions, home-screen widget.
+5. Distribution: TestFlight during stabilization; Unlisted App Store as the permanent household distribution channel (avoids 90-day TestFlight expiry, sidesteps App Store review for a private app).
+
+---
+
 ### Shared inline browser (BrowserPanel) — 2026-06-09
 
 **What it is.** A browser that Bruce and household members drive *together* inside any chat. Bruce navigates/clicks/extracts server-side; humans watch the same session move live and can take the wheel at any moment. One Browserbase session is shared by both sides — Bruce's actions and the human's clicks land in the same browser, and each side sees the other's effect on the next render.

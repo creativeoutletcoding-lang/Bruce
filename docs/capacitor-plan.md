@@ -1,10 +1,8 @@
 # Capacitor Native Shell — Scope & Plan
 
-Status: **planning only** — not started, not committed to. This is additive: it
+Status: **Approved 2026-06-11. Sequenced behind web loose ends. §3 OAuth spike is the gate and runs first.** This is additive: it
 wraps the existing web app in a native iOS shell and does not fork or replace
-any Bruce code. The decision to actually build it is deferred until a biometric
-lock is wanted or the web iteration pace settles (see decision reasoning in
-chat history, 2026-06-11).
+any Bruce code.
 
 ---
 

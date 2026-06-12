@@ -269,19 +269,3 @@ Summary of key decisions recorded:
 
 **RLS admin overrides removed (2026-05-06, migration 016):** Stripped `is_admin()` from projects, project_members, chats, messages, files. Admin bypass retained only for household, users, invite_tokens, pending_memory.
 
----
-
-## Phase Status
-
-| Phase | Status |
-|---|---|
-| 1 — Foundation | ✅ Complete |
-| 2 — Core Chat | ✅ Complete |
-| 3 — Projects | ✅ Complete |
-| 4 — Household | ✅ Complete |
-| 5 — Connectors + Admin | ✅ Complete (2026-05-01) |
-| 6 — Polish | 🔄 In progress |
-
-Phase 6 complete: image generation, web search, browse_url, mobile UI fixes, family thread navigation, admin memory panel, unread dot indicators, TASK_PROGRESS system (multi-step task cards), document tools (Sheets/Docs/Drive), search_chat_history + full-text search index, manage_reminders tool + FCM delivery + Vercel cron, multi-device FCM (user_fcm_tokens), Group Chat Awareness (unified participation rule), Settings page (tab layout, desktop panel, Back button), PWA icon refresh (all slots, iOS apple-touch-icon versioning), MARKET_INTELLIGENCE research layer, unified streaming status bar (StreamingStatusBar replaces top strip + 3-dot bubble), mobile scroll-jump fix (overscroll-behavior: contain), model picker pill below input row, mobile long-press context menu (MessageContextMenu — Like/Love toggle + Copy, pointer-event based, replaces old touch reaction hint), bidirectional reactions (members react to any message; Bruce reacts with 👍 or ❤️ via emoji parameter on react_to_message tool).
-
-Phase 6 planned: user-facing chat deletion, "continue in group chat" feature.
