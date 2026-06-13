@@ -1,26 +1,64 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { isNative } from "@/lib/native";
+import { nativeGoogleOAuth } from "@/lib/native/oauth";
+
+// Bumped every diagnostic deploy. If the on-screen panel shows an older value
+// than this, the device/preview is serving a STALE bundle (not running this code).
+const BUILD_MARKER = "oauth-spike-landing-1";
+
+const OAUTH_SCOPES = [
+  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/documents",
+  "https://www.googleapis.com/auth/spreadsheets",
+  "https://www.googleapis.com/auth/presentations",
+  "https://www.googleapis.com/auth/calendar",
+  "https://mail.google.com/",
+].join(" ");
+
+const OAUTH_QUERY_PARAMS = {
+  access_type: "offline",
+  prompt: "consent",
+};
 
 export default function LandingPage() {
+  // Client-only native-detection readout, rendered visibly in the page body so we
+  // can read it on the device screen — bypasses both the JS console and any
+  // outerHTML string test (the strings only live in the JS chunk, not the HTML).
+  const [debug, setDebug] = useState<string>("(pending hydration)");
+  useEffect(() => {
+    const cap = (window as Window & {
+      Capacitor?: { isNativePlatform?: () => boolean };
+    }).Capacitor;
+    setDebug(
+      `build=${BUILD_MARKER} | isNative=${isNative()} | ` +
+        `typeof Capacitor=${typeof cap} | ` +
+        `isNativePlatform=${cap?.isNativePlatform?.()}`
+    );
+  }, []);
+
   async function handleSignIn() {
     const supabase = createClient();
+
+    // Native shell: Google blocks OAuth in webviews, so route through
+    // ASWebAuthenticationSession. No-op guard — isNative() is false in browsers.
+    if (isNative()) {
+      console.log("[native] landing: isNative path triggered");
+      await nativeGoogleOAuth(supabase, {
+        scopes: OAUTH_SCOPES,
+        queryParams: OAUTH_QUERY_PARAMS,
+      });
+      return;
+    }
+
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
-        scopes: [
-          "https://www.googleapis.com/auth/drive.file",
-          "https://www.googleapis.com/auth/documents",
-          "https://www.googleapis.com/auth/spreadsheets",
-          "https://www.googleapis.com/auth/presentations",
-          "https://www.googleapis.com/auth/calendar",
-          "https://mail.google.com/",
-        ].join(" "),
-        queryParams: {
-          access_type: "offline",
-          prompt: "consent",
-        },
+        scopes: OAUTH_SCOPES,
+        queryParams: OAUTH_QUERY_PARAMS,
       },
     });
   }
@@ -42,6 +80,11 @@ export default function LandingPage() {
         <p style={styles.inviteNote}>
           Invitation only. Access is limited to household members.
         </p>
+
+        {/* DIAGNOSTIC (spike): visible native-detection readout. Remove after debug. */}
+        <pre style={styles.debugBox} data-testid="native-debug">
+          {debug}
+        </pre>
       </main>
 
       <footer style={styles.footer}>
@@ -149,6 +192,20 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.8125rem",
     color: "var(--text-tertiary)",
     textAlign: "center",
+  },
+  debugBox: {
+    width: "100%",
+    margin: 0,
+    padding: "8px 10px",
+    backgroundColor: "var(--bg-primary)",
+    border: "1px dashed var(--border-strong)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--text-secondary)",
+    fontSize: "0.6875rem",
+    lineHeight: 1.4,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    textAlign: "left",
   },
   footer: {
     display: "flex",
