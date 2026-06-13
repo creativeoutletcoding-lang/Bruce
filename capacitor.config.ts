@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: "Bruce",
   webDir: "public",
   server: {
-    url: "https://bruce-git-spike-oaut-44d5c1-creativeoutletcoding-4766s-projects.vercel.app",
+    url: "https://heybruce.app",
     cleartext: false,
   },
   ios: { contentInset: "never" },

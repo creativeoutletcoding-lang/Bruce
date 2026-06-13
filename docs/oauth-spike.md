@@ -2,17 +2,16 @@
 
 Branch: `spike/oauth-native` · **Throwaway POC. Do not merge. Do not deploy to production.**
 
-> ⚠️ **PRODUCTION-BLOCKER: strip `?mode=developer` before any TestFlight / App Store build.**
-> `ios/App/App/App.entitlements` currently lists `webcredentials:heybruce.app?mode=developer`.
-> The `?mode=developer` suffix forces `swcd` to fetch the AASA directly from our
-> origin (bypassing Apple's stale CDN cache) and **only works on a device with
-> Settings → Developer → Associated Domains Development enabled**. In any
-> production / TestFlight / App Store build it will **fail** — Associated Domains
-> validation will not pass and ASWebAuthenticationSession's HTTPS callback will
-> break. Before shipping, revert the entry to plain `webcredentials:heybruce.app`
-> (Apple's CDN will by then serve the webcredentials-bearing AASA). Keep
-> `applinks:heybruce.app` unchanged — the `?mode=developer` suffix applies to
-> webcredentials only.
+> ✅ **Associated Domains are production-ready.** `ios/App/App/App.entitlements`
+> lists the standard `applinks:heybruce.app` and `webcredentials:heybruce.app`
+> (no `?mode=developer` suffix). The temporary `?mode=developer` workaround — which
+> forced `swcd` to fetch the AASA from our origin while Apple's CDN served a stale
+> cache, and only worked on a device with Settings → Developer → Associated Domains
+> Development enabled — has been removed now that Apple's CDN has refreshed. The
+> webcredentials-bearing AASA is confirmed live at
+> `app-site-association.cdn-apple.com/a/v1/heybruce.app` with appID
+> `3ZL5564832.app.heybruce.shell`, so the plain entitlement validates in
+> production / TestFlight / App Store builds.
 
 ## What this spike proves
 
@@ -51,7 +50,8 @@ sensitive scopes. So the callback is now an **https Universal Link**:
   `/.well-known/apple-app-site-association` naming this app + path.
 
 The AASA file is committed at `public/.well-known/apple-app-site-association`:
-`appID` = `67A695J9C9.app.heybruce.shell`, `paths` = `["/auth/native-callback"]`.
+`appID` = `3ZL5564832.app.heybruce.shell`, `paths` = `["/auth/native-callback"]`,
+plus a `webcredentials` entry naming the same appID.
 It must be served as `application/json`, over https, **with no redirect** — so:
 - `next.config.js` forces `Content-Type: application/json` on that exact path, and
 - `middleware.ts` excludes `/.well-known/` from the auth gate (otherwise an
@@ -140,7 +140,7 @@ production. Keep everything else on the branch. (Your call — flagging, not doi
 ## Manual steps (do these before device testing — not done by the spike)
 
 OAuth client: `350681764829-utdikj7tgvth8t2h3q3inj3ok3ous824.apps.googleusercontent.com`
-(Google Cloud project `eternal-water-494204-m9`). Team ID `67A695J9C9`,
+(Google Cloud project `eternal-water-494204-m9`). Team ID `3ZL5564832`,
 bundle id `app.heybruce.shell`.
 
 1. **Google Cloud Console → Credentials → that OAuth client → Authorized redirect URIs.**
