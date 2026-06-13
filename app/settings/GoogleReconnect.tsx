@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { isNative } from "@/lib/native";
+import { nativeGoogleOAuth } from "@/lib/native/oauth";
 
 export default function GoogleReconnect() {
   const [loading, setLoading] = useState(false);
@@ -9,24 +11,33 @@ export default function GoogleReconnect() {
   async function handleReconnect() {
     setLoading(true);
     const supabase = createClient();
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        scopes: [
-          "https://www.googleapis.com/auth/drive",
-          "https://www.googleapis.com/auth/documents",
-          "https://www.googleapis.com/auth/spreadsheets",
-          "https://www.googleapis.com/auth/presentations",
-          "https://www.googleapis.com/auth/calendar",
-          "https://mail.google.com/",
-        ].join(" "),
-        queryParams: {
-          access_type: "offline",
-          prompt: "consent",
-        },
+    const options = {
+      redirectTo: `${window.location.origin}/auth/callback`,
+      scopes: [
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/documents",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/presentations",
+        "https://www.googleapis.com/auth/calendar",
+        "https://mail.google.com/",
+      ].join(" "),
+      queryParams: {
+        access_type: "offline",
+        prompt: "consent",
       },
-    });
+    };
+
+    // Native shell: same connector grant, routed through the system browser.
+    // The connector grant IS this OAuth flow (see docs/oauth-spike.md).
+    if (isNative()) {
+      await nativeGoogleOAuth(supabase, {
+        scopes: options.scopes,
+        queryParams: options.queryParams,
+      });
+      return;
+    }
+
+    await supabase.auth.signInWithOAuth({ provider: "google", options });
   }
 
   return (

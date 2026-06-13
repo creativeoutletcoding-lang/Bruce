@@ -41,3 +41,9 @@ next-env.d.ts
 # large binaries and drafts
 *.pdf
 .claude/
+
+# capacitor (native shell) — build artifacts; ios/.gitignore covers the rest
+/ios/App/Pods
+/ios/App/build
+/ios/DerivedData
+capacitor.config.json

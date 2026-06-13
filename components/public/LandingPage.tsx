@@ -1,26 +1,43 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
+import { isNative } from "@/lib/native";
+import { nativeGoogleOAuth } from "@/lib/native/oauth";
+
+const OAUTH_SCOPES = [
+  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/documents",
+  "https://www.googleapis.com/auth/spreadsheets",
+  "https://www.googleapis.com/auth/presentations",
+  "https://www.googleapis.com/auth/calendar",
+  "https://mail.google.com/",
+].join(" ");
+
+const OAUTH_QUERY_PARAMS = {
+  access_type: "offline",
+  prompt: "consent",
+};
 
 export default function LandingPage() {
   async function handleSignIn() {
     const supabase = createClient();
+
+    // Native shell: Google blocks OAuth in webviews, so route through
+    // ASWebAuthenticationSession. No-op guard — isNative() is false in browsers.
+    if (isNative()) {
+      await nativeGoogleOAuth(supabase, {
+        scopes: OAUTH_SCOPES,
+        queryParams: OAUTH_QUERY_PARAMS,
+      });
+      return;
+    }
+
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
-        scopes: [
-          "https://www.googleapis.com/auth/drive.file",
-          "https://www.googleapis.com/auth/documents",
-          "https://www.googleapis.com/auth/spreadsheets",
-          "https://www.googleapis.com/auth/presentations",
-          "https://www.googleapis.com/auth/calendar",
-          "https://mail.google.com/",
-        ].join(" "),
-        queryParams: {
-          access_type: "offline",
-          prompt: "consent",
-        },
+        scopes: OAUTH_SCOPES,
+        queryParams: OAUTH_QUERY_PARAMS,
       },
     });
   }

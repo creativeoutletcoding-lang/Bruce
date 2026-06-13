@@ -3,6 +3,8 @@
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { isNative } from "@/lib/native";
+import { nativeGoogleOAuth } from "@/lib/native/oauth";
 
 function LoginContent() {
   const searchParams = useSearchParams();
@@ -10,26 +12,35 @@ function LoginContent() {
 
   async function handleGoogleSignIn() {
     const supabase = createClient();
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        scopes: [
-          "https://www.googleapis.com/auth/drive",
-          "https://www.googleapis.com/auth/documents",
-          "https://www.googleapis.com/auth/spreadsheets",
-          "https://www.googleapis.com/auth/presentations",
-          "https://www.googleapis.com/auth/calendar",
-          "https://mail.google.com/",
-        ].join(" "),
-        // access_type=offline gets a refresh token; prompt=consent forces Google
-        // to re-issue a refresh token even for returning users
-        queryParams: {
-          access_type: "offline",
-          prompt: "consent",
-        },
+    const options = {
+      redirectTo: `${window.location.origin}/auth/callback`,
+      scopes: [
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/documents",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/presentations",
+        "https://www.googleapis.com/auth/calendar",
+        "https://mail.google.com/",
+      ].join(" "),
+      // access_type=offline gets a refresh token; prompt=consent forces Google
+      // to re-issue a refresh token even for returning users
+      queryParams: {
+        access_type: "offline",
+        prompt: "consent",
       },
-    });
+    };
+
+    // Native shell: Google blocks OAuth in webviews, so route through the system
+    // browser + deep link. No-op guard — isNative() is false in every browser.
+    if (isNative()) {
+      await nativeGoogleOAuth(supabase, {
+        scopes: options.scopes,
+        queryParams: options.queryParams,
+      });
+      return;
+    }
+
+    await supabase.auth.signInWithOAuth({ provider: "google", options });
   }
 
   return (
