@@ -3,7 +3,16 @@ import Capacitor
 import AuthenticationServices
 
 @objc(OAuthPlugin)
-public class OAuthPlugin: CAPPlugin, ASWebAuthenticationPresentationContextProviding {
+public class OAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPresentationContextProviding {
+    // CAPBridgedPlugin conformance — Capacitor 8's runtime registers plugins from
+    // this metadata (built-ins + capacitor.config.json packageClassList + explicit
+    // registerPluginInstance). The legacy CAP_PLUGIN ObjC macro is no longer scanned.
+    public let identifier = "OAuthPlugin"
+    public let jsName = "OAuthPlugin"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "openForCallback", returnType: CAPPluginReturnPromise)
+    ]
+
     private var authSession: ASWebAuthenticationSession?
 
     @objc func openForCallback(_ call: CAPPluginCall) {
@@ -16,7 +25,7 @@ public class OAuthPlugin: CAPPlugin, ASWebAuthenticationPresentationContextProvi
 
         DispatchQueue.main.async {
             if #available(iOS 17.4, *) {
-                let callback = ASWebAuthenticationSessionCallback.https(
+                let callback = ASWebAuthenticationSession.Callback.https(
                     host: "heybruce.app",
                     path: "/auth/native-callback"
                 )
