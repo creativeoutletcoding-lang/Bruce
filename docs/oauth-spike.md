@@ -1,6 +1,6 @@
 # OAuth Spike — Capacitor native shell + Google OAuth via system browser
 
-Branch: `spike/oauth-native` · **Throwaway POC. Do not merge. Do not deploy to production.**
+Branch: `spike/oauth-native` · **Status: SUCCESSFUL — native OAuth via ASWebAuthenticationSession proven end-to-end on device. This is the production-ready foundation for the Capacitor shell.**
 
 > ✅ **Associated Domains are production-ready.** `ios/App/App/App.entitlements`
 > lists the standard `applinks:heybruce.app` and `webcredentials:heybruce.app`
