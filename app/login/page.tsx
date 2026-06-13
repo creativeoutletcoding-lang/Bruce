@@ -1,14 +1,33 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { isNative } from "@/lib/native";
 import { nativeGoogleOAuth } from "@/lib/native/oauth";
 
+// Bumped every diagnostic deploy. If the on-screen panel shows an older value
+// than this, the device/preview is serving a STALE bundle (not running this code).
+const BUILD_MARKER = "oauth-spike-debug-1";
+
 function LoginContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get("error");
+
+  // Client-only native-detection readout, rendered visibly in the page body so we
+  // can read it on the device screen — bypasses both the JS console and any
+  // outerHTML string test (the strings only live in the JS chunk, not the HTML).
+  const [debug, setDebug] = useState<string>("(pending hydration)");
+  useEffect(() => {
+    const cap = (window as Window & {
+      Capacitor?: { isNativePlatform?: () => boolean };
+    }).Capacitor;
+    setDebug(
+      `build=${BUILD_MARKER} | isNative=${isNative()} | ` +
+        `typeof Capacitor=${typeof cap} | ` +
+        `isNativePlatform=${cap?.isNativePlatform?.()}`
+    );
+  }, []);
 
   async function handleGoogleSignIn() {
     const supabase = createClient();
@@ -76,6 +95,11 @@ function LoginContent() {
         </button>
 
         <p style={styles.inviteNote}>Invitation required</p>
+
+        {/* DIAGNOSTIC (spike): visible native-detection readout. Remove after debug. */}
+        <pre style={styles.debugBox} data-testid="native-debug">
+          {debug}
+        </pre>
       </div>
     </div>
   );
@@ -186,5 +210,19 @@ const styles: Record<string, React.CSSProperties> = {
   inviteNote: {
     fontSize: "0.8125rem",
     color: "var(--text-tertiary)",
+  },
+  debugBox: {
+    width: "100%",
+    margin: 0,
+    padding: "8px 10px",
+    backgroundColor: "var(--bg-secondary)",
+    border: "1px dashed var(--border-strong)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--text-secondary)",
+    fontSize: "0.6875rem",
+    lineHeight: 1.4,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    textAlign: "left",
   },
 };
