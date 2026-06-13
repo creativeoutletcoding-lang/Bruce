@@ -33,7 +33,6 @@ const OAuthPlugin = registerPlugin<OAuthPluginInterface>("OAuthPlugin");
  * completes or cancels the flow.
  */
 async function openWithASWAS(url: string): Promise<string> {
-  console.log("[native] openWithASWAS called, invoking OAuthPlugin");
   const result = await OAuthPlugin.openForCallback({ url });
   return result.callbackUrl;
 }
@@ -58,7 +57,6 @@ export async function nativeGoogleOAuth(
   });
   if (error) throw error;
   if (!data?.url) throw new Error("signInWithOAuth returned no consent URL");
-  console.log("[native] nativeGoogleOAuth: got auth URL, calling openWithASWAS");
 
   // 2. Open the consent screen via ASWebAuthenticationSession. The session intercepts
   //    the https://heybruce.app/auth/native-callback redirect internally and returns

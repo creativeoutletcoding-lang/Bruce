@@ -22,7 +22,6 @@ public class OAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPresen
             call.reject("Invalid URL")
             return
         }
-        NSLog("OAuthPlugin: openForCallback called with url: %@", urlString)
 
         DispatchQueue.main.async {
             if #available(iOS 17.4, *) {
