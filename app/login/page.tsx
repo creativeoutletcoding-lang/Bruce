@@ -30,6 +30,18 @@ function LoginContent() {
       },
     };
 
+    // DIAGNOSTIC (spike): log the native-detection state unconditionally so we can
+    // see, in the device webview console, whether the Capacitor bridge is present.
+    const cap = (window as Window & {
+      Capacitor?: { isNativePlatform?: () => boolean };
+    }).Capacitor;
+    console.log(
+      "[native-debug] window.Capacitor =",
+      typeof cap,
+      "isNativePlatform =",
+      cap?.isNativePlatform?.()
+    );
+
     // Native shell: Google blocks OAuth in webviews, so route through the system
     // browser + deep link. No-op guard — isNative() is false in every browser.
     if (isNative()) {
