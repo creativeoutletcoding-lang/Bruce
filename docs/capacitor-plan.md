@@ -1,8 +1,15 @@
 # Capacitor Native Shell — Scope & Plan
 
-Status: **Approved 2026-06-11. Sequenced behind web loose ends. §3 OAuth spike is the gate and runs first.** This is additive: it
+Status: **§3 OAuth spike COMPLETE and merged to main (2026-06-13) — proven end-to-end on a physical device against production. The gate is cleared.** Remaining: the rest of the shell build (native push, biometric gate) and native-only features. This is additive: it
 wraps the existing web app in a native iOS shell and does not fork or replace
 any Bruce code.
+
+**Sequence status:**
+- ✅ Step 1 — web loose ends.
+- ✅ Step 2 — Google OAuth spike (§3): `ASWebAuthenticationSession` via the custom `OAuthPlugin`, not `@capacitor/browser`. See the 2026-06-13 entry in `docs/decisions.md` and `docs/oauth-spike.md`.
+- ▶ Step 3 — shell build: keyboard already addressed via safe-area insets (`viewport-fit=cover` + `env(safe-area-inset-*)`); remaining: native push wired to `user_fcm_tokens` + `notifyUser()`, biometric gate, `lib/native/` adapter.
+- ☐ Step 4 — native-only features: share sheet, notification actions, home-screen widget.
+- ☐ Step 5 — distribution (TestFlight → Unlisted App Store).
 
 ---
 
@@ -54,7 +61,9 @@ feature-detect native context with `Capacitor.isNativePlatform()`.
 
 ---
 
-## 3. ⚠️ The one thing that will block this if missed: Google OAuth in WKWebView
+## 3. ✅ RESOLVED (2026-06-13): Google OAuth in WKWebView
+
+> **Outcome:** solved with **`ASWebAuthenticationSession`** via the custom `OAuthPlugin`, **not** `@capacitor/browser` — iOS will not route a Universal Link back to the app from an SFSafariViewController. The `@capacitor/browser` + `appUrlOpen` plan below is **superseded**; kept for context. See the 2026-06-13 entry in `docs/decisions.md`.
 
 **Google refuses OAuth inside embedded webviews** (`disallowed_useragent`).
 Bruce uses Google OAuth for *both* Supabase Auth login **and** the

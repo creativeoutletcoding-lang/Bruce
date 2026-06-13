@@ -123,6 +123,20 @@ All chat routes use the same tool set. Tool definitions live in `lib/`. System b
 
 ---
 
+## Native iOS Shell
+
+A Capacitor **remote-URL** shell (`ios/` + `capacitor.config.ts`): a WKWebView pointed at `server.url = https://heybruce.app`. It is not a bundled rewrite — the same web app serves browser and shell. `window.Capacitor` is auto-injected, so web code feature-detects native context via `isNative()` (`lib/native/index.ts`, reads `window.Capacitor?.isNativePlatform?.()`; false in every browser). All native branches are guarded by `isNative()` — web/desktop paths are byte-for-byte unchanged.
+
+**Deploy model:** web changes (UI, logic, tools, prompts) ship via `git push` to main exactly as always — Vercel deploys and the shell picks them up on next load, no rebuild. **Only native-capability changes** (plugins, entitlements, Swift) require an **Xcode rebuild + reinstall to device**.
+
+**Native Google OAuth.** Google blocks OAuth inside embedded webviews, so login + connector grants route through `nativeGoogleOAuth()` (`lib/native/oauth.ts`) → the custom **`OAuthPlugin`** (`ios/App/App/OAuthPlugin.swift`), which drives **`ASWebAuthenticationSession`** and intercepts the `https://heybruce.app/auth/native-callback` HTTPS callback directly, returning the URL to JS. The web client's `detectSessionInUrl` then does the single PKCE exchange on `/auth/native-callback`; native-only provider tokens are mirrored to the DB via `POST /api/native/google-tokens` (session-gated, own-row). `OAuthPlugin` is registered via `CAPBridgedPlugin` + `registerPluginInstance` in `MainViewController.capacitorDidLoad()` (Capacitor 8 + SPM no longer auto-discovers app-target plugins). See `docs/oauth-spike.md`.
+
+**Associated Domains.** Requires BOTH `applinks:heybruce.app` (Universal Link callback routing) AND `webcredentials:heybruce.app` (ASWebAuthenticationSession HTTPS callback validation). The AASA at `public/.well-known/apple-app-site-association` carries both an `applinks` and a `webcredentials` key, appID `3ZL5564832.app.heybruce.shell`. Apple's CDN validates webcredentials on-device with a ~6h cache TTL.
+
+**Toolchain.** Capacitor 8 requires Xcode 16+/Swift 6/macOS Sonoma+. Shell development happens on the new Mac (macOS 26.5 / Xcode 26.5). Safe-area handling: `app/layout.tsx` sets `viewport-fit=cover` and the shell `<main>` adds `padding-top: env(safe-area-inset-top)` so content clears the iOS status bar (no-op on web).
+
+---
+
 ## System Prompt Builders
 
 **Single entry point:** `buildSystemPrompt(ctx: SystemPromptContext)` in `lib/chat/buildSystemPrompt.ts`. Routes pass a `SystemPromptContext` and get back `SystemPromptBlocks` (an `Anthropic TextBlockParam[]`) — they never assemble prompt fragments, append tool blocks, or concatenate identity/household/member layers themselves.

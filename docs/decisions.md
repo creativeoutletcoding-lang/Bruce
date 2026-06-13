@@ -6,6 +6,24 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### OAuth spike COMPLETE — native iOS shell merged to main — 2026-06-13
+
+**Spike outcome.** Native iOS shell Google OAuth is proven **end-to-end on a physical device, against production**, and merged to main. This was the gate (§3 of `docs/capacitor-plan.md`); the rest of the shell build is now unblocked. Covers both Supabase Auth login and the Calendar/Gmail/Drive connector grants — they are the same OAuth flow in this codebase.
+
+**ASWebAuthenticationSession, not SFSafariViewController / `@capacitor/browser`.** The first iteration opened the consent screen in an SFSafariViewController (`@capacitor/browser`) and caught the callback as a Universal Link via `@capacitor/app` `appUrlOpen`. It failed: **iOS does not route a Universal Link back to the app that presented the SFVC.** `ASWebAuthenticationSession` intercepts the callback URL internally before iOS processes it, so it returns the URL straight to JS — no `appUrlOpen` needed. `@capacitor/browser` was removed.
+
+**`OAuthPlugin` is a custom local Swift plugin.** `ios/App/App/OAuthPlugin.swift` exposes `openForCallback({url})` and drives `ASWebAuthenticationSession`. It is registered via `CAPBridgedPlugin` conformance + `registerPluginInstance` in `MainViewController.capacitorDidLoad()` — because **Capacitor 8 + SPM no longer auto-discovers app-target plugins** through the legacy ObjC `CAP_PLUGIN` macro. (As a local plugin it does not appear in `cap sync`'s npm-plugin list; that is expected.)
+
+**Associated Domains needs BOTH services.** `applinks:heybruce.app` (Universal Link callback routing) AND `webcredentials:heybruce.app` (the ASWebAuthenticationSession HTTPS callback validation). The AASA file (`public/.well-known/apple-app-site-association`) therefore carries both an `applinks` key and a `webcredentials` key. Apple team prefix / appID: `3ZL5564832.app.heybruce.shell`.
+
+**Apple's CDN caches the AASA (~6h TTL).** `app-site-association.cdn-apple.com` is what validates webcredentials on-device, and it served a stale (webcredentials-less) copy during testing. The `?mode=developer` entitlement suffix on `webcredentials:` + Settings → Developer → Associated Domains Development forces `swcd` to fetch the AASA from our origin, bypassing the stale CDN. It **only works on a developer device and MUST be stripped before production** — done; the entitlement is plain `webcredentials:heybruce.app` and the refreshed CDN validates it.
+
+**Capacitor 8 toolchain.** Requires Xcode 16+/Swift 6/macOS Sonoma+. Shell development now happens on the **new Mac (macOS 26.5 / Xcode 26.5)**. The Capacitor 6 pin was a temporary downgrade for the old Mac and is no longer used.
+
+**Local branch-testing pattern.** To test branch code on device (since `server.url` points at production), temporarily set `capacitor.config.ts` `server.url` to the branch's Vercel preview URL + `npx cap copy ios`, then **revert to `https://heybruce.app` before committing**. Disable Vercel deployment protection on that preview so the webview can load it. The Universal Link / AASA still validates against production `heybruce.app` regardless of which URL the webview content loads from.
+
+---
+
 ### Build phases retired + native iOS shell approved — 2026-06-11
 
 **Build phases retired.** The phase-numbered structure (Phase 1–6) is removed from CLAUDE.md and will not be used going forward. Bruce is in continuous refinement; there is no concept of a phase boundary or "phase complete" milestone.
