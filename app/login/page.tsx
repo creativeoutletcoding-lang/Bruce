@@ -33,6 +33,7 @@ function LoginContent() {
     // Native shell: Google blocks OAuth in webviews, so route through the system
     // browser + deep link. No-op guard — isNative() is false in every browser.
     if (isNative()) {
+      console.log("[native] login: isNative path triggered");
       await nativeGoogleOAuth(supabase, {
         scopes: options.scopes,
         queryParams: options.queryParams,
