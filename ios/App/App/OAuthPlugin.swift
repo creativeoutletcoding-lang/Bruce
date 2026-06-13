@@ -43,7 +43,7 @@ public class OAuthPlugin: CAPPlugin, ASWebAuthenticationPresentationContextProvi
                 return
             }
             self.authSession?.presentationContextProvider = self
-            self.authSession?.prefersEphemeralWebBrowserSession = false
+            self.authSession?.prefersEphemeralWebBrowserSession = true
             self.authSession?.start()
         }
     }
