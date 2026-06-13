@@ -35,12 +35,6 @@ export function isNative(): boolean {
  */
 export const NATIVE_OAUTH_CALLBACK_URL = "https://heybruce.app/auth/native-callback";
 
-/** Lazy loader for @capacitor/browser (system browser, not the in-app webview). */
-export async function loadBrowser() {
-  const { Browser } = await import("@capacitor/browser");
-  return Browser;
-}
-
 /** Lazy loader for @capacitor/app (deep-link / appUrlOpen events). */
 export async function loadApp() {
   const { App } = await import("@capacitor/app");
