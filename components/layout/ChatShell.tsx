@@ -330,6 +330,13 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     minWidth: 0,
+    // Native shell: the iOS status bar overlays the webview (contentInset:
+    // "never"), so offset all main content below it. env() returns 0 on
+    // web/desktop (no notch) → no-op there. The strip above the top bar shows
+    // the shell's --bg-primary, identical to the top bar's background, so it
+    // reads as one continuous surface. Bottom safe area is handled by the
+    // input bar (--kb-safe-bottom / env(safe-area-inset-bottom)).
+    paddingTop: "env(safe-area-inset-top, 0px)",
   },
   notifBanner: {
     display: "flex",
