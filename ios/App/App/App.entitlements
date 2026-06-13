@@ -5,7 +5,7 @@
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:heybruce.app</string>
-		<string>webcredentials:heybruce.app</string>
+		<string>webcredentials:heybruce.app?mode=developer</string>
 	</array>
 </dict>
 </plist>

@@ -2,6 +2,18 @@
 
 Branch: `spike/oauth-native` · **Throwaway POC. Do not merge. Do not deploy to production.**
 
+> ⚠️ **PRODUCTION-BLOCKER: strip `?mode=developer` before any TestFlight / App Store build.**
+> `ios/App/App/App.entitlements` currently lists `webcredentials:heybruce.app?mode=developer`.
+> The `?mode=developer` suffix forces `swcd` to fetch the AASA directly from our
+> origin (bypassing Apple's stale CDN cache) and **only works on a device with
+> Settings → Developer → Associated Domains Development enabled**. In any
+> production / TestFlight / App Store build it will **fail** — Associated Domains
+> validation will not pass and ASWebAuthenticationSession's HTTPS callback will
+> break. Before shipping, revert the entry to plain `webcredentials:heybruce.app`
+> (Apple's CDN will by then serve the webcredentials-bearing AASA). Keep
+> `applinks:heybruce.app` unchanged — the `?mode=developer` suffix applies to
+> webcredentials only.
+
 ## What this spike proves
 
 That Google OAuth works when Bruce runs inside a Capacitor iOS WKWebView shell
