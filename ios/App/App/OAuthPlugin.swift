@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import Capacitor
 import AuthenticationServices
 
@@ -33,6 +34,12 @@ public class OAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPresen
                     url: url,
                     callback: callback
                 ) { callbackURL, error in
+                    if let error = error {
+                        NSLog("OAuthPlugin: ASWebAuthenticationSession error: %@", error.localizedDescription)
+                        if let asError = error as? ASWebAuthenticationSessionError {
+                            NSLog("OAuthPlugin: ASWebAuthenticationSessionError code: %d", asError.code.rawValue)
+                        }
+                    }
                     if let error = error as? ASWebAuthenticationSessionError,
                        error.code == .canceledLogin {
                         call.reject("User cancelled")
@@ -59,6 +66,22 @@ public class OAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPresen
     }
 
     public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        return self.bridge?.viewController?.view.window ?? ASPresentationAnchor()
+        // ASWebAuthenticationSession needs a real key window to anchor to. In a
+        // Capacitor WKWebView the bridge's view.window can be nil/non-presentable,
+        // which makes the session fail instantly (error 3 / "User cancelled" with no
+        // sheet). Find the active key window from the connected scenes first.
+        let scenes = UIApplication.shared.connectedScenes
+        for scene in scenes {
+            if let windowScene = scene as? UIWindowScene {
+                if let keyWindow = windowScene.windows.first(where: { $0.isKeyWindow }) {
+                    return keyWindow
+                }
+            }
+        }
+        // Fallback to bridge's window, then any window.
+        if let bridgeWindow = self.bridge?.viewController?.view.window {
+            return bridgeWindow
+        }
+        return ASPresentationAnchor()
     }
 }
