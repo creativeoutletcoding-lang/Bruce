@@ -6,6 +6,22 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### "+" ("Add to chat") menu → Claude-iOS-style bottom sheet — 2026-06-13
+
+**What changed.** The composer's `+` menu (`components/chat/InputPlusMenu.tsx`) was restyled from a two-item popover/sheet (Attach file · Move to project) into a single Claude-iOS-style bottom sheet: grab handle, top-left `X` (or `‹` back on the sub-page), centered title, a 3-tile attach row (Camera · Photos · Files), a grouped `›`-row card ("Add to project"), and an in-place "Add to project" sub-page (back chevron, search field, scrollable project list).
+
+**One sheet for all viewports.** The old desktop popover + flyout branch was removed — desktop and mobile now use the same bottom sheet (one code path, web + iOS identical, ships via `git push`). Per-context variation is still props-only: `MessageInput` renders the sheet wherever attaching is available and passes `moveToProject` only where add-to-project is eligible, so the "Add to project" row simply doesn't appear in project/family chats. Consequence: contexts that previously showed a one-tap paperclip now open the sheet.
+
+**Native `UIMenu` rejected.** Considered a native Swift `UIMenu`/action-sheet plugin for the `+` to get true iOS chrome. Rejected: it would fork the menu into a web path + a native path, break the "ships via `git push`" model (every change would need an Xcode rebuild), and duplicate the project-list/avatar/search logic. The sheet is pure web — one component, both platforms.
+
+**Haptics: reuse `lightHaptic()`, defer `@capacitor/haptics`.** Sheet open and tile/row taps fire the existing `lib/utils/haptics.ts` `lightHaptic()` (web `navigator.vibrate`), consistent with the rest of the composer. We did **not** add `@capacitor/haptics`: it pulls a native dependency and needs an Xcode rebuild, whereas the menu must ship via push. Real iOS hardware haptics (the Vibration API is a no-op in WKWebView) remain a deferred, isolated enhancement (plugin + one rebuild).
+
+**Three tiles, one input.** Bruce has a single attach pipeline, not separate camera/photos/files handlers. The three tiles don't add handlers — `MessageInput.openFilePicker()` retargets the one hidden `<input>` by setting `accept`/`capture` before `.click()` (Camera → `capture=environment` + `image/*`; Photos → `image/*`; Files → the original `.pdf,.txt,.md,.csv,image/*`). The attach handler (`handleFileChange`) and pipeline are unchanged.
+
+**Per-project emoji removed from this sub-sheet only (render-only).** The Add-to-project list no longer draws the leading project emoji/icon; names sit at the card's standard left inset and member-avatar pips are kept. The emoji/icon data is untouched in the DB, and the shared `ProjectPickerList` (still used with emoji by `ProjectAssignSelector` on the welcome screen) is unchanged — the sub-sheet renders its own rows and reuses only the exported `ProjectMemberPips`. Added `created_at` to `GET /api/projects/movable` + `MovableProject` to power the relative "x ago" per row (the only data addition).
+
+---
+
 ### Model config refactor + effort levels — 2026-06-13
 
 **Single source of truth.** `lib/models.ts` now holds `ModelConfig` entries (`id`, `displayName`, `supportsEffort`, `effortLevels`, `defaultEffort`, `thinkingAlwaysOn`) plus helpers (`getModel`, `resolveModel`, `isValidModelId`, `validEffortForModel`). Lineup updated to **Opus 4.8, Opus 4.7, Sonnet 4.6 (default), Haiku 4.5** — Opus 4.6 dropped, Fable 5 deliberately excluded for now.

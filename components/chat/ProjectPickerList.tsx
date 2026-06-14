@@ -30,14 +30,16 @@ export default function ProjectPickerList({ projects, onSelect, loading }: Proje
         >
           <span style={styles.icon} aria-hidden="true">{p.icon || "📁"}</span>
           <span style={styles.name}>{p.name}</span>
-          <PipStack members={p.members} />
+          <ProjectMemberPips members={p.members} />
         </button>
       ))}
     </div>
   );
 }
 
-function PipStack({ members }: { members: MovableProjectMember[] }) {
+// Stacked member-avatar circles. Exported so the redesigned Add-to-project sheet
+// (InputPlusMenu) can reuse the exact same pips without forking the styling.
+export function ProjectMemberPips({ members }: { members: MovableProjectMember[] }) {
   const shown = members.slice(0, 4);
   const overflow = members.length - shown.length;
   if (shown.length === 0) return null;
