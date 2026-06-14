@@ -1,110 +1,122 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { MovableProject } from "@/lib/types";
-import ProjectPickerList from "./ProjectPickerList";
+import { ProjectMemberPips } from "./ProjectPickerList";
 
 export interface MoveToProjectConfig {
   projects: MovableProject[];
   onSelect: (projectId: string) => void;
   loading?: boolean;
-  /** Menu entry label. Defaults to "Move to project". */
+  /** Sub-sheet title + grouped-row label. Defaults to "Add to project". */
   label?: string;
 }
 
 interface InputPlusMenuProps {
-  /** Opens the native file picker. Omit to hide the "Attach file" item. */
-  onAttachFile?: () => void;
-  /** Present only on standalone private chats the user owns and hasn't moved yet. */
+  /** Opens the camera (capture) for a single photo. Omit to hide the tile. */
+  onTakePhoto?: () => void;
+  /** Opens the photo library (images only). Omit to hide the tile. */
+  onChoosePhotos?: () => void;
+  /** Opens the document/file picker. Omit to hide the tile. */
+  onChooseFiles?: () => void;
+  /** Present only where add-to-project is eligible (e.g. standalone owned chats). */
   moveToProject?: MoveToProjectConfig;
   disabled?: boolean;
 }
 
-// The shared "+" menu for the input bar. First level lists actions (Attach file,
-// Move to project). "Move to project" opens a second level: an inline flyout on
-// desktop, a second bottom sheet on mobile (bigger touch targets). One component
-// for every chat context — variations come from props, never from forking.
-export default function InputPlusMenu({ onAttachFile, moveToProject, disabled = false }: InputPlusMenuProps) {
+// The shared "+" ("Add to chat") menu for the composer. A single Claude-iOS-style
+// bottom sheet used on BOTH web and native (one code path, ships via git push):
+// a grab handle, a 3-tile attach row, grouped `›` rows, and an in-place
+// "Add to project" sub-page. Per-context variation comes from props only — the
+// "Add to project" row simply isn't passed in contexts that don't allow it.
+export default function InputPlusMenu({
+  onTakePhoto,
+  onChoosePhotos,
+  onChooseFiles,
+  moveToProject,
+  disabled = false,
+}: InputPlusMenuProps) {
   const [open, setOpen] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
-  const [isCoarse, setIsCoarse] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setIsCoarse(window.matchMedia("(pointer: coarse)").matches);
-  }, []);
+  const [query, setQuery] = useState("");
 
   function close() {
     setOpen(false);
     setShowProjects(false);
+    setQuery("");
   }
 
-  // Desktop: dismiss on outside mousedown. (Mobile uses the sheet backdrop.)
+  // Escape closes (modal affordance). Backdrop click handles pointer dismiss.
   useEffect(() => {
-    if (!open || isCoarse) return;
-    function onDown(e: MouseEvent) {
-      if (wrapperRef.current?.contains(e.target as Node)) return;
-      close();
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        if (showProjects) { setShowProjects(false); return; }
+        close();
+      }
     }
-    const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
-    return () => { clearTimeout(t); document.removeEventListener("mousedown", onDown); };
-  }, [open, isCoarse]);
-
-  function handleAttach() {
-    close();
-    onAttachFile?.();
-  }
-
-  function handleSelectProject(projectId: string) {
-    close();
-    moveToProject?.onSelect(projectId);
-  }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, showProjects]);
 
   function toggleOpen() {
     if (disabled) return;
     lightHaptic();
-    setOpen((v) => !v);
     setShowProjects(false);
+    setQuery("");
+    setOpen((v) => !v);
   }
 
-  // Once loaded, an empty project list disables the entry (spec: relabel rather
-  // than open an empty picker). While loading, keep it enabled — the picker shows
-  // a loading line.
-  const moveEmpty = Boolean(moveToProject) && !moveToProject!.loading && moveToProject!.projects.length === 0;
+  function fireTile(handler?: () => void) {
+    if (!handler) return;
+    lightHaptic();
+    close();
+    handler();
+  }
 
-  const items = (
-    <div role="menu">
-      {onAttachFile && (
-        <button type="button" role="menuitem" style={styles.item} onClick={handleAttach}>
-          <PaperclipIcon />
-          <span style={styles.itemLabel}>Attach file</span>
-        </button>
-      )}
-      {moveToProject && (
-        <button
-          type="button"
-          role="menuitem"
-          style={{ ...styles.item, ...(moveEmpty ? styles.itemDisabled : {}) }}
-          onClick={moveEmpty ? undefined : () => setShowProjects(true)}
-          disabled={moveEmpty}
-        >
-          <FolderIcon />
-          <span style={styles.itemLabel}>{moveEmpty ? "No projects available" : (moveToProject!.label ?? "Move to project")}</span>
-          {!moveEmpty && <ChevronRight />}
-        </button>
-      )}
-    </div>
-  );
+  function openProjects() {
+    lightHaptic();
+    setShowProjects(true);
+  }
+
+  function backToRoot() {
+    lightHaptic();
+    setShowProjects(false);
+    setQuery("");
+  }
+
+  function handleSelectProject(projectId: string) {
+    lightHaptic();
+    close();
+    moveToProject?.onSelect(projectId);
+  }
+
+  const hasTiles = Boolean(onTakePhoto || onChoosePhotos || onChooseFiles);
+
+  // Once loaded, an empty project list disables the entry rather than opening an
+  // empty sub-page (matches the prior behavior).
+  const moveEmpty =
+    Boolean(moveToProject) && !moveToProject!.loading && moveToProject!.projects.length === 0;
+  const projectLabel = moveToProject?.label ?? "Add to project";
+
+  const filteredProjects = useMemo(() => {
+    const list = moveToProject?.projects ?? [];
+    const q = query.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((p) => p.name.toLowerCase().includes(q));
+  }, [moveToProject?.projects, query]);
+
+  const title = showProjects ? projectLabel : "Add to chat";
 
   return (
-    <div ref={wrapperRef} style={{ position: "relative", display: "flex" }}>
+    <>
       <button
         onClick={toggleOpen}
         style={styles.trigger}
-        aria-label="Add"
-        aria-haspopup="menu"
+        aria-label="Add to chat"
+        aria-haspopup="dialog"
         aria-expanded={open}
         type="button"
         disabled={disabled}
@@ -114,54 +126,218 @@ export default function InputPlusMenu({ onAttachFile, moveToProject, disabled = 
         </svg>
       </button>
 
-      {/* Desktop: popover above the trigger; project flyout to the right. */}
-      {open && !isCoarse && (
-        <div style={styles.desktopPopover}>
-          {items}
-          {showProjects && moveToProject && (
-            <div style={styles.desktopFlyout}>
-              <ProjectPickerList
-                projects={moveToProject.projects}
-                onSelect={handleSelectProject}
-                loading={moveToProject.loading}
-              />
-            </div>
-          )}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div style={styles.backdrop} onClick={close}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={title}
+              style={styles.sheet}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={styles.handle} aria-hidden="true" />
 
-      {/* Mobile: bottom sheet; "Move to project" swaps to a second sheet. */}
-      {open && isCoarse && createPortal(
-        <div style={styles.sheetBackdrop} onClick={close}>
-          <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.sheetHandle} aria-hidden="true" />
-            {showProjects && moveToProject ? (
-              <>
-                <button type="button" style={styles.sheetBack} onClick={() => setShowProjects(false)}>
-                  <ChevronLeft />
-                  <span>{moveToProject.label ?? "Move to project"}</span>
-                </button>
-                <ProjectPickerList
-                  projects={moveToProject.projects}
-                  onSelect={handleSelectProject}
-                  loading={moveToProject.loading}
-                />
-              </>
-            ) : (
-              items
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
-    </div>
+              {/* Header: left affordance (X on root, ‹ back on sub-page),
+                  centered title, balancing spacer on the right. */}
+              <div style={styles.header}>
+                {showProjects ? (
+                  <button type="button" style={styles.headerBtn} onClick={backToRoot} aria-label="Back">
+                    <ChevronLeft />
+                  </button>
+                ) : (
+                  <button type="button" style={styles.headerBtn} onClick={close} aria-label="Close">
+                    <CloseIcon />
+                  </button>
+                )}
+                <span style={styles.title}>{title}</span>
+                <span style={styles.headerBtn} aria-hidden="true" />
+              </div>
+
+              {/* In-place page transition between the root sheet and the
+                  Add-to-project sub-page (keyed so the animation replays). */}
+              <div
+                key={showProjects ? "projects" : "root"}
+                style={{
+                  ...styles.page,
+                  animationName: showProjects ? "bruce-sheet-page-fwd" : "bruce-sheet-page-back",
+                }}
+              >
+                {showProjects && moveToProject ? (
+                  <ProjectSubPage
+                    label={projectLabel}
+                    projects={filteredProjects}
+                    totalCount={moveToProject.projects.length}
+                    loading={moveToProject.loading}
+                    query={query}
+                    onQueryChange={setQuery}
+                    onSelect={handleSelectProject}
+                  />
+                ) : (
+                  <>
+                    {hasTiles && (
+                      <div style={styles.tileRow}>
+                        {onTakePhoto && (
+                          <Tile label="Camera" onClick={() => fireTile(onTakePhoto)} icon={<CameraIcon />} />
+                        )}
+                        {onChoosePhotos && (
+                          <Tile label="Photos" onClick={() => fireTile(onChoosePhotos)} icon={<PhotosIcon />} />
+                        )}
+                        {onChooseFiles && (
+                          <Tile label="Files" onClick={() => fireTile(onChooseFiles)} icon={<FilesIcon />} />
+                        )}
+                      </div>
+                    )}
+
+                    {moveToProject && (
+                      <div style={styles.groupCard}>
+                        <button
+                          type="button"
+                          style={{ ...styles.groupRow, ...(moveEmpty ? styles.rowDisabled : {}) }}
+                          onClick={moveEmpty ? undefined : openProjects}
+                          disabled={moveEmpty}
+                        >
+                          <span style={styles.rowIcon}><FolderIcon /></span>
+                          <span style={styles.rowLabel}>
+                            {moveEmpty ? "No projects available" : projectLabel}
+                          </span>
+                          {!moveEmpty && <ChevronRight />}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 
-function PaperclipIcon() {
+function ProjectSubPage({
+  label,
+  projects,
+  totalCount,
+  loading,
+  query,
+  onQueryChange,
+  onSelect,
+}: {
+  label: string;
+  projects: MovableProject[];
+  totalCount: number;
+  loading?: boolean;
+  query: string;
+  onQueryChange: (v: string) => void;
+  onSelect: (id: string) => void;
+}) {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" style={iconStyle}>
-      <path d="M15 9.5l-5.5 5.5a4 4 0 0 1-5.657-5.657l6-6a2.5 2.5 0 0 1 3.535 3.535L7.5 12.5a1 1 0 0 1-1.414-1.414L11.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    <>
+      {totalCount > 0 && (
+        <div style={styles.searchWrap}>
+          <span style={styles.searchIcon} aria-hidden="true"><SearchIcon /></span>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            placeholder="Search projects"
+            style={styles.searchInput}
+            aria-label={`Search ${label.toLowerCase()}`}
+            autoComplete="off"
+          />
+        </div>
+      )}
+
+      <div style={styles.projectList}>
+        {loading ? (
+          <div style={styles.emptyMsg}>Loading projects…</div>
+        ) : totalCount === 0 ? (
+          <div style={styles.emptyMsg}>No projects available</div>
+        ) : projects.length === 0 ? (
+          <div style={styles.emptyMsg}>No projects match “{query.trim()}”</div>
+        ) : (
+          <div style={styles.groupCard}>
+            {projects.map((p, i) => (
+              <button
+                key={p.id}
+                type="button"
+                style={{
+                  ...styles.projectRow,
+                  ...(i < projects.length - 1 ? styles.rowDivider : {}),
+                }}
+                onClick={() => onSelect(p.id)}
+              >
+                {/* Leading per-project emoji intentionally omitted here (this
+                    sub-sheet only) — name sits at the card's standard left
+                    inset. The project's icon data is untouched in the DB. */}
+                <span style={styles.projectText}>
+                  <span style={styles.projectName}>{p.name}</span>
+                  <span style={styles.projectMeta}>{timeAgo(p.created_at)}</span>
+                </span>
+                <ProjectMemberPips members={p.members} />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function Tile({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick: () => void }) {
+  return (
+    <button type="button" style={styles.tile} onClick={onClick} className="hover-wash">
+      <span style={styles.tileIcon}>{icon}</span>
+      <span style={styles.tileLabel}>{label}</span>
+    </button>
+  );
+}
+
+/** Relative "x ago" for the project list. */
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  const w = Math.floor(d / 7);
+  if (w < 5) return `${w}w ago`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  return `${Math.floor(d / 365)}y ago`;
+}
+
+function CameraIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2L8 5h8l1.5 2h2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-9Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <circle cx="12" cy="12.5" r="3.25" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function PhotosIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="8.5" cy="9.5" r="1.5" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M5 17l4.5-4.5 3 3L16 12l3 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function FilesIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-6-6Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M13 3v6h6" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -170,6 +346,23 @@ function FolderIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" style={iconStyle}>
       <path d="M2 5.5a1.5 1.5 0 0 1 1.5-1.5h3l1.5 1.5h5A1.5 1.5 0 0 1 14.5 7v5A1.5 1.5 0 0 1 13 13.5H3.5A1.5 1.5 0 0 1 2 12V5.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path d="M4 4l10 10M14 4L4 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }
@@ -184,8 +377,8 @@ function ChevronRight() {
 
 function ChevronLeft() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-      <path d="M10 3.5L5.5 8l4.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path d="M11 4L6 9l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -208,93 +401,205 @@ const styles: Record<string, React.CSSProperties> = {
     background: "transparent",
     padding: 0,
   },
-  desktopPopover: {
-    position: "absolute",
-    bottom: "calc(100% + 8px)",
-    left: 0,
-    minWidth: "200px",
-    backgroundColor: "var(--bg-primary)",
-    border: "1px solid var(--border)",
-    borderRadius: "var(--radius-md)",
-    boxShadow: "var(--shadow-lg)",
-    padding: "4px",
-    zIndex: 1000,
-  },
-  desktopFlyout: {
-    position: "absolute",
-    left: "calc(100% + 6px)",
-    bottom: 0,
-    minWidth: "240px",
-    maxHeight: "320px",
-    overflowY: "auto",
-    backgroundColor: "var(--bg-primary)",
-    border: "1px solid var(--border)",
-    borderRadius: "var(--radius-md)",
-    boxShadow: "var(--shadow-lg)",
-    padding: "4px",
-    zIndex: 1001,
-  },
-  item: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    width: "100%",
-    padding: "9px 10px",
-    background: "transparent",
-    border: "none",
-    borderRadius: "var(--radius-sm)",
-    cursor: "pointer",
-    textAlign: "left",
-    color: "var(--text-primary)",
-  },
-  itemLabel: {
-    flex: 1,
-    fontSize: "0.875rem",
-    fontWeight: 500,
-    whiteSpace: "nowrap",
-  },
-  itemDisabled: {
-    opacity: 0.5,
-    cursor: "default",
-  },
-  sheetBackdrop: {
+  backdrop: {
     position: "fixed",
     inset: 0,
     backgroundColor: "rgba(0,0,0,0.4)",
-    zIndex: 2000,
+    zIndex: "var(--z-modal)" as unknown as number,
     display: "flex",
     alignItems: "flex-end",
+    justifyContent: "center",
+    animation: "bruce-sheet-backdrop-in 160ms ease-out",
   },
   sheet: {
     width: "100%",
+    maxWidth: "480px",
     backgroundColor: "var(--bg-primary)",
     borderTopLeftRadius: "var(--radius-lg)",
     borderTopRightRadius: "var(--radius-lg)",
-    padding: "8px 8px calc(16px + env(safe-area-inset-bottom, 0px))",
     boxShadow: "var(--shadow-lg)",
-    maxHeight: "70vh",
-    overflowY: "auto",
+    padding: "6px 12px calc(16px + var(--kb-safe-bottom, env(safe-area-inset-bottom, 0px)))",
+    maxHeight: "82vh",
+    display: "flex",
+    flexDirection: "column",
+    animation: "bruce-sheet-up 220ms cubic-bezier(0.32, 0.72, 0, 1)",
   },
-  sheetHandle: {
+  handle: {
     width: "36px",
     height: "4px",
     borderRadius: "2px",
     backgroundColor: "var(--border-strong)",
-    margin: "6px auto 10px",
+    margin: "6px auto 4px",
+    flexShrink: 0,
   },
-  sheetBack: {
+  header: {
     display: "flex",
     alignItems: "center",
-    gap: "6px",
-    width: "100%",
-    padding: "10px 12px",
-    background: "transparent",
+    justifyContent: "space-between",
+    gap: "8px",
+    minHeight: "40px",
+    flexShrink: 0,
+  },
+  headerBtn: {
+    width: "32px",
+    height: "32px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     border: "none",
-    borderBottom: "1px solid var(--border)",
+    background: "transparent",
+    color: "var(--text-secondary)",
     cursor: "pointer",
-    fontSize: "0.875rem",
+    borderRadius: "var(--radius-sm)",
+    padding: 0,
+    flexShrink: 0,
+  },
+  title: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: "0.9375rem",
     fontWeight: 600,
     color: "var(--text-primary)",
-    marginBottom: "4px",
+  },
+  page: {
+    display: "flex",
+    flexDirection: "column",
+    flex: "1 1 auto",
+    minHeight: 0,
+    overflowY: "auto",
+    animationDuration: "200ms",
+    animationTimingFunction: "ease-out",
+    animationFillMode: "both",
+  },
+  tileRow: {
+    display: "flex",
+    gap: "8px",
+    margin: "8px 0 4px",
+  },
+  tile: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    padding: "16px 8px",
+    backgroundColor: "var(--bg-secondary)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-md)",
+    cursor: "pointer",
+    color: "var(--text-primary)",
+  },
+  tileIcon: {
+    color: "var(--text-primary)",
+    display: "flex",
+  },
+  tileLabel: {
+    fontSize: "0.8125rem",
+    fontWeight: 500,
+  },
+  groupCard: {
+    backgroundColor: "var(--bg-secondary)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-md)",
+    overflow: "hidden",
+    margin: "8px 0 0",
+  },
+  groupRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    width: "100%",
+    padding: "13px 14px",
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    textAlign: "left",
+    color: "var(--text-primary)",
+  },
+  rowDisabled: {
+    opacity: 0.5,
+    cursor: "default",
+  },
+  rowIcon: {
+    flexShrink: 0,
+    display: "flex",
+    color: "var(--text-secondary)",
+  },
+  rowLabel: {
+    flex: 1,
+    fontSize: "0.9375rem",
+    fontWeight: 500,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  searchWrap: {
+    position: "relative",
+    display: "flex",
+    alignItems: "center",
+    margin: "8px 0 4px",
+    flexShrink: 0,
+  },
+  searchIcon: {
+    position: "absolute",
+    left: "12px",
+    color: "var(--text-tertiary)",
+    display: "flex",
+    pointerEvents: "none",
+  },
+  searchInput: {
+    width: "100%",
+    padding: "10px 12px 10px 36px",
+    fontSize: "1rem",
+    color: "var(--text-primary)",
+    backgroundColor: "var(--bg-secondary)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-md)",
+    outline: "none",
+    WebkitAppearance: "none",
+    boxSizing: "border-box",
+  },
+  projectList: {
+    paddingBottom: "4px",
+  },
+  projectRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    width: "100%",
+    padding: "12px 14px",
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    textAlign: "left",
+    color: "var(--text-primary)",
+  },
+  rowDivider: {
+    borderBottom: "0.5px solid var(--border)",
+  },
+  projectText: {
+    flex: 1,
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+  },
+  projectName: {
+    fontSize: "0.9375rem",
+    fontWeight: 500,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  projectMeta: {
+    fontSize: "0.75rem",
+    color: "var(--text-tertiary)",
+  },
+  emptyMsg: {
+    padding: "20px 14px",
+    fontSize: "0.875rem",
+    color: "var(--text-tertiary)",
+    textAlign: "center",
   },
 };

@@ -299,6 +299,35 @@ span[class*="typingDots"] > span:nth-child(3),
   50%      { opacity: 1;    transform: scale(1); }
 }
 
+/* Add-to-chat bottom sheet (InputPlusMenu): backdrop fade + sheet slide-up,
+   plus the in-place page transition between the root sheet and the
+   Add-to-project sub-page. */
+@keyframes bruce-sheet-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes bruce-sheet-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes bruce-sheet-page-fwd {
+  from { opacity: 0; transform: translateX(14px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes bruce-sheet-page-back {
+  from { opacity: 0; transform: translateX(-14px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes bruce-sheet-up { from { transform: none; } to { transform: none; } }
+  @keyframes bruce-sheet-page-fwd { from { opacity: 1; transform: none; } to { opacity: 1; transform: none; } }
+  @keyframes bruce-sheet-page-back { from { opacity: 1; transform: none; } to { opacity: 1; transform: none; } }
+}
+
 @keyframes bruce-browser-indeterminate {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(350%); }

@@ -230,6 +230,19 @@ export default function MessageInput({
     ]);
   }
 
+  // The composer owns one hidden <input>. The "+" sheet's three tiles point it at
+  // a different source (camera / image library / any file) by tweaking the input's
+  // accept/capture attributes before clicking — the actual handler
+  // (handleFileChange) and the attach pipeline are unchanged.
+  function openFilePicker(opts: { capture?: boolean; imagesOnly?: boolean }) {
+    const input = fileInputRef.current;
+    if (!input) return;
+    if (opts.capture) input.setAttribute("capture", "environment");
+    else input.removeAttribute("capture");
+    input.accept = opts.imagesOnly ? "image/*" : ".pdf,.txt,.md,.csv,image/*";
+    input.click();
+  }
+
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
@@ -357,27 +370,18 @@ export default function MessageInput({
         {/* Row 2 — control bar: + left; browser/model/send right. */}
         <div style={styles.controlRow}>
           <div style={styles.controlLeft}>
-            {moveToProject ? (
-              // "Move to project" is eligible → full "+" menu (attach + move).
+            {(onFilesAttach || moveToProject) && (
+              // The shared "+" ("Add to chat") bottom sheet. Attach tiles appear
+              // only when attaching is supported; "Add to project" only when the
+              // context passes moveToProject. Same component everywhere.
               <InputPlusMenu
-                onAttachFile={onFilesAttach ? () => fileInputRef.current?.click() : undefined}
+                onTakePhoto={onFilesAttach ? () => openFilePicker({ capture: true, imagesOnly: true }) : undefined}
+                onChoosePhotos={onFilesAttach ? () => openFilePicker({ imagesOnly: true }) : undefined}
+                onChooseFiles={onFilesAttach ? () => openFilePicker({}) : undefined}
                 moveToProject={moveToProject}
                 disabled={disabled}
               />
-            ) : onFilesAttach ? (
-              // No move option → keep attach a single tap (no menu).
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="icon-btn" style={styles.attachButton}
-                aria-label="Attach file"
-                type="button"
-                disabled={disabled}
-              >
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-                  <path d="M15 9.5l-5.5 5.5a4 4 0 0 1-5.657-5.657l6-6a2.5 2.5 0 0 1 3.535 3.535L7.5 12.5a1 1 0 0 1-1.414-1.414L11.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            ) : null}
+            )}
             {modelPicker && <div style={styles.modelSlot}>{modelPicker}</div>}
           </div>
 
@@ -605,21 +609,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     minWidth: 0,
     overflow: "hidden",
-  },
-  attachButton: {
-    flexShrink: 0,
-    width: "36px",
-    height: "36px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "var(--text-tertiary)",
-    cursor: "pointer",
-    borderRadius: "var(--radius-sm)",
-    transition: "color var(--transition)",
-    border: "none",
-    background: "transparent",
-    padding: 0,
   },
   textarea: {
     width: "100%",
