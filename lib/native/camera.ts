@@ -78,11 +78,6 @@ async function toJpegFile(file: File): Promise<File> {
       img.onerror = () => resolve(null);
       img.src = url;
     });
-    // [attach-debug] TEMPORARY — remove once Jake confirms on-device.
-    console.log("[attach-debug] toJpegFile", {
-      from: { name: file.name, type: file.type, size: file.size },
-      decoded: Boolean(jpegBlob),
-    });
     if (!jpegBlob) return file;
     const jpegName = file.name.replace(/\.(heic|heif)$/i, ".jpg");
     return new File([jpegBlob], jpegName.toLowerCase().endsWith(".jpg") ? jpegName : `${jpegName}.jpg`, {
@@ -110,13 +105,9 @@ export async function takePhotoNative(): Promise<File[]> {
     if (!photo.base64String) return [];
     const fmt = photo.format || "jpeg";
     const raw = base64ToFile(photo.base64String, fmt, `photo-${Date.now()}.${fmt}`);
-    // [attach-debug] TEMPORARY — remove once Jake confirms on-device.
-    console.log("[attach-debug] takePhotoNative selected", { name: raw.name, type: raw.type, size: raw.size, fmt });
     return [await toJpegFile(raw)];
-  } catch (err) {
+  } catch {
     // Cancel/deny throws ("User cancelled photos app") — treat as no selection.
-    // [attach-debug] TEMPORARY — remove once Jake confirms on-device.
-    console.log("[attach-debug] takePhotoNative caught", err);
     return [];
   }
 }
@@ -142,16 +133,11 @@ export async function pickPhotosNative(): Promise<File[]> {
         const { data } = await Filesystem.readFile({ path: readPath });
         const base64 = typeof data === "string" ? data : await blobToBase64(data);
         const raw = base64ToFile(base64, fmt, `photo-${Date.now()}-${i}.${fmt}`);
-        // [attach-debug] TEMPORARY — remove once Jake confirms on-device.
-        console.log("[attach-debug] pickPhotosNative byte-read", { chosenPath: readPath, method: "Filesystem.readFile", blobType: raw.type, size: raw.size });
-        console.log("[attach-debug] pickPhotosNative selected", { name: raw.name, type: raw.type, size: raw.size, fmt });
         return toJpegFile(raw);
       })
     );
     return files;
-  } catch (err) {
-    // [attach-debug] TEMPORARY — remove once Jake confirms on-device.
-    console.log("[attach-debug] pickPhotosNative caught", err);
+  } catch {
     return [];
   }
 }

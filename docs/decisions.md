@@ -6,6 +6,12 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### iOS photo attach — confirmed working on-device; debug instrumentation removed — 2026-06-14
+
+Jake confirmed photo attach works in the iOS shell after the Filesystem byte-read fix. The temporary `[attach-debug]` `console.log`s added across the two prior sessions were removed (pure cleanup, no behavioral change, ships via `git push`): all logs in `lib/native/camera.ts` (incl. emptying the now-bare `catch` clauses back to `catch {}`), the `ingestFiles` log in `MessageInput.tsx`, and the upload-path logs in `ChatWindow.handleSend` (restored to the original silent `catch`). The `source: "web" | "native"` parameter on `ingestFiles` existed **only** to label those logs — it was removed along with the two native call sites that passed `"native"`, since both already converge on the same path regardless. `npx tsc --noEmit` clean, `npm test` green (41/41), grep `[attach-debug]` returns zero. The attach logic itself (Filesystem byte-read, `toJpegFile`, `ingestFiles`, upload) is untouched.
+
+---
+
 ### iOS photo attach — read picked-photo bytes via Filesystem, not fetch — 2026-06-14
 
 **Symptom (on-device, after the HEIC fix shipped).** Picking a photo in the iOS shell still failed. The picker returned a JPEG at `capacitor://localhost/_capacitor_file_/…/tmp/photo-N.jpg`, but `pickPhotosNative` read it with `fetch(p.webPath)`, which WKWebView blocks: *"Fetch API cannot load capacitor://… due to access control checks."* The bytes never reached `ingestFiles`, so the photo never attached.
