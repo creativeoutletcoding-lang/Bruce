@@ -51,9 +51,11 @@ interface ProjectChatListItem {
   project_icon: string;
 }
 
+type ContextMenuKind = "chat" | "thread" | "family_group" | "project";
+
 interface ContextMenuState {
   id: string;
-  kind: "chat" | "thread" | "family_group";
+  kind: ContextMenuKind;
   x: number;
   y: number;
 }
@@ -249,14 +251,14 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
 
   // ── shared context menu + single delete ──────────────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [singleDeleteTarget, setSingleDeleteTarget] = useState<{ id: string; kind: "chat" | "thread" | "family_group" } | null>(null);
+  const [singleDeleteTarget, setSingleDeleteTarget] = useState<{ id: string; kind: ContextMenuKind } | null>(null);
   const [isDeletingSingle, setIsDeletingSingle] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressActiveRef = useRef(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // ── rename ───────────────────────────────────────────────────────────────
-  const [renameTarget, setRenameTarget] = useState<{ id: string; currentTitle: string } | null>(null);
+  const [renameTarget, setRenameTarget] = useState<{ id: string; kind: ContextMenuKind; currentTitle: string } | null>(null);
   const [renameInput, setRenameInput] = useState("");
   const [isRenameSaving, setIsRenameSaving] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -806,16 +808,25 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   }
 
   // ── shared context menu: right-click + long press ────────────────────────
-  function handleItemRightClick(e: React.MouseEvent, id: string, kind: "chat" | "thread" | "family_group") {
-    if (kind === "chat" && chatsSelectMode) return;
-    if (kind === "thread" && threadsSelectMode) return;
+  // One menu for every sidebar item type (standalone/project chats, family
+  // group + threads, and projects). Suppressed while the matching bulk-edit
+  // select mode is active so the two paths never collide.
+  function inSelectMode(kind: ContextMenuKind) {
+    return (
+      (kind === "chat" && chatsSelectMode) ||
+      (kind === "thread" && threadsSelectMode) ||
+      (kind === "project" && projectsSelectMode)
+    );
+  }
+
+  function handleItemRightClick(e: React.MouseEvent, id: string, kind: ContextMenuKind) {
+    if (inSelectMode(kind)) return;
     e.preventDefault();
     setContextMenu({ id, kind, x: e.clientX, y: e.clientY });
   }
 
-  function handleItemLongPressStart(e: React.TouchEvent, id: string, kind: "chat" | "thread" | "family_group") {
-    if (kind === "chat" && chatsSelectMode) return;
-    if (kind === "thread" && threadsSelectMode) return;
+  function handleItemLongPressStart(e: React.TouchEvent, id: string, kind: ContextMenuKind) {
+    if (inSelectMode(kind)) return;
     const touch = e.touches[0];
     const x = touch.clientX;
     const y = touch.clientY;
@@ -849,16 +860,31 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     if (!singleDeleteTarget || isDeletingSingle) return;
     setIsDeletingSingle(true);
     try {
-      const res = await fetch("/api/chats", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [singleDeleteTarget.id] }),
-      });
+      const { id, kind } = singleDeleteTarget;
+      // Projects delete through /api/projects (FK cascade handles chats/etc.);
+      // every chat-type row deletes through /api/chats. Same single-item path.
+      const res = kind === "project"
+        ? await fetch("/api/projects", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: [id] }),
+          })
+        : await fetch("/api/chats", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: [id] }),
+          });
       if (res.ok) {
-        const { id, kind } = singleDeleteTarget;
         setSingleDeleteTarget(null);
 
-        if (kind === "chat") {
+        if (kind === "project") {
+          const deletedActive = activeProjectId === id;
+          await loadProjects();
+          if (deletedActive) {
+            router.push("/chat");
+            onNavigate();
+          }
+        } else if (kind === "chat") {
           const deletedActive = activeChatId === id;
           await loadChats();
           if (deletedActive) {
@@ -885,11 +911,19 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
-  // ── rename chat ──────────────────────────────────────────────────────────
-  function openRename(id: string) {
-    const chat = chats.find((c) => c.id === id);
-    const currentTitle = chat?.title ?? "Untitled";
-    setRenameTarget({ id, currentTitle });
+  // ── rename (standalone chats, family threads, projects) ──────────────────
+  // Family-group is a singular system chat with a fixed "Family Chat" label, so
+  // the menu offers it Delete only — openRename is never called for it.
+  function openRename(id: string, kind: ContextMenuKind) {
+    let currentTitle = "Untitled";
+    if (kind === "thread") {
+      currentTitle = familyThreads.find((t) => t.id === id)?.title ?? "Untitled";
+    } else if (kind === "project") {
+      currentTitle = projects.find((p) => p.id === id)?.name ?? "Untitled";
+    } else {
+      currentTitle = chats.find((c) => c.id === id)?.title ?? "Untitled";
+    }
+    setRenameTarget({ id, kind, currentTitle });
     setRenameInput(currentTitle);
     // Focus the input after the modal renders
     setTimeout(() => renameInputRef.current?.select(), 50);
@@ -897,21 +931,39 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
 
   async function handleRenameSave() {
     if (!renameTarget || isRenameSaving) return;
-    const newTitle = renameInput.trim();
-    if (!newTitle || newTitle === renameTarget.currentTitle) {
+    const newName = renameInput.trim();
+    if (!newName || newName === renameTarget.currentTitle) {
       setRenameTarget(null);
       return;
     }
+    const { id, kind } = renameTarget;
     setIsRenameSaving(true);
-    // Optimistic update
-    setChats((prev) => prev.map((c) => c.id === renameTarget.id ? { ...c, title: newTitle } : c));
-    const { error } = await supabase
-      .from("chats")
-      .update({ title: newTitle })
-      .eq("id", renameTarget.id);
-    if (error) {
-      // Roll back on failure
-      setChats((prev) => prev.map((c) => c.id === renameTarget.id ? { ...c, title: renameTarget.currentTitle } : c));
+
+    if (kind === "project") {
+      // Projects: name column via the owner-gated PATCH route (RLS-safe).
+      setProjects((prev) => prev.map((p) => p.id === id ? { ...p, name: newName } : p));
+      const res = await fetch(`/api/projects/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (!res.ok) await loadProjects(); // resync from server on failure
+    } else {
+      // Chats / family threads: title column (RLS via the user client).
+      if (kind === "thread") {
+        setFamilyThreads((prev) => prev.map((t) => t.id === id ? { ...t, title: newName } : t));
+      } else {
+        setChats((prev) => prev.map((c) => c.id === id ? { ...c, title: newName } : c));
+      }
+      const { error } = await supabase.from("chats").update({ title: newName }).eq("id", id);
+      if (error) {
+        // Roll back on failure
+        if (kind === "thread") {
+          setFamilyThreads((prev) => prev.map((t) => t.id === id ? { ...t, title: renameTarget.currentTitle } : t));
+        } else {
+          setChats((prev) => prev.map((c) => c.id === id ? { ...c, title: renameTarget.currentTitle } : c));
+        }
+      }
     }
     setIsRenameSaving(false);
     setRenameTarget(null);
@@ -1253,7 +1305,11 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     <button
                       key={project.id}
                       onClick={() => handleSelectProject(project.id)}
-                      className="hover-wash" style={{ ...styles.projectItem, ...(isActive ? styles.projectItemActive : {}) }}
+                      onContextMenu={(e) => handleItemRightClick(e, project.id, "project")}
+                      onTouchStart={(e) => handleItemLongPressStart(e, project.id, "project")}
+                      onTouchEnd={handleItemLongPressEnd}
+                      onTouchMove={handleItemLongPressMove}
+                      className="hover-wash sidebar-row" style={{ ...styles.projectItem, ...(isActive ? styles.projectItemActive : {}) }}
                     >
                       <span style={styles.projectItemName}>{project.name}</span>
                     </button>
@@ -1450,7 +1506,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                       onTouchStart={(e) => handleItemLongPressStart(e, chat.id, "chat")}
                       onTouchEnd={handleItemLongPressEnd}
                       onTouchMove={handleItemLongPressMove}
-                      className="hover-wash" style={{ ...styles.chatItem, ...(isActive ? styles.chatItemActive : {}) }}
+                      className="hover-wash sidebar-row" style={{ ...styles.chatItem, ...(isActive ? styles.chatItemActive : {}) }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <div style={{ ...styles.chatItemTitle, flex: 1, minWidth: 0 }}>{chat.title ?? "Untitled"}</div>
@@ -1625,7 +1681,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                     onTouchStart={(e) => handleItemLongPressStart(e, familyGroup.id, "family_group")}
                     onTouchEnd={handleItemLongPressEnd}
                     onTouchMove={handleItemLongPressMove}
-                    className="hover-wash" style={{ ...styles.familyButton, ...(isFamilyActive ? styles.familyButtonActive : {}) }}
+                    className="hover-wash sidebar-row" style={{ ...styles.familyButton, ...(isFamilyActive ? styles.familyButtonActive : {}) }}
                   >
                     <span style={styles.familyEmoji}>🏠</span>
                     <span style={styles.familyName}>Family Chat</span>
@@ -1683,7 +1739,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                       onTouchStart={(e) => handleItemLongPressStart(e, thread.id, "thread")}
                       onTouchEnd={handleItemLongPressEnd}
                       onTouchMove={handleItemLongPressMove}
-                      className="hover-wash" style={{ ...styles.threadItem, ...(isActive ? styles.threadItemActive : {}) }}
+                      className="hover-wash sidebar-row" style={{ ...styles.threadItem, ...(isActive ? styles.threadItemActive : {}) }}
                     >
                       <span style={styles.threadName}>{thread.title}</span>
                       {thread.members.length > 0 && <ThreadAvatarStack members={thread.members} />}
@@ -1762,11 +1818,11 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             minWidth: "130px",
           }}
         >
-          {contextMenu.kind === "chat" && (
+          {contextMenu.kind !== "family_group" && (
             <button
               className="hover-wash" style={{ ...styles.contextMenuItem, color: "var(--text-primary)", borderBottom: "1px solid var(--border)" }}
               onClick={() => {
-                openRename(contextMenu.id);
+                openRename(contextMenu.id, contextMenu.kind);
                 setContextMenu(null);
               }}
             >
@@ -1792,13 +1848,19 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
           <div role="dialog" aria-modal="true" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <span style={styles.modalTitle}>
-                {singleDeleteTarget.kind === "thread" ? "Delete this thread?" : "Delete this chat?"}
+                {singleDeleteTarget.kind === "thread"
+                  ? "Delete this thread?"
+                  : singleDeleteTarget.kind === "project"
+                    ? "Delete this project?"
+                    : "Delete this chat?"}
               </span>
               <button className="icon-btn" style={styles.modalClose} onClick={() => setSingleDeleteTarget(null)}>×</button>
             </div>
             <div style={styles.modalBody}>
               <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", margin: 0 }}>
-                This cannot be undone.
+                {singleDeleteTarget.kind === "project"
+                  ? "This deletes the project and all its chats. This cannot be undone."
+                  : "This cannot be undone."}
               </p>
               <div style={{ display: "flex", gap: "8px" }}>
                 <button
@@ -1820,12 +1882,12 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
         </div>
       )}
 
-      {/* ── Rename chat modal ────────────────────────────────────────────────── */}
+      {/* ── Rename modal (chats, family threads, projects) ───────────────────── */}
       {renameTarget && (
         <div style={styles.modalOverlay} onClick={() => setRenameTarget(null)}>
           <div role="dialog" aria-modal="true" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
-              <span style={styles.modalTitle}>Rename chat</span>
+              <span style={styles.modalTitle}>{renameTarget.kind === "project" ? "Rename project" : "Rename chat"}</span>
               <button className="icon-btn" style={styles.modalClose} onClick={() => setRenameTarget(null)}>×</button>
             </div>
             <div style={styles.modalBody}>
@@ -1838,7 +1900,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
                   if (e.key === "Enter") handleRenameSave();
                   if (e.key === "Escape") setRenameTarget(null);
                 }}
-                placeholder="Chat name"
+                placeholder={renameTarget.kind === "project" ? "Project name" : "Chat name"}
                 autoFocus
               />
               <div style={{ display: "flex", gap: "8px" }}>
