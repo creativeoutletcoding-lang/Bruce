@@ -6,6 +6,20 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Desktop "+" attach menu — anchored popover (touch keeps the bottom sheet) — 2026-06-14
+
+**Goal.** Give the composer's `+` ("Add to chat") menu a clean anchored-popover look on desktop (vertical icon+label rows, group dividers, trailing affordances) while leaving touch on its iOS-style bottom sheet. Visual restyle of existing items only — no items added/removed/rewired.
+
+**Before.** `InputPlusMenu` rendered the **same bottom sheet on every pointer type** (no desktop branch) — a 3-tile attach row (Camera/Photos/Files) + a grouped "Add to project" `›` row + an in-place project sub-page.
+
+**Change.** Added the established `ModelPicker` branch — `matchMedia("(pointer: fine)")` → `isDesktop`, capture the trigger's `getBoundingClientRect()` on open, and render a `position:fixed` popover opening **upward** from the `+` (the composer sits at the bottom; `fixed` escapes its `overflow:hidden` ancestors). Desktop layout: Camera/Photos/Files become vertical `MenuRow`s (leading icon + label, `hover-wash` hover bg), a thin `--border` divider separates the attachment group from the **Add to project** row, which carries a trailing `›` chevron (it opens the submenu); the existing `ProjectSubPage` (search + project rows) renders inside the popover with a `‹` back row. A transparent click-catcher backdrop dismisses on outside click (popover is a light menu, not a modal — no page dim). Tokens only (`--bg-primary`, `--border`, `--shadow-lg`, `--radius-lg`, `--z-menu`).
+
+**Affordances actually rendered.** Only the submenu **chevron** applies — there are **no toggle items** (so no checkmark) and **no keyboard-shortcut items** (so no hint text) in this menu. `MenuRow` exposes a `trailing` slot so those could be added later, but rendering them now would mean inventing items (out of scope).
+
+**Unchanged.** All items, labels, actions, state, and handlers are shared; only desktop layout differs. The touch bottom sheet markup is byte-for-byte the same (now gated `open && !desktopPopoverStyle`). No behavioral change, no mobile change, no new dependency. `npx tsc --noEmit` clean, `npm test` 41/41, `next lint` clean. JS-only — ships via `git push`.
+
+---
+
 ### iOS photo attach — confirmed working on-device; debug instrumentation removed — 2026-06-14
 
 Jake confirmed photo attach works in the iOS shell after the Filesystem byte-read fix. The temporary `[attach-debug]` `console.log`s added across the two prior sessions were removed (pure cleanup, no behavioral change, ships via `git push`): all logs in `lib/native/camera.ts` (incl. emptying the now-bare `catch` clauses back to `catch {}`), the `ingestFiles` log in `MessageInput.tsx`, and the upload-path logs in `ChatWindow.handleSend` (restored to the original silent `catch`). The `source: "web" | "native"` parameter on `ingestFiles` existed **only** to label those logs — it was removed along with the two native call sites that passed `"native"`, since both already converge on the same path regardless. `npx tsc --noEmit` clean, `npm test` green (41/41), grep `[attach-debug]` returns zero. The attach logic itself (Filesystem byte-read, `toJpegFile`, `ingestFiles`, upload) is untouched.

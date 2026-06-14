@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { lightHaptic } from "@/lib/utils/haptics";
 import type { MovableProject } from "@/lib/types";
@@ -26,11 +26,16 @@ interface InputPlusMenuProps {
   disabled?: boolean;
 }
 
-// The shared "+" ("Add to chat") menu for the composer. A single Claude-iOS-style
-// bottom sheet used on BOTH web and native (one code path, ships via git push):
-// a grab handle, a 3-tile attach row, grouped `›` rows, and an in-place
-// "Add to project" sub-page. Per-context variation comes from props only — the
-// "Add to project" row simply isn't passed in contexts that don't allow it.
+const DESKTOP_WIDTH = 280;
+
+// The shared "+" ("Add to chat") menu for the composer. Presentation branches by
+// pointer type (same approach as ModelPicker): TOUCH gets the Claude-iOS-style
+// bottom sheet (grab handle, 3-tile attach row, grouped `›` rows, in-place
+// "Add to project" sub-page); DESKTOP (mouse) gets an anchored popover — a
+// vertical list of icon+label rows with thin group dividers and trailing
+// affordances (a chevron on the submenu row). Same items/actions everywhere;
+// only the layout differs. The popover uses position:fixed because the composer's
+// overflow:hidden ancestors would clip an absolute dropdown (the ModelPicker bug).
 export default function InputPlusMenu({
   onTakePhoto,
   onChoosePhotos,
@@ -41,6 +46,17 @@ export default function InputPlusMenu({
   const [open, setOpen] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
   const [query, setQuery] = useState("");
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(pointer: fine)");
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
   function close() {
     setOpen(false);
@@ -66,7 +82,12 @@ export default function InputPlusMenu({
     lightHaptic();
     setShowProjects(false);
     setQuery("");
-    setOpen((v) => !v);
+    setOpen((v) => {
+      const next = !v;
+      // Capture the trigger rect so the desktop popover can anchor to it.
+      if (next && triggerRef.current) setAnchor(triggerRef.current.getBoundingClientRect());
+      return next;
+    });
   }
 
   function fireTile(handler?: () => void) {
@@ -110,13 +131,37 @@ export default function InputPlusMenu({
 
   const title = showProjects ? projectLabel : "Add to chat";
 
+  // Desktop popover: a fixed box opening UPWARD from the trigger (the + sits at
+  // the bottom of the composer), left-aligned to it and clamped to the viewport.
+  const desktopPopoverStyle: React.CSSProperties | null =
+    isDesktop && anchor
+      ? {
+          position: "fixed",
+          width: DESKTOP_WIDTH,
+          left: Math.min(anchor.left, window.innerWidth - DESKTOP_WIDTH - 8),
+          bottom: Math.max(8, window.innerHeight - anchor.top + 6),
+          maxHeight: anchor.top - 16,
+          overflowY: "auto",
+          zIndex: "var(--z-menu)" as unknown as number,
+          backgroundColor: "var(--bg-primary)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          boxShadow: "var(--shadow-lg)",
+          padding: "6px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "2px",
+        }
+      : null;
+
   return (
     <>
       <button
+        ref={triggerRef}
         onClick={toggleOpen}
         style={styles.trigger}
         aria-label="Add to chat"
-        aria-haspopup="dialog"
+        aria-haspopup="menu"
         aria-expanded={open}
         type="button"
         disabled={disabled}
@@ -126,7 +171,62 @@ export default function InputPlusMenu({
         </svg>
       </button>
 
-      {open &&
+      {/* DESKTOP (mouse): anchored popover — vertical icon+label rows, group
+          dividers, trailing chevron on the submenu row. Same items/actions. */}
+      {open && desktopPopoverStyle &&
+        createPortal(
+          <>
+            <div style={styles.desktopBackdrop} onClick={close} />
+            <div role="menu" aria-label={title} style={desktopPopoverStyle} onClick={(e) => e.stopPropagation()}>
+              {showProjects && moveToProject ? (
+                <>
+                  <button type="button" className="hover-wash" style={styles.menuBackRow} onClick={backToRoot}>
+                    <span style={styles.menuRowIcon}><ChevronLeft /></span>
+                    <span style={styles.menuRowLabel}>{projectLabel}</span>
+                  </button>
+                  <div style={styles.menuDivider} aria-hidden="true" />
+                  <ProjectSubPage
+                    label={projectLabel}
+                    projects={filteredProjects}
+                    totalCount={moveToProject.projects.length}
+                    loading={moveToProject.loading}
+                    query={query}
+                    onQueryChange={setQuery}
+                    onSelect={handleSelectProject}
+                  />
+                </>
+              ) : (
+                <>
+                  {onTakePhoto && (
+                    <MenuRow label="Camera" icon={<CameraIcon />} onClick={() => fireTile(onTakePhoto)} />
+                  )}
+                  {onChoosePhotos && (
+                    <MenuRow label="Photos" icon={<PhotosIcon />} onClick={() => fireTile(onChoosePhotos)} />
+                  )}
+                  {onChooseFiles && (
+                    <MenuRow label="Files" icon={<FilesIcon />} onClick={() => fireTile(onChooseFiles)} />
+                  )}
+
+                  {hasTiles && moveToProject && <div style={styles.menuDivider} aria-hidden="true" />}
+
+                  {moveToProject && (
+                    <MenuRow
+                      label={moveEmpty ? "No projects available" : projectLabel}
+                      icon={<FolderIcon />}
+                      onClick={moveEmpty ? undefined : openProjects}
+                      disabled={moveEmpty}
+                      trailing={!moveEmpty ? <ChevronRight /> : undefined}
+                    />
+                  )}
+                </>
+              )}
+            </div>
+          </>,
+          document.body
+        )}
+
+      {/* MOBILE (touch): the existing bottom sheet — unchanged. */}
+      {open && !desktopPopoverStyle &&
         createPortal(
           <div style={styles.backdrop} onClick={close}>
             <div
@@ -295,6 +395,38 @@ function Tile({ label, icon, onClick }: { label: string; icon: React.ReactNode; 
   );
 }
 
+// A single desktop-popover row: leading icon + label, optional trailing affordance
+// (chevron for a submenu; a shortcut hint or checkmark would slot here too, but no
+// current menu item is a toggle or has a shortcut). hover-wash gives the hover bg.
+function MenuRow({
+  label,
+  icon,
+  onClick,
+  disabled = false,
+  trailing,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  trailing?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className={disabled ? undefined : "hover-wash"}
+      style={{ ...styles.menuRow, ...(disabled ? styles.rowDisabled : {}) }}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      <span style={styles.menuRowIcon}>{icon}</span>
+      <span style={styles.menuRowLabel}>{label}</span>
+      {trailing}
+    </button>
+  );
+}
+
 /** Relative "x ago" for the project list. */
 function timeAgo(iso: string): string {
   const then = new Date(iso).getTime();
@@ -410,6 +542,62 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "flex-end",
     justifyContent: "center",
     animation: "bruce-sheet-backdrop-in 160ms ease-out",
+  },
+  // Desktop popover (rows + dividers). Transparent click-catcher behind it so an
+  // outside click dismisses without dimming the page (the menu is a light popover,
+  // not a modal). Sits just under the popover on the z-menu layer.
+  desktopBackdrop: {
+    position: "fixed",
+    inset: 0,
+    zIndex: "calc(var(--z-menu) - 1)" as unknown as number,
+  },
+  menuRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    width: "100%",
+    padding: "9px 10px",
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    textAlign: "left",
+    color: "var(--text-primary)",
+    borderRadius: "var(--radius-md)",
+  },
+  menuBackRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    width: "100%",
+    padding: "9px 10px",
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    textAlign: "left",
+    color: "var(--text-secondary)",
+    borderRadius: "var(--radius-md)",
+    fontWeight: 600,
+  },
+  menuRowIcon: {
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "22px",
+    color: "var(--text-secondary)",
+  },
+  menuRowLabel: {
+    flex: 1,
+    fontSize: "0.875rem",
+    fontWeight: 500,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  menuDivider: {
+    height: "1px",
+    backgroundColor: "var(--border)",
+    margin: "4px 6px",
   },
   sheet: {
     width: "100%",
