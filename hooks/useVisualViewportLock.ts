@@ -5,16 +5,15 @@ import { isNative } from "@/lib/native";
 
 // Keyboard-aware viewport lock for the chat shell (iOS PWA / mobile Safari).
 //
-// NATIVE SHELL: the visual-viewport tracking is bypassed. The Capacitor shell
-// uses the OS keyboard resize (lib/native/keyboard.ts → KeyboardResize.Native),
-// which shrinks the WKWebView frame itself. So on native we lock document
-// scroll and pin the shell to the *frame* — --app-height: 100% (instant: 100%
-// of the fixed containing block IS the resized frame) and --vv-offset-top: 0px.
-// We must NOT leave --app-height to fall back to 100dvh: dvh lags the native
-// resize, which is what made content shift up a beat late and the new-chat
-// input briefly sit below the keyboard before jumping up. --kb-safe-bottom is
-// left unset → falls back to env(safe-area-inset-bottom), so the input keeps
-// its home-indicator padding while the keyboard inset comes from the OS resize.
+// NATIVE SHELL: the visual-viewport tracking is bypassed. lib/native/keyboard.ts
+// owns the keyboard on native (KeyboardResize.None + keyboardWillShow/WillHide):
+// it drives --app-height and --kb-safe-bottom directly from the keyboard
+// animation so the input leads the slide. Here we only set the RESTING values
+// and lock document scroll: --app-height: 100% (100% of the fixed containing
+// block = the full frame; keyboard.ts shrinks it on keyboardWillShow) and
+// --vv-offset-top: 0px. We must NOT leave --app-height to fall back to 100dvh
+// (dvh lagged the change). --kb-safe-bottom is left unset → env(safe-area-inset-
+// bottom) at rest; keyboard.ts zeroes it while the keyboard is up.
 // This hook stays fully functional for web/desktop/PWA; it can be deleted once
 // native is the only mobile target.
 //

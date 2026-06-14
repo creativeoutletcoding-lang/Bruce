@@ -1,17 +1,27 @@
 /**
  * Native keyboard setup — native iOS shell.
  *
- *   - hide the iOS form-assistant accessory bar (the ^ / v / Done strip),
- *   - resize the webview natively above the keyboard (KeyboardResize.Native —
- *     confirmed on device: innerHeight/clientHeight/visualViewport all shrink
- *     together by the keyboard height, and the shell's --app-height:100% tracks
- *     the resized frame), and
- *   - smooth the transition: the native frame resize and the keyboard slide
- *     animate on slightly different ticks, so the content can appear to settle a
- *     beat late ("two-step"). We add a brief height transition on the shell ONLY
- *     during the keyboard's animation window (.kb-animating, toggled on
- *     keyboardWillShow/WillHide) so the shrink animates in sync with the slide.
- *     The native resize stays authoritative — no JS height calculation.
+ *   - hide the iOS form-assistant accessory bar (the ^ / v / Done strip), and
+ *   - drive the layout from the keyboard animation itself, so the input starts
+ *     moving in the SAME instant the keyboard does (no start lag).
+ *
+ * Why KeyboardResize.None (not Native): with Native the OS resizes the webview
+ * frame, but that resize + reflow lands a beat AFTER keyboardWillShow, so the
+ * input shifted up late. With None the frame never resizes; instead we react to
+ * keyboardWillShow — which fires at the START of the slide and reports
+ * keyboardHeight — and shrink the shell ourselves, in lockstep with the
+ * keyboard. We reuse the existing CSS vars so no other layout code changes:
+ *   --app-height   → shell height. Setting it to (innerHeight - keyboardHeight)
+ *                    shrinks the shell from the bottom: the bottom-pinned input
+ *                    rises above the keyboard and the flex:1 message list
+ *                    shrinks (its content stays above the keyboard). The
+ *                    .kb-animating class transitions this change so it rides the
+ *                    keyboard's ~250ms slide.
+ *   --kb-safe-bottom → composer bottom padding. keyboardHeight already includes
+ *                    the home-indicator safe area, so we zero it while the
+ *                    keyboard is up to sit snug above it; restore env() on hide.
+ * The message list's own visualViewport autoscroll keeps the latest message
+ * visible (MessageList.tsx) — it fires on the keyboard-driven viewport shrink.
  *
  * No-op outside the native shell — callers guard with isNative(), and the
  * Capacitor plugin is dynamically imported so it never enters the web bundle's
@@ -19,21 +29,31 @@
  */
 import { isNative } from "./index";
 
-// iOS keyboard slide is ~250ms; a small buffer lets the transition settle before
-// we drop the class (so a later unrelated resize isn't animated).
-const KB_ANIM_MS = 280;
+// Keep the animation class slightly longer than the CSS transition (~250ms) so
+// it always outlasts the keyboard slide.
+const KB_ANIM_MS = 320;
+
+function getShell(): (HTMLElement & { _kbTimer?: number }) | null {
+  return document.querySelector("[data-app-shell]") as
+    | (HTMLElement & { _kbTimer?: number })
+    | null;
+}
 
 /** Add .kb-animating to the shell for the duration of the keyboard animation. */
-function flagKeyboardAnimating(): void {
-  const shell = document.querySelector(
-    "[data-app-shell]"
-  ) as (HTMLElement & { _kbTimer?: number }) | null;
+function flagAnimating(): void {
+  const shell = getShell();
   if (!shell) return;
   shell.classList.add("kb-animating");
   window.clearTimeout(shell._kbTimer);
   shell._kbTimer = window.setTimeout(() => {
     shell.classList.remove("kb-animating");
   }, KB_ANIM_MS);
+}
+
+function setVars(appHeight: string, kbSafeBottom: string): void {
+  const root = document.documentElement;
+  root.style.setProperty("--app-height", appHeight);
+  root.style.setProperty("--kb-safe-bottom", kbSafeBottom);
 }
 
 /** Configure the native keyboard on app launch. Best-effort — never throws. */
@@ -43,11 +63,20 @@ export async function setupKeyboard(): Promise<void> {
     const { Keyboard, KeyboardResize } = await import("@capacitor/keyboard");
     // Remove the ^ / v / Done accessory bar above the keyboard.
     await Keyboard.setAccessoryBarVisible({ isVisible: false });
-    // Let iOS resize the webview above the keyboard.
-    await Keyboard.setResizeMode({ mode: KeyboardResize.Native });
-    // Animate the shell's height change in sync with the keyboard slide.
-    Keyboard.addListener("keyboardWillShow", flagKeyboardAnimating);
-    Keyboard.addListener("keyboardWillHide", flagKeyboardAnimating);
+    // Don't let the OS resize the frame — we drive the layout ourselves so the
+    // input leads the keyboard from the first frame (see file header).
+    await Keyboard.setResizeMode({ mode: KeyboardResize.None });
+
+    Keyboard.addListener("keyboardWillShow", (info) => {
+      flagAnimating();
+      const h = Math.max(0, window.innerHeight - info.keyboardHeight);
+      setVars(`${h}px`, "0px");
+    });
+
+    Keyboard.addListener("keyboardWillHide", () => {
+      flagAnimating();
+      setVars("100%", "env(safe-area-inset-bottom, 0px)");
+    });
   } catch {
     /* plugin unavailable (e.g. web) — viewport hack / fallbacks cover it */
   }
