@@ -1,8 +1,21 @@
 "use client";
 
 import { useEffect } from "react";
+import { isNative } from "@/lib/native";
 
 // Keyboard-aware viewport lock for the chat shell (iOS PWA / mobile Safari).
+//
+// NATIVE SHELL: the visual-viewport tracking is bypassed. lib/native/keyboard.ts
+// owns the keyboard on native (KeyboardResize.None + keyboardWillShow/WillHide):
+// it drives --app-height and --kb-safe-bottom directly from the keyboard
+// animation so the input leads the slide. Here we only set the RESTING values
+// and lock document scroll: --app-height: 100% (100% of the fixed containing
+// block = the full frame; keyboard.ts shrinks it on keyboardWillShow) and
+// --vv-offset-top: 0px. We must NOT leave --app-height to fall back to 100dvh
+// (dvh lagged the change). --kb-safe-bottom is left unset → env(safe-area-inset-
+// bottom) at rest; keyboard.ts zeroes it while the keyboard is up.
+// This hook stays fully functional for web/desktop/PWA; it can be deleted once
+// native is the only mobile target.
 //
 // iOS does not resize the layout viewport when the on-screen keyboard opens —
 // it overlays the keyboard and shifts the *visual* viewport down to reveal the
@@ -32,6 +45,21 @@ export function useVisualViewportLock() {
     const prevOverscroll = document.body.style.overscrollBehavior;
     document.body.style.overflow = "hidden";
     document.body.style.overscrollBehavior = "none";
+
+    // Native shell: OS keyboard resize replaces the visual-viewport hack. Keep
+    // the document scroll lock, and pin the shell to the resized frame with
+    // 100% (instant) instead of letting it fall back to the lagging 100dvh.
+    // Skip the vv listeners entirely. (See header comment for the full why.)
+    if (isNative()) {
+      root.style.setProperty("--app-height", "100%");
+      root.style.setProperty("--vv-offset-top", "0px");
+      return () => {
+        root.style.removeProperty("--app-height");
+        root.style.removeProperty("--vv-offset-top");
+        document.body.style.overflow = prevOverflow;
+        document.body.style.overscrollBehavior = prevOverscroll;
+      };
+    }
 
     const vv = window.visualViewport;
     if (!vv) {

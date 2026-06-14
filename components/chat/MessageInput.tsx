@@ -320,42 +320,26 @@ export default function MessageInput({
         </div>
       )}
 
-      <div className="msg-input-row" style={{ ...styles.inputRow, ...(isFocused ? styles.inputRowFocused : {}) }}>
-        {(onFilesAttach || moveToProject) && (
-          <>
-            {onFilesAttach && (
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept=".pdf,.txt,.md,.csv,image/*"
-                style={{ display: "none" }}
-                onChange={handleFileChange}
-              />
-            )}
-            {moveToProject ? (
-              // "Move to project" is eligible → full "+" menu (attach + move).
-              <InputPlusMenu
-                onAttachFile={onFilesAttach ? () => fileInputRef.current?.click() : undefined}
-                moveToProject={moveToProject}
-                disabled={disabled}
-              />
-            ) : (
-              // No move option → keep attach a single tap (no menu).
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="icon-btn" style={styles.attachButton}
-                aria-label="Attach file"
-                type="button"
-                disabled={disabled}
-              >
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-                  <path d="M15 9.5l-5.5 5.5a4 4 0 0 1-5.657-5.657l6-6a2.5 2.5 0 0 1 3.535 3.535L7.5 12.5a1 1 0 0 1-1.414-1.414L11.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            )}
-          </>
+      {/* One rounded container, VERTICAL stack: text on top (full width, never
+          wrapping around controls), control bar below. Matches the Claude iOS
+          composer — the controls live in their own row, so the textarea behaves
+          like a normal full-width field and long/multi-line text stays clean. */}
+      <div
+        className="msg-input-box"
+        style={{ ...styles.box, ...(isFocused ? styles.boxFocused : {}) }}
+      >
+        {onFilesAttach && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.txt,.md,.csv,image/*"
+            style={{ display: "none" }}
+            onChange={handleFileChange}
+          />
         )}
+
+        {/* Row 1 — the text field, full width, no inline buttons. */}
         <textarea
           ref={textareaRef}
           value={value}
@@ -369,64 +353,89 @@ export default function MessageInput({
           style={styles.textarea}
           aria-label="Message input"
         />
-        {onBrowserClick && (
-          <button
-            onClick={() => { lightHaptic(); onBrowserClick(); }}
-            className="icon-btn" style={{ ...styles.browserButton, ...(browserActive ? styles.browserButtonActive : {}) }}
-            aria-label="Open shared browser"
-            aria-pressed={browserActive}
-            type="button"
-            disabled={disabled || browserOpening}
-          >
-            {browserOpening ? (
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" style={styles.spin}>
-                <path d="M9 2a7 7 0 1 0 7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-              </svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-                <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.4" />
-                <path d="M2 9h14M9 2c1.9 2 1.9 12 0 14M9 2c-1.9 2-1.9 12 0 14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              </svg>
+
+        {/* Row 2 — control bar: + left; browser/model/send right. */}
+        <div style={styles.controlRow}>
+          <div style={styles.controlLeft}>
+            {moveToProject ? (
+              // "Move to project" is eligible → full "+" menu (attach + move).
+              <InputPlusMenu
+                onAttachFile={onFilesAttach ? () => fileInputRef.current?.click() : undefined}
+                moveToProject={moveToProject}
+                disabled={disabled}
+              />
+            ) : onFilesAttach ? (
+              // No move option → keep attach a single tap (no menu).
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="icon-btn" style={styles.attachButton}
+                aria-label="Attach file"
+                type="button"
+                disabled={disabled}
+              >
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                  <path d="M15 9.5l-5.5 5.5a4 4 0 0 1-5.657-5.657l6-6a2.5 2.5 0 0 1 3.535 3.535L7.5 12.5a1 1 0 0 1-1.414-1.414L11.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            ) : null}
+            {modelPicker && <div style={styles.modelSlot}>{modelPicker}</div>}
+          </div>
+
+          <div style={styles.controlRight}>
+            {onBrowserClick && (
+              <button
+                onClick={() => { lightHaptic(); onBrowserClick(); }}
+                className="icon-btn" style={{ ...styles.browserButton, ...(browserActive ? styles.browserButtonActive : {}) }}
+                aria-label="Open shared browser"
+                aria-pressed={browserActive}
+                type="button"
+                disabled={disabled || browserOpening}
+              >
+                {browserOpening ? (
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" style={styles.spin}>
+                    <path d="M9 2a7 7 0 1 0 7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                    <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.4" />
+                    <path d="M2 9h14M9 2c1.9 2 1.9 12 0 14M9 2c-1.9 2-1.9 12 0 14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  </svg>
+                )}
+              </button>
             )}
-          </button>
-        )}
-        {canStop ? (
-          <button
-            onClick={() => { lightHaptic(); onStop!(); }}
-            className="hover-wash" style={styles.stopButton}
-            aria-label="Stop generating"
-            type="button"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-              <rect x="3" y="3" width="8" height="8" rx="1.25" fill="currentColor" />
-            </svg>
-          </button>
-        ) : (
-          <button
-            onClick={() => triggerSend()}
-            disabled={!canSend}
-            className="hover-wash" style={{ ...styles.sendButton, ...(!canSend ? styles.sendButtonDisabled : {}) }}
-            aria-label="Send message"
-          >
-            <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M8 12V4M4 8l4-4 4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        )}
-      </div>
-      {modelPicker && (
-        <div className="msg-input-picker-row" style={styles.pickerRow}>
-          {modelPicker}
+            {canStop ? (
+              <button
+                onClick={() => { lightHaptic(); onStop!(); }}
+                className="hover-wash" style={styles.stopButton}
+                aria-label="Stop generating"
+                type="button"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <rect x="3" y="3" width="8" height="8" rx="1.25" fill="currentColor" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={() => triggerSend()}
+                disabled={!canSend}
+                className="hover-wash" style={{ ...styles.sendButton, ...(!canSend ? styles.sendButtonDisabled : {}) }}
+                aria-label="Send message"
+              >
+                <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M8 12V4M4 8l4-4 4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    padding: "12px 12px calc(12px + var(--kb-safe-bottom, env(safe-area-inset-bottom, 0px)))",
-    borderTop: "1px solid var(--border)",
+    padding: "10px 12px calc(10px + var(--kb-safe-bottom, env(safe-area-inset-bottom, 0px)))",
     backgroundColor: "var(--bg-primary)",
     flexShrink: 0,
   },
@@ -553,18 +562,49 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     padding: 0,
   },
-  inputRow: {
+  // The single rounded composer container — a VERTICAL stack (textarea row +
+  // control row) so the typed text never wraps around the controls.
+  box: {
     display: "flex",
-    alignItems: "flex-end",
-    gap: "8px",
+    flexDirection: "column",
+    gap: "4px",
     backgroundColor: "var(--bg-secondary)",
     border: "1px solid var(--border-strong)",
     borderRadius: "var(--radius-lg)",
-    padding: "10px 10px 10px 14px",
-    transition: "border-color var(--transition)",
+    padding: "8px 8px 8px 12px",
+    transition: "border-color var(--transition), box-shadow var(--transition)",
     width: "100%",
     maxWidth: 780,
     margin: "0 auto",
+  },
+  controlRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+  },
+  // "+" and the model pill, grouped left. Allowed to shrink so a long model
+  // name truncates rather than pushing the send button off-screen.
+  controlLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    minHeight: "36px",
+    minWidth: 0,
+    flex: "0 1 auto",
+  },
+  // Send (and globe) pinned right; never shrinks so it stays reachable.
+  controlRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    flexShrink: 0,
+  },
+  modelSlot: {
+    display: "flex",
+    alignItems: "center",
+    minWidth: 0,
+    overflow: "hidden",
   },
   attachButton: {
     flexShrink: 0,
@@ -582,7 +622,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 0,
   },
   textarea: {
-    flex: 1,
+    width: "100%",
     border: "none",
     background: "transparent",
     color: "var(--text-primary)",
@@ -592,15 +632,15 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: "1.5",
     resize: "none",
     outline: "none",
-    minHeight: "44px",
+    minHeight: "24px",
     maxHeight: "400px",
     overflowY: "auto",
-    padding: "6px 0",
+    padding: "4px 4px 0",
     caretColor: "var(--accent)",
     WebkitAppearance: "none",
-    borderRadius: "var(--radius-sm)",
+    boxSizing: "border-box",
   },
-  inputRowFocused: {
+  boxFocused: {
     borderColor: "#0F6E56",
     boxShadow: "0 0 0 3px rgba(15, 110, 86, 0.10)",
   },
@@ -658,14 +698,5 @@ const styles: Record<string, React.CSSProperties> = {
   },
   spin: {
     animation: "bruce-browser-spin 0.8s linear infinite",
-  },
-  pickerRow: {
-    display: "flex",
-    justifyContent: "flex-start",
-    paddingTop: "6px",
-    paddingLeft: "4px",
-    maxWidth: 780,
-    margin: "0 auto",
-    width: "100%",
   },
 };

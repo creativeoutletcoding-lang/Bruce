@@ -4,6 +4,9 @@ import { createContext, useContext, useState, useCallback, useRef, useEffect } f
 import { useRouter } from "next/navigation";
 import { requestAndGetToken, listenForegroundMessages } from "@/lib/firebase/client";
 import { useVisualViewportLock } from "@/hooks/useVisualViewportLock";
+import { isNative } from "@/lib/native";
+import { setupKeyboard } from "@/lib/native/keyboard";
+import { setupStatusBar } from "@/lib/native/statusbar";
 import type { User } from "@/lib/types";
 import Sidebar from "./Sidebar";
 
@@ -64,6 +67,16 @@ export default function ChatShell({ user, children }: ChatShellProps) {
   }, []);
 
   useEffect(() => { setIsMounted(true); }, []);
+
+  // Native shell init (no-op on web/desktop — every call is isNative()-guarded).
+  // Configure the OS keyboard (hide accessory bar + native resize) and status
+  // bar. The launch splash is hidden by NativeSplashGate (mounted in RootLayout)
+  // once content paints — covers all routes, not just the chat shell.
+  useEffect(() => {
+    if (!isNative()) return;
+    setupKeyboard();
+    setupStatusBar();
+  }, []);
 
   // FCM token registration on mount.
   // - "granted": refresh token silently (no dialog needed, safe to call from effect).
@@ -181,7 +194,7 @@ export default function ChatShell({ user, children }: ChatShellProps) {
           </button>
         </div>
       )}
-      <div style={styles.shell}>
+      <div data-app-shell style={styles.shell}>
         {/* Desktop sidebar */}
         <div data-sidebar-desktop style={styles.sidebarDesktop}>
           <Sidebar user={user} onNavigate={closeDrawer} />

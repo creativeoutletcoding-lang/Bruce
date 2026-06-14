@@ -63,40 +63,42 @@ export default function WelcomeScreen({
           Incognito — this conversation won&apos;t be saved
         </div>
       )}
-      <div style={styles.center}>
-        <div style={styles.content}>
-          <h1 style={styles.greeting}>{greeting}</h1>
-
-          <div style={styles.inputWrapper} className="welcome-input-wrapper">
-            <MessageInput
-              value={inputValue}
-              onChange={onInputChange}
-              onSend={onSend}
-              disabled={disabled}
-              attachedFiles={attachedFiles}
-              onFilesAttach={onFilesAttach}
-              onFileRemove={onFileRemove}
-              containerStyle={styles.inputContainer}
-              moveToProject={moveToProject}
-              modelPicker={
-                <ModelPicker currentModel={model} onSelect={onModelChange} />
-              }
-            />
-            {selectedProject && onClearProject && (
-              <div style={styles.projectPill}>
-                <FolderIcon />
-                <span style={styles.projectPillName}>{selectedProject.name}</span>
-                <button
-                  type="button"
-                  onClick={onClearProject}
-                  style={styles.projectPillClear}
-                  aria-label="Remove from project"
-                >
-                  ×
-                </button>
-              </div>
-            )}
-          </div>
+      {/* Greeting occupies the flexible space above the composer. */}
+      <div style={styles.greetingArea}>
+        <h1 style={styles.greeting}>{greeting}</h1>
+      </div>
+      {/* Composer is bottom-anchored so that when the keyboard opens (the frame
+          resizes) it is already at the bottom edge and rides up with the
+          keyboard, rather than re-centering. Matches the Claude iOS app. */}
+      <div style={styles.inputArea}>
+        <div style={styles.inputWrapper}>
+          <MessageInput
+            value={inputValue}
+            onChange={onInputChange}
+            onSend={onSend}
+            disabled={disabled}
+            attachedFiles={attachedFiles}
+            onFilesAttach={onFilesAttach}
+            onFileRemove={onFileRemove}
+            moveToProject={moveToProject}
+            modelPicker={
+              <ModelPicker currentModel={model} onSelect={onModelChange} />
+            }
+          />
+          {selectedProject && onClearProject && (
+            <div style={styles.projectPill}>
+              <FolderIcon />
+              <span style={styles.projectPillName}>{selectedProject.name}</span>
+              <button
+                type="button"
+                onClick={onClearProject}
+                style={styles.projectPillClear}
+                aria-label="Remove from project"
+              >
+                ×
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -130,21 +132,22 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "center",
     flexShrink: 0,
   },
-  center: {
+  // Flexible region above the composer — absorbs the keyboard-driven frame
+  // shrink so the composer stays pinned to the bottom and rides up cleanly.
+  greetingArea: {
     flex: 1,
+    minHeight: 0,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "24px 16px 40px",
+    padding: "24px 16px 16px",
     overflowY: "auto",
   },
-  content: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "20px",
-    width: "100%",
-    maxWidth: "640px",
+  // Bottom-anchored composer region. The composer (shared MessageInput) owns its
+  // own padding (incl. env(safe-area-inset-bottom)), so it sits snug above the
+  // keyboard / home indicator — identical to the in-conversation composer.
+  inputArea: {
+    flexShrink: 0,
   },
   greeting: {
     fontSize: "1.875rem",
@@ -156,11 +159,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   inputWrapper: {
     width: "100%",
-  },
-  inputContainer: {
-    borderTop: "none",
-    padding: "0",
-    backgroundColor: "transparent",
+    maxWidth: "780px",
+    margin: "0 auto",
   },
   projectPill: {
     display: "inline-flex",
