@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ACCENT_COLOR } from "@/lib/utils/constants";
+import NativeSplashGate from "@/components/native/NativeSplashGate";
 
 export const metadata: Metadata = {
   title: "Bruce",
@@ -34,7 +35,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>{children}</body>
+      <body>
+        <NativeSplashGate />
+        {children}
+      </body>
     </html>
   );
 }

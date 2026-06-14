@@ -17,11 +17,18 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      // Short, clean launch on a dark background matching the dark-theme
-      // --bg-primary (#111111). hideSplash() also fires once the shell mounts.
-      launchShowDuration: 600,
+      // Dark background matching the dark-theme --bg-primary (#111111), so the
+      // OS LaunchScreen → Capacitor splash → content sequence is all dark — no
+      // white, no black gap. We hide the splash from NativeSplashGate the moment
+      // the page paints (not on a timer), which is what removes the black gap
+      // (the old 600ms auto-hide fired before the remote page had painted).
+      // launchAutoHide stays true purely as a safety net (a long duration) in
+      // case the gate never runs — e.g. the remote load errors before React
+      // mounts — so the splash can't get stuck.
+      launchShowDuration: 4000,
       launchAutoHide: true,
       backgroundColor: "#111111",
+      launchFadeOutDuration: 200,
       showSpinner: false,
     },
   },

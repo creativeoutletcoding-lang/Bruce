@@ -7,7 +7,6 @@ import { useVisualViewportLock } from "@/hooks/useVisualViewportLock";
 import { isNative } from "@/lib/native";
 import { setupKeyboard } from "@/lib/native/keyboard";
 import { setupStatusBar } from "@/lib/native/statusbar";
-import { hideSplash } from "@/lib/native/splash";
 import type { User } from "@/lib/types";
 import Sidebar from "./Sidebar";
 
@@ -71,12 +70,12 @@ export default function ChatShell({ user, children }: ChatShellProps) {
 
   // Native shell init (no-op on web/desktop — every call is isNative()-guarded).
   // Configure the OS keyboard (hide accessory bar + native resize) and status
-  // bar, then hide the launch splash once the shell has mounted.
+  // bar. The launch splash is hidden by NativeSplashGate (mounted in RootLayout)
+  // once content paints — covers all routes, not just the chat shell.
   useEffect(() => {
     if (!isNative()) return;
     setupKeyboard();
     setupStatusBar();
-    hideSplash();
   }, []);
 
   // FCM token registration on mount.
