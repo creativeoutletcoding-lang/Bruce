@@ -245,6 +245,8 @@ export interface MovableProject {
   id: string;
   name: string;
   icon: string;
+  /** ISO timestamp — drives the relative "x ago" in the Add-to-project sheet. */
+  created_at: string;
   members: MovableProjectMember[];
 }
 

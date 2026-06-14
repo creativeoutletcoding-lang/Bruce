@@ -17,7 +17,7 @@ export async function GET() {
 
   const { data: projects, error } = await supabase
     .from("projects")
-    .select("id, name, icon, project_members(user_id)")
+    .select("id, name, icon, created_at, project_members(user_id)")
     .eq("status", "active")
     .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -26,6 +26,7 @@ export async function GET() {
     id: string;
     name: string;
     icon: string;
+    created_at: string;
     project_members: Array<{ user_id: string }>;
   }>;
 
@@ -52,6 +53,7 @@ export async function GET() {
     id: p.id,
     name: p.name,
     icon: p.icon,
+    created_at: p.created_at,
     members: (p.project_members ?? [])
       .map((m) => profileById[m.user_id])
       .filter((m): m is MovableProjectMember => Boolean(m)),
