@@ -2,6 +2,8 @@
 
 import { useRef, useEffect, useState, type ReactNode } from "react";
 import { lightHaptic } from "@/lib/utils/haptics";
+import { isNative } from "@/lib/native";
+import { takePhotoNative, pickPhotosNative } from "@/lib/native/camera";
 import InputPlusMenu, { type MoveToProjectConfig } from "./InputPlusMenu";
 
 export interface FileAttachment {
@@ -243,9 +245,11 @@ export default function MessageInput({
     input.click();
   }
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = "";
+  // The single convergence point for BOTH acquisition paths (web <input> and the
+  // native camera/photo pickers). Every File — however it was acquired — runs
+  // through the identical HEIC/size guards and `processFile` (resize + base64)
+  // before `onFilesAttach`. Branch only on how bytes arrive, never on this.
+  async function ingestFiles(files: File[]) {
     if (!files.length || !onFilesAttach) return;
 
     const errors: string[] = [];
@@ -271,6 +275,21 @@ export default function MessageInput({
     const results = await Promise.all(validFiles.map(processFile));
     const attachments = results.filter((r): r is FileAttachment => r !== null);
     if (attachments.length > 0) onFilesAttach(attachments);
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    await ingestFiles(files);
+  }
+
+  // Native (iOS shell) acquisition — gated by isNative() at the call site. Both
+  // converge on ingestFiles, so guards/resize run identically to the web path.
+  async function handleNativeTakePhoto() {
+    await ingestFiles(await takePhotoNative());
+  }
+  async function handleNativePickPhotos() {
+    await ingestFiles(await pickPhotosNative());
   }
 
   return (
@@ -375,8 +394,24 @@ export default function MessageInput({
               // only when attaching is supported; "Add to project" only when the
               // context passes moveToProject. Same component everywhere.
               <InputPlusMenu
-                onTakePhoto={onFilesAttach ? () => openFilePicker({ capture: true, imagesOnly: true }) : undefined}
-                onChoosePhotos={onFilesAttach ? () => openFilePicker({ imagesOnly: true }) : undefined}
+                // Camera/Photos use native pickers in the iOS shell (web <input>
+                // capture crashes without — and can't differentiate — on iOS);
+                // web/desktop keep the exact accept/capture mutation path. Files
+                // stays on the web <input> everywhere (WKWebView handles it fine).
+                onTakePhoto={
+                  onFilesAttach
+                    ? isNative()
+                      ? handleNativeTakePhoto
+                      : () => openFilePicker({ capture: true, imagesOnly: true })
+                    : undefined
+                }
+                onChoosePhotos={
+                  onFilesAttach
+                    ? isNative()
+                      ? handleNativePickPhotos
+                      : () => openFilePicker({ imagesOnly: true })
+                    : undefined
+                }
                 onChooseFiles={onFilesAttach ? () => openFilePicker({}) : undefined}
                 moveToProject={moveToProject}
                 disabled={disabled}

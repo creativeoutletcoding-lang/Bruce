@@ -47,6 +47,12 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Bruce uses the camera to attach photos to your messages.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Bruce attaches photos from your library to your messages.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Bruce saves images you generate to your photo library.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
