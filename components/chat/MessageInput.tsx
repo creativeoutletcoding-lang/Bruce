@@ -641,9 +641,12 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "0 auto",
   },
   // Docked draft chip (row 0 inside the box): compact, secondary, top-left.
+  // marginBottom keeps the ✕'s ±8px hit-target (see draftChipClear) clear of the
+  // textarea below it, so it never steals a tap meant for the input.
   draftChipRow: {
     display: "flex",
     justifyContent: "flex-start",
+    marginBottom: "4px",
   },
   draftChip: {
     display: "inline-flex",
@@ -664,6 +667,11 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
   },
   draftChipClear: {
+    // position:relative is REQUIRED so the `.hit-target` ::after (position:absolute;
+    // inset:-8px) is contained to ±8px around THIS button. Without it the ::after
+    // resolves to the viewport and blankets the whole composer, hijacking taps
+    // meant for the textarea and unfiling the draft.
+    position: "relative",
     flexShrink: 0,
     width: "16px",
     height: "16px",
