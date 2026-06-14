@@ -26,10 +26,6 @@ interface FamilyThread {
   members: ThreadMemberSummary[];
 }
 
-interface FamilyGroupInfo {
-  id: string;
-  unreadCount: number;
-}
 
 interface ChatListItem {
   id: string;
@@ -51,7 +47,7 @@ interface ProjectChatListItem {
   project_icon: string;
 }
 
-type ContextMenuKind = "chat" | "thread" | "family_group" | "project";
+type ContextMenuKind = "chat" | "thread" | "project";
 
 interface ContextMenuState {
   id: string;
@@ -186,7 +182,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [familyThreads, setFamilyThreads] = useState<FamilyThread[]>([]);
-  const [familyGroup, setFamilyGroup] = useState<FamilyGroupInfo | null>(null);
   // chat_members.last_read_at per chat, scoped to the current user.
   // A chat is unread when its last_message_at is newer than this value
   // (or this user has no chat_members row at all). Project ids and chat ids
@@ -296,7 +291,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     ? pathname.split("/projects/")[1]?.split("/")[0]
     : null;
 
-  const isFamilyActive = pathname === "/family";
   const activeThreadId = pathname.startsWith("/family/threads/")
     ? pathname.split("/family/threads/")[1]?.split("/")[0]
     : null;
@@ -310,7 +304,6 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
       .eq("owner_id", user.id)
       .is("project_id", null)
       .neq("type", "incognito")
-      .neq("type", "family_group")
       .neq("type", "family_thread")
       .order("last_message_at", { ascending: false })
       // Cap embedded messages to the single latest row — fetching full
@@ -369,9 +362,9 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
   const loadFamilyThreads = useCallback(async () => {
     const res = await fetch("/api/family/threads", { cache: "no-store" });
     if (res.ok) {
-      const data: { familyGroup: FamilyGroupInfo | null; threads: FamilyThread[] } =
-        await res.json();
-      setFamilyGroup(data.familyGroup);
+      // The endpoint still returns a (now always-null) familyGroup field for the
+      // removed singular household chat; the sidebar only consumes live threads.
+      const data: { threads: FamilyThread[] } = await res.json();
       setFamilyThreads(data.threads);
     }
   }, []);
@@ -891,14 +884,8 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             router.push("/chat");
             onNavigate();
           }
-        } else if (kind === "family_group") {
-          await loadFamilyThreads();
-          if (isFamilyActive) {
-            router.push("/chat");
-            onNavigate();
-          }
         } else {
-          // thread
+          // thread (family-titled group chat)
           await loadFamilyThreads();
           if (activeThreadId === id) {
             router.push("/family");
@@ -911,9 +898,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
     }
   }
 
-  // ── rename (standalone chats, family threads, projects) ──────────────────
-  // Family-group is a singular system chat with a fixed "Family Chat" label, so
-  // the menu offers it Delete only — openRename is never called for it.
+  // ── rename (standalone chats, family-titled group chats, projects) ───────
   function openRename(id: string, kind: ContextMenuKind) {
     let currentTitle = "Untitled";
     if (kind === "thread") {
@@ -1669,29 +1654,7 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
               </div>
             ) : familyExpanded && (
               <>
-                {/* Family group chat — only rendered when a family_group chat exists */}
-                {familyGroup && (
-                  <button
-                    onClick={() => {
-                      if (longPressActiveRef.current) { longPressActiveRef.current = false; return; }
-                      router.push("/family");
-                      onNavigate();
-                    }}
-                    onContextMenu={(e) => handleItemRightClick(e, familyGroup.id, "family_group")}
-                    onTouchStart={(e) => handleItemLongPressStart(e, familyGroup.id, "family_group")}
-                    onTouchEnd={handleItemLongPressEnd}
-                    onTouchMove={handleItemLongPressMove}
-                    className="hover-wash sidebar-row" style={{ ...styles.familyButton, ...(isFamilyActive ? styles.familyButtonActive : {}) }}
-                  >
-                    <span style={styles.familyEmoji}>🏠</span>
-                    <span style={styles.familyName}>Family Chat</span>
-                    {!isFamilyActive && familyGroup.unreadCount > 0 && (
-                      <UnreadDot count={familyGroup.unreadCount} />
-                    )}
-                  </button>
-                )}
-
-                {/* Family threads */}
+                {/* Family-titled group chats (threads) */}
                 {familyThreads.map((thread) => {
                   const isActive = thread.id === activeThreadId;
                   const isSelected = selectedThreadIds.has(thread.id);
@@ -1818,17 +1781,17 @@ export default function Sidebar({ user, onNavigate }: SidebarProps) {
             minWidth: "130px",
           }}
         >
-          {contextMenu.kind !== "family_group" && (
-            <button
-              className="hover-wash" style={{ ...styles.contextMenuItem, color: "var(--text-primary)", borderBottom: "1px solid var(--border)" }}
-              onClick={() => {
-                openRename(contextMenu.id, contextMenu.kind);
-                setContextMenu(null);
-              }}
-            >
-              Rename
-            </button>
-          )}
+          {/* Every real sidebar item is renameable — standalone chats,
+              family-titled group chats (threads), and projects. */}
+          <button
+            className="hover-wash" style={{ ...styles.contextMenuItem, color: "var(--text-primary)", borderBottom: "1px solid var(--border)" }}
+            onClick={() => {
+              openRename(contextMenu.id, contextMenu.kind);
+              setContextMenu(null);
+            }}
+          >
+            Rename
+          </button>
           <button
             className="hover-wash" style={styles.contextMenuItem}
             onClick={() => {
@@ -2434,40 +2397,6 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: "4px",
     paddingBottom: "4px",
     borderBottom: "1px solid var(--border)",
-  },
-  familyButton: {
-    width: "100%",
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    padding: "8px 10px",
-    borderRadius: "var(--radius-md)",
-    cursor: "pointer",
-    backgroundColor: "transparent",
-    color: "var(--text-primary)",
-    borderLeft: "2px solid transparent",
-    textAlign: "left",
-    transition: "background-color var(--transition)",
-  },
-  familyButtonActive: {
-    backgroundColor: "var(--active-bg)",
-    borderLeft: "2px solid #0F6E56",
-    color: "var(--text-primary)",
-    fontWeight: "normal",
-  },
-  familyEmoji: {
-    fontSize: "1.125rem",
-    lineHeight: 1,
-    flexShrink: 0,
-  },
-  familyName: {
-    fontSize: "0.875rem",
-    fontWeight: "500",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    flex: 1,
-    minWidth: 0,
   },
   threadItem: {
     width: "100%",

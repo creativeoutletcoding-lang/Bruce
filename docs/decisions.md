@@ -6,6 +6,20 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Remove phantom static "family group" chat scaffolding from the sidebar — 2026-06-14
+
+**Context.** The old static/pinned singular "family group" chat (`chats.type='family_group'` — "the one permanent household group chat readable by all users") was removed previously; no such row exists. "Family" is now only a **title** carried by live group chats (`type='family_thread'`). The prior global-context-menu build had added a `family_group` kind + a Delete-only carve-out + a 🏠 "Family Chat" sidebar row built around that phantom.
+
+**Safety finding (the thing that made this safe).** Live family group chats are `family_thread` → context-menu `kind="thread"`; standalone → `chat`; projects → `project`. The `family_group` kind mapped **exclusively** to the singular phantom row — **no live chat routed through it**, so removing it broke nothing and there was nothing to re-map. The phantom was already inert at runtime: `app/family/page.tsx` redirects to `/chat` when no `family_group` row exists, and the sidebar row only rendered `{familyGroup && …}`.
+
+**Removed (UI scaffolding only, all in `Sidebar.tsx`):** the `family_group` `ContextMenuKind`, the `FamilyGroupInfo` type + `familyGroup` state + its consumption from `/api/family/threads` (keeps live `threads`), `isFamilyActive`, the `handleSingleDelete` `family_group` branch, the singular 🏠 "Family Chat" row + its styles, the Rename Delete-only carve-out (Rename is now unconditional), and the redundant `.neq("type","family_group")` filter on the standalone-chats query. Result: every real item (standalone chats, family-titled group chats, projects) gets Rename + Delete; group chats are user-renameable like any chat. **Zero `family_group`/"Family Chat" refs remain in `Sidebar.tsx`.**
+
+**Preserved entirely:** all group-chat / family-thread logic — silent-by-default, @mention/natural triggers, three-tier act/flag/ask, reactions, routing, `/api/family/chat` engagement gate, `FamilyChatWindow`, family mode. Only `Sidebar.tsx` changed.
+
+**Intentionally KEPT + reported (NOT deleted — guardrail: report when unsure; no memory/RLS/routing changes):** the deeper `family_group` backend surface — `app/family/page.tsx` (self-inerts), `/api/family/threads` (serves live threads, returns a now-null `familyGroup`), `/api/chats` type filter, cron deep-link, `app/api/memory/generate` classification (memory logic), `lib/types` `ChatType` union, and the DB CHECK value + RLS `family_group_chat_select` policy + migrations 006/007/016. A full backend/DB teardown would need a dedicated migration + coordinated multi-file change across memory/routing — recommended as a separate deliberate step, not folded into this UI cleanup.
+
+---
+
 ### Global sidebar context-menu (Rename + Delete) across all item types — 2026-06-14
 
 **Goal.** One context-menu (right-click desktop / long-press mobile) with **Rename + Delete** on every sidebar item — standalone chats, family threads, the family group, and projects — replacing the old patchwork (family had a Delete-only menu; projects had no custom menu and leaked the native browser menu + iOS text-selection callout).
