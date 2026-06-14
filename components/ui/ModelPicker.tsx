@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { MODELS, DEFAULT_MODEL, modelLabel, getModel, validEffortForModel } from "@/lib/models";
 
 interface ModelPickerProps {
@@ -11,24 +11,72 @@ interface ModelPickerProps {
   onEffortChange?: (effort: string) => void;
 }
 
+const DESKTOP_WIDTH = 280;
+
 export default function ModelPicker({ currentModel, onSelect, currentEffort, onEffortChange }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Desktop (mouse) gets a fixed popover anchored to the trigger; touch gets the
+  // bottom sheet. We branch in JS rather than CSS because the popover must use
+  // position:fixed to escape the composer's overflow:hidden ancestors (an
+  // absolute dropdown was clipped off-screen on desktop — the original bug).
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(pointer: fine)");
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
   const selectedModel = getModel(currentModel);
   const showEffort = !!onEffortChange && !!selectedModel?.supportsEffort;
   // Effective effort = requested clamped to what this model supports (else default).
   const activeEffort = validEffortForModel(currentModel, currentEffort);
 
+  function toggleOpen() {
+    setOpen((v) => {
+      const next = !v;
+      if (next && triggerRef.current) setAnchor(triggerRef.current.getBoundingClientRect());
+      return next;
+    });
+  }
+
   function handleSelect(id: string) {
     onSelect(id);
     setOpen(false);
   }
 
+  // Desktop: fixed popover opening UPWARD from the trigger (the pill sits at the
+  // bottom of the composer), right-aligned to it, clamped to the viewport.
+  const desktopSheetStyle: React.CSSProperties | null =
+    isDesktop && anchor
+      ? {
+          position: "fixed",
+          width: DESKTOP_WIDTH,
+          left: Math.max(8, anchor.right - DESKTOP_WIDTH),
+          bottom: Math.max(8, window.innerHeight - anchor.top + 6),
+          maxHeight: anchor.top - 16,
+          overflowY: "auto",
+          zIndex: 999,
+          backgroundColor: "var(--bg-primary)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
+          padding: "12px 16px 16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+        }
+      : null;
+
   return (
-    <div ref={containerRef} style={{ position: "relative" }}>
+    <div style={{ position: "relative" }}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={triggerRef}
+        onClick={toggleOpen}
         style={styles.pill}
         aria-label="Change model"
         type="button"
@@ -45,8 +93,8 @@ export default function ModelPicker({ currentModel, onSelect, currentEffort, onE
             onClick={() => setOpen(false)}
             style={styles.backdrop}
           />
-          <div style={styles.sheet} className="model-picker-sheet">
-            <div style={styles.sheetHandle} className="model-picker-handle" />
+          <div style={desktopSheetStyle ?? styles.sheet}>
+            {!desktopSheetStyle && <div style={styles.sheetHandle} />}
             <p style={styles.sheetTitle}>Choose model</p>
             {MODELS.map((m) => (
               <button
