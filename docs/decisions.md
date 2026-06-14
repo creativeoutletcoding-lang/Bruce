@@ -6,6 +6,16 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Docked draft chip tap-focus fix (`hit-target` containing block) — 2026-06-14
+
+**Bug.** After docking the draft "filed to project" chip inside the composer, tapping the input to type unfiled the draft (fired `onClearProject`) instead of focusing the textarea.
+
+**Root cause.** Not a misplaced handler (the `onClick` was on the ✕ button only) and not a focus side-effect. The ✕ uses `className="hit-target"`, whose rule is `.hit-target::after { position: absolute; inset: -8px }` — an invisible tap-extender that sizes against the nearest **positioned** ancestor. `draftChipClear` had **no `position`**, and none of its ancestors (`draftChip`/`draftChipRow`/`box`/`container`) are positioned, so the `::after`'s containing block fell back to the **viewport** and the overlay blanketed the whole composer, intercepting every tap on the textarea → unfile. The other `hit-target` close buttons (`thumbnailClose`, `pastedChipClose`) don't hit this because they're `position: absolute` (already their own containing block). A Playwright check reproduced it precisely: on the unfixed code the textarea click times out (pointer intercepted by the overlay); on the fix it focuses and keeps the chip.
+
+**Fix (presentation only).** Add `position: relative` to `draftChipClear` so the `::after` is confined to ±8px around the 16px button, plus a 4px `marginBottom` on `draftChipRow` so the downward 8px extension can't overlap the textarea's top edge. `onClearProject` logic is unchanged — only what triggers it. **Lesson:** any `hit-target` element must establish its own positioning context (`position: relative`/`absolute`), or its ±8px overlay escapes to the nearest positioned ancestor (worst case the viewport) and hijacks unrelated taps.
+
+---
+
 ### Project draft chip relocation + emoji sweep + Files direct picker — 2026-06-14
 
 **Draft chip.** The new-chat "filed to project" chip (shown before the first message) moved from a standalone pill **below** the composer to a compact chip **docked inside** the composer box (`MessageInput`), top-left above the input row, via a new `draftProject?: {name, onClear}` prop. No emoji, secondary styling; ✕ still calls the existing unfile handler (`onClearProject`) unchanged. Home-indicator clearance is inherited from the composer container's safe-area padding. `WelcomeScreen` is the only caller; it dropped its external pill + `FolderIcon`.
