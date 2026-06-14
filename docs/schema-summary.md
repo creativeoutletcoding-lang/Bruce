@@ -50,6 +50,7 @@ Columns added incrementally across migrations 003, 005, 011, 012.
 | color_hex | TEXT | NOT NULL | `'#6B7280'` |
 | home_location | TEXT | NOT NULL | `'Arlington, Virginia'` |
 | preferred_model | TEXT | nullable | `'claude-sonnet-4-6'` |
+| preferred_effort | TEXT | nullable | `NULL` (null = model's default effort; migration 036) |
 | deactivated_at | TIMESTAMPTZ | nullable | — |
 | purge_at | TIMESTAMPTZ | nullable | — |
 | created_at | TIMESTAMPTZ | NOT NULL | NOW() |

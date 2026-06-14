@@ -35,7 +35,7 @@ Migrations 001–034 applied; **035 pending Supabase SQL editor** (scheduled_tas
 
 **household** — single row; `memories` (jsonb), `context` (jsonb with family member data)
 
-**users** — one per member; `id` (auth.users FK), `email`, `name`, `avatar_url`, `role` (admin|member), `status` (active|suspended|deactivated), `morning_summary_time`, `notification_sensitivity`, `notification_preferences` (jsonb), `fcm_token` (legacy — superseded by `user_fcm_tokens`), `google_access_token`, `google_refresh_token`, `google_token_expires_at`, `google_drive_root_id`, `google_drive_personal_id`, `google_drive_projects_id`, `color_hex`, `home_location`, `preferred_model`, `deactivated_at`, `purge_at`
+**users** — one per member; `id` (auth.users FK), `email`, `name`, `avatar_url`, `role` (admin|member), `status` (active|suspended|deactivated), `morning_summary_time`, `notification_sensitivity`, `notification_preferences` (jsonb), `fcm_token` (legacy — superseded by `user_fcm_tokens`), `google_access_token`, `google_refresh_token`, `google_token_expires_at`, `google_drive_root_id`, `google_drive_personal_id`, `google_drive_projects_id`, `color_hex`, `home_location`, `preferred_model`, `preferred_effort` (effort level; null = model default — migration 036), `deactivated_at`, `purge_at`
 
 **invite_tokens** — single-use 48hr links; `token`, `created_by`, `email`, `role`, `used`, `expires_at`
 
@@ -135,6 +135,14 @@ A Capacitor **remote-URL** shell (`ios/` + `capacitor.config.ts`): a WKWebView p
 
 **Toolchain.** Capacitor 8 requires Xcode 16+/Swift 6/macOS Sonoma+. Shell development happens on the new Mac (macOS 26.5 / Xcode 26.5). Safe-area handling: `app/layout.tsx` sets `viewport-fit=cover` and the shell `<main>` adds `padding-top: env(safe-area-inset-top)` so content clears the iOS status bar (no-op on web).
 
+**Native plugins & display polish** (`@capacitor/keyboard`, `@capacitor/status-bar`, `@capacitor/splash-screen`; all setup `isNative()`-guarded in `lib/native/`, wired in `ChatShell`):
+- **Keyboard** (`lib/native/keyboard.ts`): hides the iOS accessory bar and uses `KeyboardResize.None`, driving layout from `keyboardWillShow`/`WillHide` — it sets `--app-height`/`--kb-safe-bottom` so the input leads the keyboard slide (no start-lag) and dispatches `bruce:keyboardshow` so `MessageList` re-pins to the latest message. `useVisualViewportLock` early-returns on native (web/PWA keeps the visual-viewport hack).
+- **Status bar** (`lib/native/statusbar.ts`): overlays the webview (header already inset), style follows `prefers-color-scheme`.
+- **Splash** (`lib/native/splash.ts` + config): solid `#111111`, hidden on first paint by `NativeSplashGate` (mounted in `RootLayout`) — no white/black flash. `LaunchScreen.storyboard` is a solid `#111111` view (no logo).
+- **App icon**: `ios/App/App/Assets.xcassets/AppIcon.appiconset/` — gold B on teal, single-1024 universal config. Source PNG had transparency (iOS rejects alpha); flattened to an opaque teal square (iOS applies its own mask).
+
+**Composer** (web + native): one rounded container, vertical stack — full-width textarea on top, control row below (`+` and model picker left, send right). Bottom-anchored so it rides up with the keyboard. The model picker (`ModelPicker`) is a bottom sheet on touch and a `position:fixed` upward popover on desktop (`matchMedia("(pointer: fine)")`) — `fixed` is required to escape the composer's `overflow:hidden` ancestors.
+
 ---
 
 ## System Prompt Builders
@@ -233,7 +241,8 @@ All three chat contexts (standalone, project, family) share the same code paths.
 
 ## Build Conventions
 
-- **Model:** conversation always uses `claude-sonnet-4-6` (or the member's `preferred_model`). Structured side-tasks (chat titles, memory extraction, the family engagement gate) use `HAIKU_MODEL` (`claude-haiku-4-5-20251001`, exported from `lib/anthropic`). Never hardcode any other model id.
+- **Model:** `lib/models.ts` is the single source of truth — `ModelConfig` entries with effort metadata. Lineup: Opus 4.8, Opus 4.7, Sonnet 4.6 (default), Haiku 4.5 (Opus 4.6 dropped, Fable 5 excluded). Conversation uses the member's `preferred_model`; routes clamp it via `resolveModel()` (stale/removed id → `DEFAULT_MODEL`, never sent raw to the API). Structured side-tasks (titles, memory, family engagement gate) use `HAIKU_MODEL`; pinned system-task routes (family chat, Bruce Dev, instructions summarizer) use `SYSTEM_TASK_MODEL`. Never hardcode a model id — add to `lib/models.ts`.
+- **Effort:** per-member `preferred_effort` (null = the model's `defaultEffort`; Sonnet = `medium`). Sent as top-level `output_config: { effort }` only when the model supports it (`validEffortForModel` clamps/omits — Haiku takes none; only Opus 4.8/4.7 take `xhigh`). No `thinking` param is sent (adaptive). Validated on write in `/api/users/me`.
 - **Streaming:** all chat responses stream via Anthropic SDK streaming helpers.
 - **History windowing:** chat routes replay at most the last 40 messages (descending fetch + reverse). Never load unbounded history into model context.
 - **Tool traces:** `runChatStream` persists a compact trace of the turn's tool calls in `messages.metadata.tool_trace` (capped via `lib/chat/toolTrace.ts`); the three chat routes replay it through `formatAssistantReplay()` so follow-up turns keep tool grounding. New chat routes must do the same.

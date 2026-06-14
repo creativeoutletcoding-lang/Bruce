@@ -6,6 +6,32 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Model config refactor + effort levels — 2026-06-13
+
+**Single source of truth.** `lib/models.ts` now holds `ModelConfig` entries (`id`, `displayName`, `supportsEffort`, `effortLevels`, `defaultEffort`, `thinkingAlwaysOn`) plus helpers (`getModel`, `resolveModel`, `isValidModelId`, `validEffortForModel`). Lineup updated to **Opus 4.8, Opus 4.7, Sonnet 4.6 (default), Haiku 4.5** — Opus 4.6 dropped, Fable 5 deliberately excluded for now.
+
+**Stale-ID bug fixed (pre-existing).** `preferred_model` was persisted unvalidated and read with a null-only fallback, so a removed id (e.g. someone still on `claude-opus-4-6`) would be sent raw to Anthropic and 400. Now `/api/users/me` whitelists it (`isValidModelId`) and every route clamps via `resolveModel()` → `DEFAULT_MODEL`.
+
+**Effort.** Confirmed against live docs: effort is top-level `output_config: { effort }` (no beta header, no `thinking` param — these models use adaptive thinking; manual `thinking:{enabled}` 400s on Opus 4.8/4.7). Per-model support: Opus 4.8/4.7 = low|medium|high|xhigh|max; Sonnet 4.6 = low|medium|high|max (no xhigh); **Haiku 4.5 = unsupported**. New global `users.preferred_effort` (migration 036, null = model default; Sonnet default `medium` per docs' chat recommendation). `streamHandler` injects effort only when `validEffortForModel` returns non-null — never an unsupported level. Picker + settings show an effort selector when the model supports it.
+
+**System-task routes pinned.** Family chat, Bruce Dev workspace, and the instructions summarizer use a `SYSTEM_TASK_MODEL` constant instead of bare `"claude-sonnet-4-6"` literals (no behavior change, no magic strings).
+
+**Desktop model picker fixed (RESOLVED 2026-06-13).** Pre-existing bug: the `@media (pointer: fine)` rule made the picker a `position:absolute` downward dropdown that was clipped by the composer's `overflow:hidden` ancestors and rendered off-screen (worked on mobile only because the bottom sheet is `position:fixed`). Fixed by rendering a `position:fixed` upward popover anchored to the trigger rect on desktop (branched in JS via `matchMedia`), which escapes the overflow clipping. Verified working on desktop + mobile.
+
+---
+
+### Native keyboard/display polish + app icon — 2026-06-13
+
+**Keyboard.** Settled on `KeyboardResize.None` driven by `keyboardWillShow`/`WillHide` rather than `KeyboardResize.Native`. On-device diagnostics confirmed Native *did* resize the frame correctly, but the resize landed a beat after the keyboard started sliding (start-lag). Driving `--app-height`/`--kb-safe-bottom` from `keyboardWillShow` (fires at slide start, reports `keyboardHeight`) makes the input lead the keyboard. Also: hid the iOS accessory bar; `useVisualViewportLock` early-returns on native (web keeps the visual-viewport hack); a `bruce:keyboardshow` event re-pins `MessageList` to the latest message (the visualViewport autoscroll doesn't fire reliably under None).
+
+**Composer redesign (Claude-style).** One rounded container, vertical stack: full-width textarea on top, control row below (`+` and model picker left, send right). Fixes the old breakage where inline controls disrupted text flow, and moves the model switcher into the control row. Bottom-anchored so it rides up with the keyboard. Applied to web + native (better everywhere).
+
+**Display.** Status bar overlays the inset header, style follows `prefers-color-scheme`. Splash is solid `#111111` hidden on first paint (`NativeSplashGate`), and `LaunchScreen.storyboard` is a solid `#111111` view — eliminates the white→logo→black launch flash.
+
+**App icon.** Gold B on teal, single-1024 universal config. The source PNG had transparent corners; iOS rejects alpha, so it was flattened to an opaque teal square (corners filled with the dominant teal `#087058`) — iOS applies its own rounded mask.
+
+---
+
 ### OAuth spike COMPLETE — native iOS shell merged to main — 2026-06-13
 
 **Spike outcome.** Native iOS shell Google OAuth is proven **end-to-end on a physical device, against production**, and merged to main. This was the gate (§3 of `docs/capacitor-plan.md`); the rest of the shell build is now unblocked. Covers both Supabase Auth login and the Calendar/Gmail/Drive connector grants — they are the same OAuth flow in this codebase.
