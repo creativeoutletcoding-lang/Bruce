@@ -378,6 +378,7 @@ export default function MessageInput({
                 </svg>
               </button>
             ) : null}
+            {modelPicker && <div style={styles.modelSlot}>{modelPicker}</div>}
           </div>
 
           <div style={styles.controlRight}>
@@ -402,7 +403,6 @@ export default function MessageInput({
                 )}
               </button>
             )}
-            {modelPicker && <div style={styles.modelSlot}>{modelPicker}</div>}
             {canStop ? (
               <button
                 onClick={() => { lightHaptic(); onStop!(); }}
@@ -583,20 +583,28 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     gap: "8px",
   },
+  // "+" and the model pill, grouped left. Allowed to shrink so a long model
+  // name truncates rather than pushing the send button off-screen.
   controlLeft: {
     display: "flex",
     alignItems: "center",
-    gap: "4px",
+    gap: "6px",
     minHeight: "36px",
+    minWidth: 0,
+    flex: "0 1 auto",
   },
+  // Send (and globe) pinned right; never shrinks so it stays reachable.
   controlRight: {
     display: "flex",
     alignItems: "center",
     gap: "6px",
+    flexShrink: 0,
   },
   modelSlot: {
     display: "flex",
     alignItems: "center",
+    minWidth: 0,
+    overflow: "hidden",
   },
   attachButton: {
     flexShrink: 0,
