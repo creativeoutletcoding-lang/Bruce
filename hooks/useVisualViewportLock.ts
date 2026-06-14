@@ -1,8 +1,17 @@
 "use client";
 
 import { useEffect } from "react";
+import { isNative } from "@/lib/native";
 
 // Keyboard-aware viewport lock for the chat shell (iOS PWA / mobile Safari).
+//
+// NATIVE SHELL: bypassed. The Capacitor shell uses the OS keyboard resize
+// (lib/native/keyboard.ts → KeyboardResize.Native) instead of this visual-
+// viewport hack, so on native we lock document scroll but skip the vv tracking
+// and never set the CSS vars — every consumer then uses its fallback
+// (--app-height→100dvh, --vv-offset-top→0px, --kb-safe-bottom→
+// env(safe-area-inset-bottom)). This hook stays fully functional for
+// web/desktop/PWA; it can be deleted once native is the only mobile target.
 //
 // iOS does not resize the layout viewport when the on-screen keyboard opens —
 // it overlays the keyboard and shifts the *visual* viewport down to reveal the
@@ -32,6 +41,16 @@ export function useVisualViewportLock() {
     const prevOverscroll = document.body.style.overscrollBehavior;
     document.body.style.overflow = "hidden";
     document.body.style.overscrollBehavior = "none";
+
+    // Native shell: OS keyboard resize replaces this hack. Keep the document
+    // scroll lock, but don't track the visual viewport or set the CSS vars —
+    // consumers fall back to their CSS defaults (see header comment).
+    if (isNative()) {
+      return () => {
+        document.body.style.overflow = prevOverflow;
+        document.body.style.overscrollBehavior = prevOverscroll;
+      };
+    }
 
     const vv = window.visualViewport;
     if (!vv) {
