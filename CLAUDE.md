@@ -258,7 +258,7 @@ All three chat contexts (standalone, project, family) share the same code paths.
 - **No console.log in production paths.**
 - **Design tokens only.** `app/globals.css` has all tokens. Accent: `#0F6E56`. No Tailwind. Never hardcode a theme-dependent color (text/border/bg) in a component — it WILL break one of the two themes.
 - **Hover states:** inline styles can't express `:hover` — use the shared utility classes in `globals.css`: `className="icon-btn"` for square icon buttons, `className="hover-wash"` for rows/buttons (universal inset wash, both themes). Gated on `(hover)+(pointer: fine)` so touch never gets sticky hover.
-- **Touch targets:** visually-small controls get `className="hit-target"` (an `::after` that extends the tap area ±8px). Nothing interactive below ~34px effective hit size.
+- **Touch targets:** visually-small controls get `className="hit-target"` (an `::after` that extends the tap area ±8px). Nothing interactive below ~34px effective hit size. **The host element MUST be positioned** (`position: relative`/`absolute`) — the `::after` is `position:absolute; inset:-8px`, so on a `static` host its containing block escapes to the nearest positioned ancestor (worst case the viewport), blanketing the screen and hijacking unrelated taps. (This is what made the docked project chip's ✕ unfile the draft on any input tap.)
 - **Z-index:** use the token scale (`--z-drawer-backdrop`, `--z-drawer`, `--z-modal`, `--z-fullscreen`, `--z-toast`, `--z-menu`) — never ad-hoc numbers.
 - **Modals:** `role="dialog"` + `aria-modal="true"` + an Escape-close handler, always.
 - **Mobile-first.** Every component must work on iPhone.
