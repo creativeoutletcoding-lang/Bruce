@@ -13,7 +13,7 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("name, email, preferred_model, notification_sensitivity, notification_preferences, color_hex")
+    .select("name, email, preferred_model, preferred_effort, notification_sensitivity, notification_preferences, color_hex")
     .eq("id", user.id)
     .single();
 

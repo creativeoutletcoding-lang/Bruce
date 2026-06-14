@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import ModelPreference from "./ModelPreference";
+import { resolveModel } from "@/lib/models";
 import GoogleReconnect from "./GoogleReconnect";
 import NotificationSettings from "./NotificationSettings";
 import RemindersView from "./RemindersView";
@@ -11,6 +12,7 @@ export interface SettingsProfile {
   name: string | null;
   email: string | null;
   preferred_model: string | null;
+  preferred_effort: string | null;
   notification_sensitivity: string | null;
   notification_preferences: Record<string, unknown> | null;
   color_hex: string | null;
@@ -123,7 +125,7 @@ export default function SettingsLayout({ profile }: { profile: SettingsProfile |
               <h2 style={styles.sectionTitle}>AI Model</h2>
             </div>
             <div style={styles.padBody}>
-              <ModelPreference initialModel={profile?.preferred_model ?? "claude-sonnet-4-6"} />
+              <ModelPreference initialModel={resolveModel(profile?.preferred_model).id} initialEffort={profile?.preferred_effort ?? null} />
             </div>
           </div>
         </div>

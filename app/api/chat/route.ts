@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { resolveModel } from "@/lib/models";
 import {
   assembleMemoryBlock,
   generateChatTitle,
@@ -123,12 +124,15 @@ export async function POST(request: NextRequest) {
 
   const { data: userProfile } = await supabase
     .from("users")
-    .select("name, home_location, preferred_model")
+    .select("name, home_location, preferred_model, preferred_effort")
     .eq("id", user.id)
     .single();
-  const userName = (userProfile as { name: string; home_location: string | null; preferred_model: string | null } | null)?.name ?? "Member";
-  const homeLocation = (userProfile as { name: string; home_location: string | null; preferred_model: string | null } | null)?.home_location ?? "Arlington, Virginia";
-  const preferredModel = (userProfile as { name: string; home_location: string | null; preferred_model: string | null } | null)?.preferred_model ?? "claude-sonnet-4-6";
+  const profile = userProfile as { name: string; home_location: string | null; preferred_model: string | null; preferred_effort: string | null } | null;
+  const userName = profile?.name ?? "Member";
+  const homeLocation = profile?.home_location ?? "Arlington, Virginia";
+  // Clamp a stale/removed saved id to the default so it can't 400 at Anthropic.
+  const preferredModel = resolveModel(profile?.preferred_model).id;
+  const preferredEffort = profile?.preferred_effort ?? null;
 
   const locationContext = currentLocation
     ? `${userName}'s current location right now is ${currentLocation}.`
@@ -304,6 +308,7 @@ export async function POST(request: NextRequest) {
   const stream = runChatStream({
     anthropic,
     model: preferredModel,
+    effort: preferredEffort,
     maxTokens: 16000,
     systemPrompt,
     initialMessages: anthropicMessages,

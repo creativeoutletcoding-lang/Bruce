@@ -3,6 +3,7 @@ import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import ChatWindow from "@/components/chat/ChatWindow";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
 import { getUserProfile } from "@/lib/user/getUserProfile";
+import { resolveModel } from "@/lib/models";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -48,7 +49,8 @@ export default async function ChatIdPage({ params }: Props) {
 
   const profile = await getUserProfile(supabase, user.id);
   const userColorHex = profile?.color_hex;
-  const preferredModel = profile?.preferred_model ?? "claude-sonnet-4-6";
+  const preferredModel = resolveModel(profile?.preferred_model).id;
+  const preferredEffort = profile?.preferred_effort ?? null;
 
   const adminSupabase = createServiceRoleClient();
   const msgIds = normalizedMessages.map((m) => m.id);
@@ -66,6 +68,7 @@ export default async function ChatIdPage({ params }: Props) {
       initialTitle={chat.title ?? "Chat"}
       userColorHex={userColorHex}
       initialModel={preferredModel}
+      initialEffort={preferredEffort}
       currentUserId={user.id}
       initialReactions={(reactionRows ?? []) as Array<{ message_id: string; user_id: string | null; type: string }>}
       canMoveToProject={canMoveToProject}

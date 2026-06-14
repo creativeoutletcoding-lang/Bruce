@@ -88,6 +88,7 @@ CREATE TABLE users (
   color_hex                 TEXT NOT NULL DEFAULT '#6B7280',  -- bubble color (Google Calendar palette)
   home_location             TEXT NOT NULL DEFAULT 'Arlington, Virginia',
   preferred_model           TEXT DEFAULT 'claude-sonnet-4-6',
+  preferred_effort          TEXT DEFAULT NULL,  -- effort param (low|medium|high|xhigh|max); NULL = model default (migration 036)
   deactivated_at            TIMESTAMPTZ,
   purge_at                  TIMESTAMPTZ,    -- 30 days after deactivation
   created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),

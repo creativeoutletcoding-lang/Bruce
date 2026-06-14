@@ -1,16 +1,24 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { MODELS, DEFAULT_MODEL, modelLabel } from "@/lib/models";
+import { MODELS, DEFAULT_MODEL, modelLabel, getModel, validEffortForModel } from "@/lib/models";
 
 interface ModelPickerProps {
   currentModel: string;
   onSelect: (modelId: string) => void;
+  /** Current effort preference (raw). When omitted, the effort row is hidden. */
+  currentEffort?: string | null;
+  onEffortChange?: (effort: string) => void;
 }
 
-export default function ModelPicker({ currentModel, onSelect }: ModelPickerProps) {
+export default function ModelPicker({ currentModel, onSelect, currentEffort, onEffortChange }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedModel = getModel(currentModel);
+  const showEffort = !!onEffortChange && !!selectedModel?.supportsEffort;
+  // Effective effort = requested clamped to what this model supports (else default).
+  const activeEffort = validEffortForModel(currentModel, currentEffort);
 
   function handleSelect(id: string) {
     onSelect(id);
@@ -51,7 +59,7 @@ export default function ModelPicker({ currentModel, onSelect }: ModelPickerProps
                 type="button"
               >
                 <div style={styles.optionHeader}>
-                  <span style={styles.optionLabel}>{m.label}</span>
+                  <span style={styles.optionLabel}>{m.displayName}</span>
                   {m.id === DEFAULT_MODEL && (
                     <span style={styles.defaultBadge}>Default</span>
                   )}
@@ -64,6 +72,27 @@ export default function ModelPicker({ currentModel, onSelect }: ModelPickerProps
                 <p style={styles.optionDesc}>{m.description}</p>
               </button>
             ))}
+
+            {showEffort && selectedModel && (
+              <div style={styles.effortBlock}>
+                <p style={styles.sheetTitle}>Effort</p>
+                <div style={styles.effortRow}>
+                  {selectedModel.effortLevels.map((level) => (
+                    <button
+                      key={level}
+                      onClick={() => onEffortChange!(level)}
+                      style={{
+                        ...styles.effortChip,
+                        ...(activeEffort === level ? styles.effortChipActive : {}),
+                      }}
+                      type="button"
+                    >
+                      {level}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -161,5 +190,33 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.8125rem",
     color: "var(--text-secondary)",
     lineHeight: "1.4",
+  },
+  effortBlock: {
+    marginTop: "8px",
+    paddingTop: "12px",
+    borderTop: "1px solid var(--border)",
+  },
+  effortRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "6px",
+  },
+  effortChip: {
+    flex: "1 1 auto",
+    padding: "8px 10px",
+    borderRadius: "var(--radius-md)",
+    border: "1px solid var(--border)",
+    background: "transparent",
+    color: "var(--text-secondary)",
+    fontSize: "0.8125rem",
+    fontWeight: "500",
+    textTransform: "capitalize" as const,
+    cursor: "pointer",
+    transition: "background-color var(--transition), border-color var(--transition), color var(--transition)",
+  },
+  effortChipActive: {
+    backgroundColor: "var(--bg-secondary)",
+    borderColor: "var(--accent)",
+    color: "var(--text-primary)",
   },
 };

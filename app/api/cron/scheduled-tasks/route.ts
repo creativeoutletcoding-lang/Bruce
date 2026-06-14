@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import { assembleMemoryBlock, buildMemberCombination } from "@/lib/anthropic";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import { runChatStream, TOOLS_FULL } from "@/lib/chat/streamHandler";
+import { resolveModel } from "@/lib/models";
 import { computeNextRunAt, type TaskSchedule } from "@/lib/scheduledTasks/schedule";
 import { notifyUser } from "@/lib/notifications";
 import { NextRequest } from "next/server";
@@ -102,12 +103,14 @@ export async function GET(request: NextRequest) {
 
       const { data: owner } = await adminSupabase
         .from("users")
-        .select("name, home_location, preferred_model")
+        .select("name, home_location, preferred_model, preferred_effort")
         .eq("id", task.user_id)
         .single();
-      const userName = (owner as { name: string } | null)?.name ?? "Member";
-      const homeLocation = (owner as { home_location: string | null } | null)?.home_location ?? "Arlington, Virginia";
-      const preferredModel = (owner as { preferred_model: string | null } | null)?.preferred_model ?? "claude-sonnet-4-6";
+      const ownerProfile = owner as { name: string; home_location: string | null; preferred_model: string | null; preferred_effort: string | null } | null;
+      const userName = ownerProfile?.name ?? "Member";
+      const homeLocation = ownerProfile?.home_location ?? "Arlington, Virginia";
+      const preferredModel = resolveModel(ownerProfile?.preferred_model).id;
+      const preferredEffort = ownerProfile?.preferred_effort ?? null;
 
       // Family-type targets get family mode (group formatting + shared memory);
       // everything else runs as a standalone turn with private memory.
@@ -155,6 +158,7 @@ This is an automated standing-task run on behalf of ${userName} — no member is
       const stream = runChatStream({
         anthropic,
         model: preferredModel,
+        effort: preferredEffort,
         maxTokens: 16000,
         systemPrompt,
         initialMessages: [

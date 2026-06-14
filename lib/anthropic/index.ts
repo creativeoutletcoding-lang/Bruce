@@ -2,11 +2,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { after } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { HAIKU_MODEL_ID } from "@/lib/models";
 
 // Fast/cheap model for structured side-tasks (chat titles, memory extraction,
 // the family engagement gate). Conversation itself always uses the member's
-// preferred model — never this one.
-export const HAIKU_MODEL = "claude-haiku-4-5-20251001";
+// preferred model — never this one. Single source of truth: lib/models.ts.
+export const HAIKU_MODEL = HAIKU_MODEL_ID;
 
 // ── Memory assembly constants ─────────────────────────────────────────────────
 

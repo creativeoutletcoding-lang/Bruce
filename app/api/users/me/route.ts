@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest } from "next/server";
+import { isValidModelId, isValidEffort } from "@/lib/models";
 
 export async function PATCH(request: NextRequest) {
   const supabase = await createClient();
@@ -8,6 +9,7 @@ export async function PATCH(request: NextRequest) {
 
   let body: {
     preferred_model?: string;
+    preferred_effort?: string | null;
     notification_sensitivity?: string;
     notification_preferences?: Record<string, unknown>;
   };
@@ -20,7 +22,20 @@ export async function PATCH(request: NextRequest) {
   const update: Record<string, unknown> = {};
 
   if (body.preferred_model !== undefined) {
+    // Whitelist against the live model list (mirrors notification_sensitivity)
+    // so a stale/unknown id can never be persisted and later 400 at Anthropic.
+    if (!isValidModelId(body.preferred_model)) {
+      return new Response("Invalid preferred_model", { status: 400 });
+    }
     update.preferred_model = body.preferred_model;
+  }
+
+  if (body.preferred_effort !== undefined) {
+    // null clears the override (falls back to the model's default effort).
+    if (body.preferred_effort !== null && !isValidEffort(body.preferred_effort)) {
+      return new Response("Invalid preferred_effort", { status: 400 });
+    }
+    update.preferred_effort = body.preferred_effort;
   }
 
   if (body.notification_sensitivity !== undefined) {

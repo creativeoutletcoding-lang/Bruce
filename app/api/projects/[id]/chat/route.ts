@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { resolveModel } from "@/lib/models";
 import {
   assembleMemoryBlock,
   buildMemberCombination,
@@ -68,12 +69,14 @@ export async function POST(request: NextRequest, { params }: Props) {
 
   const { data: userProfile } = await supabase
     .from("users")
-    .select("name, home_location, preferred_model")
+    .select("name, home_location, preferred_model, preferred_effort")
     .eq("id", user.id)
     .single();
-  const userName = (userProfile as { name: string; home_location: string | null; preferred_model: string | null } | null)?.name ?? "Unknown";
-  const homeLocation = (userProfile as { name: string; home_location: string | null; preferred_model: string | null } | null)?.home_location ?? "Arlington, Virginia";
-  const preferredModel = (userProfile as { name: string; home_location: string | null; preferred_model: string | null } | null)?.preferred_model ?? "claude-sonnet-4-6";
+  const profile = userProfile as { name: string; home_location: string | null; preferred_model: string | null; preferred_effort: string | null } | null;
+  const userName = profile?.name ?? "Unknown";
+  const homeLocation = profile?.home_location ?? "Arlington, Virginia";
+  const preferredModel = resolveModel(profile?.preferred_model).id;
+  const preferredEffort = profile?.preferred_effort ?? null;
 
   const adminSupabase = createServiceRoleClient();
   const memberUserIds = (project.project_members as Array<{ user_id: string }>).map((m) => m.user_id);
@@ -341,6 +344,7 @@ export async function POST(request: NextRequest, { params }: Props) {
   const stream = runChatStream({
     anthropic,
     model: preferredModel,
+    effort: preferredEffort,
     maxTokens: 16000,
     systemPrompt,
     initialMessages: anthropicMessages,

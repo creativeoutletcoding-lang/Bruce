@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { validEffortForModel } from "@/lib/models";
 import {
   extractLatestTaskProgress,
   stripTaskProgressTags,
@@ -134,6 +135,9 @@ export interface PersistOptions {
 export interface StreamRunOptions {
   anthropic: Anthropic;
   model: string;
+  /** User's preferred effort (raw). Clamped per-model via validEffortForModel;
+   *  omitted from the request when the model takes no effort param. */
+  effort?: string | null;
   maxTokens?: number;
   /** Plain string or cache-structured blocks from buildSystemPrompt. */
   systemPrompt: string | Anthropic.Messages.TextBlockParam[];
@@ -431,7 +435,11 @@ function withCacheBreakpoint(
 // reset at the start of each turn so we never double-write.
 
 export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array> {
-  const { anthropic, model, maxTokens, systemPrompt, initialMessages, tools, userId, handleImageRequest, persist, searchContext, onComplete } = opts;
+  const { anthropic, model, effort, maxTokens, systemPrompt, initialMessages, tools, userId, handleImageRequest, persist, searchContext, onComplete } = opts;
+  // Resolve effort once per run. Null when the model takes no effort param
+  // (e.g. Haiku) → output_config is omitted entirely. Sending "high" is a no-op
+  // (== omitting), and we never send a level a model doesn't support.
+  const effortLevel = validEffortForModel(model, effort);
 
   // Aborted when the client disconnects (ReadableStream cancel callback below).
   const clientAbort = new AbortController();
@@ -549,6 +557,7 @@ export function runChatStream(opts: StreamRunOptions): ReadableStream<Uint8Array
             system: systemPrompt,
             messages: withCacheBreakpoint(currentMessages),
             tools,
+            ...(effortLevel ? { output_config: { effort: effortLevel } } : {}),
           }, { signal: clientAbort.signal });
 
           // Arm "Thinking…": if nothing has streamed 1.5s into the response, show
