@@ -21,6 +21,7 @@ import { notifyUser } from "@/lib/notifications";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 // ── Bruce engagement logic (server-side gate) ────────────────────────────────
 // Two stages: cheap regex fast-paths for the unambiguous cases, then a Haiku
