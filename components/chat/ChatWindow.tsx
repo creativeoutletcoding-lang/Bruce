@@ -14,7 +14,7 @@ import type { FileAttachment } from "./MessageInput";
 import type { ChatMessage, MessageAttachment, NormalizedMessage } from "@/lib/chat/types";
 import type { MessageRole, MovableProject } from "@/lib/types";
 import { normalizeMessage } from "@/lib/chat/normalizeMessage";
-import { modelLabel } from "@/lib/models";
+import { modelLabel, resolveModel } from "@/lib/models";
 import {
   consumeStream,
   extractImageRequest,
@@ -35,6 +35,7 @@ interface ChatWindowProps {
   initialTitle: string;
   userColorHex?: string;
   initialModel?: string;
+  initialEffort?: string | null;
   currentUserId?: string;
   initialReactions?: ReactionRow[];
   /** True when this is a standalone private chat owned by the viewer — gates "Move to project". */
@@ -62,6 +63,7 @@ export default function ChatWindow({
   initialTitle,
   userColorHex,
   initialModel,
+  initialEffort,
   currentUserId,
   initialReactions,
   canMoveToProject = false,
@@ -79,7 +81,8 @@ export default function ChatWindow({
   const [workingStatus, setWorkingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
-  const [model, setModel] = useState(initialModel ?? "claude-sonnet-4-6");
+  const [model, setModel] = useState(resolveModel(initialModel).id);
+  const [effort, setEffort] = useState<string | null>(initialEffort ?? null);
   const abortRef = useRef<AbortController | null>(null);
   const pendingBlobAttachmentsRef = useRef<MessageAttachment[]>([]);
 
@@ -171,6 +174,15 @@ export default function ChatWindow({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ preferred_model: newModel }),
+    });
+  }
+
+  async function handleEffortChange(newEffort: string) {
+    setEffort(newEffort);
+    await fetch("/api/users/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_effort: newEffort }),
     });
   }
 
@@ -466,7 +478,7 @@ export default function ChatWindow({
         }
         browserActive={browserPanel.open}
         browserOpening={browserOpening}
-        modelPicker={<ModelPicker currentModel={model} onSelect={handleModelChange} />}
+        modelPicker={<ModelPicker currentModel={model} onSelect={handleModelChange} currentEffort={effort} onEffortChange={handleEffortChange} />}
       />
     </div>
   );

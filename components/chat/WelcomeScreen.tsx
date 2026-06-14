@@ -18,6 +18,8 @@ interface WelcomeScreenProps {
   onFileRemove?: (index: number) => void;
   model: string;
   onModelChange: (id: string) => void;
+  effort?: string | null;
+  onEffortChange?: (effort: string) => void;
   // Optional "add to project" entry in the + menu (hidden in incognito / no memberships).
   moveToProject?: MoveToProjectConfig;
   selectedProject?: { id: string; name: string } | null;
@@ -42,6 +44,8 @@ export default function WelcomeScreen({
   onFileRemove,
   model,
   onModelChange,
+  effort,
+  onEffortChange,
   moveToProject,
   selectedProject,
   onClearProject,
@@ -82,7 +86,7 @@ export default function WelcomeScreen({
             onFileRemove={onFileRemove}
             moveToProject={moveToProject}
             modelPicker={
-              <ModelPicker currentModel={model} onSelect={onModelChange} />
+              <ModelPicker currentModel={model} onSelect={onModelChange} currentEffort={effort} onEffortChange={onEffortChange} />
             }
           />
           {selectedProject && onClearProject && (

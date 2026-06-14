@@ -9,6 +9,7 @@ export interface UserProfile {
   color_hex: string;
   email: string;
   preferred_model: string | null;
+  preferred_effort: string | null;
 }
 
 export async function getUserProfile(
@@ -17,7 +18,7 @@ export async function getUserProfile(
 ): Promise<UserProfile | null> {
   const { data } = await supabase
     .from("users")
-    .select("id, name, color_hex, email, preferred_model")
+    .select("id, name, color_hex, email, preferred_model, preferred_effort")
     .eq("id", userId)
     .single();
   return data as UserProfile | null;

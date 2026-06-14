@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { assembleMemoryBlock } from "@/lib/anthropic";
+import { SYSTEM_TASK_MODEL } from "@/lib/models";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import { NextRequest } from "next/server";
 import { readFileSync } from "fs";
@@ -202,7 +203,7 @@ export async function POST(request: NextRequest) {
       let fullResponse = "";
       try {
         const anthropicStream = anthropic.messages.stream({
-          model: "claude-sonnet-4-6",
+          model: SYSTEM_TASK_MODEL,
           max_tokens: 4096,
           system: systemPrompt,
           messages,

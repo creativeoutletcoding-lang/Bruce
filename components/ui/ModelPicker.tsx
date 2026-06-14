@@ -1,26 +1,82 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { MODELS, DEFAULT_MODEL, modelLabel } from "@/lib/models";
+import { useState, useRef, useEffect } from "react";
+import { MODELS, DEFAULT_MODEL, modelLabel, getModel, validEffortForModel } from "@/lib/models";
 
 interface ModelPickerProps {
   currentModel: string;
   onSelect: (modelId: string) => void;
+  /** Current effort preference (raw). When omitted, the effort row is hidden. */
+  currentEffort?: string | null;
+  onEffortChange?: (effort: string) => void;
 }
 
-export default function ModelPicker({ currentModel, onSelect }: ModelPickerProps) {
+const DESKTOP_WIDTH = 280;
+
+export default function ModelPicker({ currentModel, onSelect, currentEffort, onEffortChange }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Desktop (mouse) gets a fixed popover anchored to the trigger; touch gets the
+  // bottom sheet. We branch in JS rather than CSS because the popover must use
+  // position:fixed to escape the composer's overflow:hidden ancestors (an
+  // absolute dropdown was clipped off-screen on desktop — the original bug).
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(pointer: fine)");
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  const selectedModel = getModel(currentModel);
+  const showEffort = !!onEffortChange && !!selectedModel?.supportsEffort;
+  // Effective effort = requested clamped to what this model supports (else default).
+  const activeEffort = validEffortForModel(currentModel, currentEffort);
+
+  function toggleOpen() {
+    setOpen((v) => {
+      const next = !v;
+      if (next && triggerRef.current) setAnchor(triggerRef.current.getBoundingClientRect());
+      return next;
+    });
+  }
 
   function handleSelect(id: string) {
     onSelect(id);
     setOpen(false);
   }
 
+  // Desktop: fixed popover opening UPWARD from the trigger (the pill sits at the
+  // bottom of the composer), right-aligned to it, clamped to the viewport.
+  const desktopSheetStyle: React.CSSProperties | null =
+    isDesktop && anchor
+      ? {
+          position: "fixed",
+          width: DESKTOP_WIDTH,
+          left: Math.max(8, anchor.right - DESKTOP_WIDTH),
+          bottom: Math.max(8, window.innerHeight - anchor.top + 6),
+          maxHeight: anchor.top - 16,
+          overflowY: "auto",
+          zIndex: 999,
+          backgroundColor: "var(--bg-primary)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
+          padding: "12px 16px 16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+        }
+      : null;
+
   return (
-    <div ref={containerRef} style={{ position: "relative" }}>
+    <div style={{ position: "relative" }}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={triggerRef}
+        onClick={toggleOpen}
         style={styles.pill}
         aria-label="Change model"
         type="button"
@@ -37,8 +93,8 @@ export default function ModelPicker({ currentModel, onSelect }: ModelPickerProps
             onClick={() => setOpen(false)}
             style={styles.backdrop}
           />
-          <div style={styles.sheet} className="model-picker-sheet">
-            <div style={styles.sheetHandle} className="model-picker-handle" />
+          <div style={desktopSheetStyle ?? styles.sheet}>
+            {!desktopSheetStyle && <div style={styles.sheetHandle} />}
             <p style={styles.sheetTitle}>Choose model</p>
             {MODELS.map((m) => (
               <button
@@ -51,7 +107,7 @@ export default function ModelPicker({ currentModel, onSelect }: ModelPickerProps
                 type="button"
               >
                 <div style={styles.optionHeader}>
-                  <span style={styles.optionLabel}>{m.label}</span>
+                  <span style={styles.optionLabel}>{m.displayName}</span>
                   {m.id === DEFAULT_MODEL && (
                     <span style={styles.defaultBadge}>Default</span>
                   )}
@@ -64,6 +120,27 @@ export default function ModelPicker({ currentModel, onSelect }: ModelPickerProps
                 <p style={styles.optionDesc}>{m.description}</p>
               </button>
             ))}
+
+            {showEffort && selectedModel && (
+              <div style={styles.effortBlock}>
+                <p style={styles.sheetTitle}>Effort</p>
+                <div style={styles.effortRow}>
+                  {selectedModel.effortLevels.map((level) => (
+                    <button
+                      key={level}
+                      onClick={() => onEffortChange!(level)}
+                      style={{
+                        ...styles.effortChip,
+                        ...(activeEffort === level ? styles.effortChipActive : {}),
+                      }}
+                      type="button"
+                    >
+                      {level}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -161,5 +238,33 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.8125rem",
     color: "var(--text-secondary)",
     lineHeight: "1.4",
+  },
+  effortBlock: {
+    marginTop: "8px",
+    paddingTop: "12px",
+    borderTop: "1px solid var(--border)",
+  },
+  effortRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "6px",
+  },
+  effortChip: {
+    flex: "1 1 auto",
+    padding: "8px 10px",
+    borderRadius: "var(--radius-md)",
+    border: "1px solid var(--border)",
+    background: "transparent",
+    color: "var(--text-secondary)",
+    fontSize: "0.8125rem",
+    fontWeight: "500",
+    textTransform: "capitalize" as const,
+    cursor: "pointer",
+    transition: "background-color var(--transition), border-color var(--transition), color var(--transition)",
+  },
+  effortChipActive: {
+    backgroundColor: "var(--bg-secondary)",
+    borderColor: "var(--accent)",
+    color: "var(--text-primary)",
   },
 };

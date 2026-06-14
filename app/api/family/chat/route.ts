@@ -6,6 +6,7 @@ import {
   buildMemberCombination,
   HAIKU_MODEL,
 } from "@/lib/anthropic";
+import { SYSTEM_TASK_MODEL } from "@/lib/models";
 import { formatAssistantReplay } from "@/lib/chat/toolTrace";
 import { executeReactionTool } from "@/lib/chat/reactionTools";
 import { parsePastedAttachments } from "@/lib/chat/pastedText";
@@ -332,7 +333,7 @@ export async function POST(request: NextRequest) {
 
   const stream = runChatStream({
     anthropic,
-    model: "claude-sonnet-4-6",
+    model: SYSTEM_TASK_MODEL,
     maxTokens: 16000,
     systemPrompt,
     initialMessages: anthropicMessages,

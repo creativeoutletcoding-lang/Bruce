@@ -41,9 +41,12 @@ export default function NewChatOrchestrator({
   // (reading localStorage during useState init causes React hydration error #418
   // because the server always sees typeof window === "undefined").
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
+  const [effort, setEffort] = useState<string | null>(null);
   useEffect(() => {
     const stored = localStorage.getItem("bruce:model");
     if (stored) setModel(stored);
+    const storedEffort = localStorage.getItem("bruce:effort");
+    if (storedEffort) setEffort(storedEffort);
   }, []);
 
   // Optional "add to project" via the + menu (welcome screen only).
@@ -72,6 +75,16 @@ export default function NewChatOrchestrator({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ preferred_model: id }),
+    }).catch(() => {});
+  }
+
+  async function handleEffortChange(level: string) {
+    setEffort(level);
+    if (typeof window !== "undefined") localStorage.setItem("bruce:effort", level);
+    await fetch("/api/users/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_effort: level }),
     }).catch(() => {});
   }
 
@@ -247,6 +260,8 @@ export default function NewChatOrchestrator({
           onFileRemove={(i) => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
           model={model}
           onModelChange={handleModelChange}
+          effort={effort}
+          onEffortChange={handleEffortChange}
           moveToProject={
             !incognito && movableProjects.length > 0
               ? { projects: movableProjects, onSelect: handleAssignProject, label: "Add to project" }

@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { SYSTEM_TASK_MODEL } from "@/lib/models";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest, { params }: Props) {
   let newInstructions: string;
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+      model: SYSTEM_TASK_MODEL,
       max_tokens: 1024,
       messages: [
         {
