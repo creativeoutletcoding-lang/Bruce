@@ -256,13 +256,15 @@ export default function MessageInput({
   // native camera/photo pickers). Every File — however it was acquired — runs
   // through the identical HEIC/size guards and `processFile` (resize + base64)
   // before `onFilesAttach`. Branch only on how bytes arrive, never on this.
-  async function ingestFiles(files: File[]) {
+  async function ingestFiles(files: File[], source: "web" | "native" = "web") {
     if (!files.length || !onFilesAttach) return;
 
     const errors: string[] = [];
     const validFiles: File[] = [];
 
     for (const file of files) {
+      // [attach-debug] TEMPORARY — remove once Jake confirms on-device.
+      console.log("[attach-debug] ingestFiles", { source, name: file.name, type: file.type, size: file.size });
       const ext = file.name.split(".").pop()?.toLowerCase();
       const isHeic = file.type === "image/heic" || file.type === "image/heif" || ext === "heic" || ext === "heif";
       if (isHeic) {
@@ -293,10 +295,10 @@ export default function MessageInput({
   // Native (iOS shell) acquisition — gated by isNative() at the call site. Both
   // converge on ingestFiles, so guards/resize run identically to the web path.
   async function handleNativeTakePhoto() {
-    await ingestFiles(await takePhotoNative());
+    await ingestFiles(await takePhotoNative(), "native");
   }
   async function handleNativePickPhotos() {
-    await ingestFiles(await pickPhotosNative());
+    await ingestFiles(await pickPhotosNative(), "native");
   }
 
   return (

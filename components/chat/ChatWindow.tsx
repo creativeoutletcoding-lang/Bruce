@@ -236,6 +236,8 @@ export default function ChatWindow({
       const uploadedAttachments = filesToSend.length > 0
         ? await Promise.all(
             filesToSend.map(async (f) => {
+              // [attach-debug] TEMPORARY — remove once Jake confirms on-device.
+              console.log("[attach-debug] before upload", { filename: f.filename, mediaType: f.mediaType, type: f.type, fileSize: f.fileSize, base64Len: f.base64.length });
               try {
                 const upRes = await fetch("/api/files/upload", {
                   method: "POST",
@@ -244,9 +246,16 @@ export default function ChatWindow({
                 });
                 if (upRes.ok) {
                   const data = await upRes.json() as { file_id: string | null; url: string };
+                  // [attach-debug] TEMPORARY — remove once Jake confirms on-device.
+                  console.log("[attach-debug] upload ok", { filename: f.filename, file_id: data.file_id, url: data.url });
                   return { file_id: data.file_id, url: data.url, type: f.type, filename: f.filename };
                 }
-              } catch { /* silent */ }
+                // [attach-debug] TEMPORARY — remove once Jake confirms on-device.
+                console.log("[attach-debug] upload failed", { filename: f.filename, status: upRes.status, body: await upRes.text().catch(() => "") });
+              } catch (err) {
+                // [attach-debug] TEMPORARY — remove once Jake confirms on-device.
+                console.log("[attach-debug] upload threw", { filename: f.filename, err });
+              }
               return { file_id: null, url: "", type: f.type, filename: f.filename };
             })
           )

@@ -6,6 +6,22 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### iOS photo attach — normalize HEIC to JPEG at the native acquisition layer — 2026-06-14
+
+**Symptom.** Attaching a photo worked on desktop web but silently failed in the iOS Capacitor shell — the file never reached the chat.
+
+**Root cause.** iPhones shoot HEIC/HEIF by default. The Photos tile in the iOS shell uses `@capacitor/camera` `Camera.pickImages` (`lib/native/camera.ts` → `pickPhotosNative`), which returns the *original* gallery asset; fetching its `webPath` yields a blob with `type: "image/heic"`. The shared convergence function `ingestFiles` (`MessageInput.tsx`) hard-rejects `image/heic`/`image/heif` (and Anthropic vision can't read HEIC anyway), so the picked photo was dropped before upload. The "one path" design was already correct — both web `<input>` and native pickers converge on `ingestFiles` — the only problem was the *format* of the bytes the native layer produced.
+
+**Fix (JS/web-only — ships via `git push`).** Added `toJpegFile()` in `lib/native/camera.ts`: any HEIC/HEIF File acquired by `takePhotoNative`/`pickPhotosNative` is re-encoded to JPEG via an offscreen `<img>` + canvas (`toBlob("image/jpeg", 0.92)`) before leaving the module. WKWebView decodes HEIC in `<img>` natively, so no new dependency (no `heic2any`). Non-HEIC images pass through untouched; on decode failure the original File is returned so `ingestFiles`' guard can still surface a clean error. The desktop path (`<input>` → `handleFileChange` → `ingestFiles`) and the `ingestFiles` HEIC guard itself are byte-for-byte unchanged — iOS converges onto the existing path with valid JPEG bytes rather than the path being loosened.
+
+**Rejected alternatives.** (1) Relaxing the `ingestFiles` HEIC guard — would let HEIC through to Anthropic, which can't read it, and would change desktop behavior. (2) Adding `heic2any` — unnecessary; WKWebView already decodes HEIC, and a new dep would bloat the bundle for one platform. (3) A native Swift conversion plugin — would force an Xcode rebuild for a problem solvable in JS.
+
+**Info.plist.** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription` were all already present — no native change required.
+
+**Instrumentation (temporary).** `[attach-debug]`-tagged `console.log`s were added at selection (`camera.ts`), before processing (`ingestFiles`, with web/native source), and around the `/api/files/upload` call (`ChatWindow.handleSend` — response/error logged in full). These are explicitly temporary, to be removed once Jake confirms the fix on-device; grep `[attach-debug]` to find them all.
+
+---
+
 ### Remove phantom static "family group" chat scaffolding from the sidebar — 2026-06-14
 
 **Context.** The old static/pinned singular "family group" chat (`chats.type='family_group'` — "the one permanent household group chat readable by all users") was removed previously; no such row exists. "Family" is now only a **title** carried by live group chats (`type='family_thread'`). The prior global-context-menu build had added a `family_group` kind + a Delete-only carve-out + a 🏠 "Family Chat" sidebar row built around that phantom.
