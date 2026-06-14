@@ -81,7 +81,6 @@ export default async function ProjectChatPage({ params, searchParams }: Props) {
       chatId={chatId}
       projectId={projectId}
       projectName={project.name as string}
-      projectIcon={project.icon as string}
       initialMessages={normalizedMessages}
       initialInput={initialInput}
       userColorHex={userColorHex}
