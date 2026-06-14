@@ -1,5 +1,7 @@
 # Bruce Database Schema — Live Reference
-_Reflects schema.sql + migrations 001–034_
+_Reflects schema.sql + migrations 001–036_
+
+> **Multi-member engagement is stateless.** Bruce's group respond/silent decision (`lib/chat/engagement.ts`, `OPEN_QUESTION_WINDOW = 3`) is computed **ephemerally from the existing `messages` history** at decision time — there is intentionally **no** `awaiting_reply` / `pending_turn` / `last_speaker` column or table. Do not add one; the open-question window is derived, not stored.
 
 ---
 

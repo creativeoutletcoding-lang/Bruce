@@ -6,6 +6,25 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Shared speaker-aware engagement decision + open-question window (family route) — 2026-06-14
+
+**Goal.** Make Bruce's "is this message addressed to me?" judgment in multi-member rooms speaker-aware and context-aware, and move it into one canonical module so the group-project route can adopt the *same* mechanism later (convergence-spec fork #2 / D3). This step is **family route only**; Projects are a separate later prompt.
+
+**Canonical module.** `lib/chat/engagement.ts` (`decideEngagement`) is now the single multi-member awareness mechanism. The old in-route `classifyEngagement` + `isDirectlyAddressed` + `bruceAskedQuestion` + `GATE_PROMPT` were deleted from `app/api/family/chat/route.ts` and replaced by a call into the module. The **outcome set is unchanged** (respond / react_thumbs / react_heart / silent), as are the `X-Bruce-Responded: false` short-circuit and the `executeReactionTool` react-insertion. This was an **inputs/quality upgrade, not an outcome redesign.**
+
+**Three properties the old gate lacked:**
+1. **Speaker-aware history.** The prior gate flattened every human to `"Member:"` in the classifier transcript and couldn't tell who spoke. Now the classifier sees real per-message display names (`"Laurianne:"` / `"Jake:"` / `"Bruce:"`) via a `nameForSender` resolver the family route builds from the recent window's `sender_id`s. The decision can tell who said what, including which turns were Bruce's own.
+2. **Open-question window — `OPEN_QUESTION_WINDOW = 3`.** A single named, documented constant (top of `engagement.ts`), trivially tunable. Meaning: within 3 **member** messages of one of Bruce's questions/proposals, the "is this answering Bruce?" path is live. The **hard count bounds** the window; **within** it the *semantic* judgment (a real reply / nameless confirmation like "yeah", "sure", "go ahead", "do it" vs unrelated member-to-member chatter) is delegated to the Haiku classifier, which is handed Bruce's pending question explicitly. Computed **ephemerally from history** (`findPendingOpenQuestion` scans back to Bruce's most recent turn, counting member messages) — deliberately **no DB table, no stored `awaiting_reply`/`pending_turn` state**. This fixes the audit's likeliest false-negative: a member answering a question Bruce just asked with no "Bruce" in the text. The old `bruceAskedQuestion` was a 0-window "?"-substring check on only the immediately-preceding turn and auto-responded; the new path widens the window to 3 and replaces the auto-respond with a semantic classifier judgment so unrelated post-question chatter no longer falsely triggers.
+3. **Address vs mention.** A bare `/\bbruce\b/` match no longer forces a response. Only a clear vocative/@mention (`isStronglyAddressed` — "Bruce, …", "hey bruce", "@bruce", trailing "…, bruce?") short-circuits to respond. Other name-present messages route to the classifier **with a speaker-aware mention note**, so a third-person mention between two members ("did Bruce add it?") is judged as talk *about* Bruce → SILENT instead of auto-interjecting.
+
+**Purity / reuse.** The module takes the Anthropic client and `model` as inputs (no `HAIKU_MODEL` import) and exposes pure helpers (`isStronglyAddressed`, `mentionsBruce`, `isQuestionOrProposal`, `findPendingOpenQuestion`, `buildTranscript`) so the Project route can call `decideEngagement` unchanged later and the helpers are unit-testable. New tests: `lib/chat/__tests__/engagement.test.ts` (address-vs-mention, the window boundary at exactly 3, proposal-without-"?", tool-trace stripping, speaker labels). `npx tsc --noEmit` clean; `npm test` 54/54 green.
+
+**No schema change.** Open-question detection is stateless — derived from the existing `messages` history at decision time. No migration.
+
+**Not touched (scope guards):** `app/api/projects/[id]/chat/route.ts`, the standalone route, render components, and the DB. Project adoption of `decideEngagement` (resolving convergence-spec fork #2) is the next step (1b).
+
+---
+
 ### Desktop "+" attach menu — anchored popover (touch keeps the bottom sheet) — 2026-06-14
 
 **Goal.** Give the composer's `+` ("Add to chat") menu a clean anchored-popover look on desktop (vertical icon+label rows, group dividers, trailing affordances) while leaving touch on its iOS-style bottom sheet. Visual restyle of existing items only — no items added/removed/rewired.
