@@ -9,6 +9,7 @@ import { useChatContext } from "@/components/layout/ChatShell";
 import TopBar from "./TopBar";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
+import ModelPicker from "@/components/ui/ModelPicker";
 import type { FileAttachment } from "./MessageInput";
 import type { ChatMessage, MessageAttachment, NormalizedMessage } from "@/lib/chat/types";
 import type { MessageRole, MovableProject } from "@/lib/types";
@@ -425,7 +426,7 @@ export default function ChatWindow({
         ...(incognito ? styles.incognitoFilter : {}),
       }}
     >
-      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} model={model} onModelChange={handleModelChange} projectName={projectContext?.name} />
+      <TopBar title={title || "New Chat"} hasMessages={messages.length > 0} projectName={projectContext?.name} />
 
       {incognito && (
         <div style={styles.incognitoNotice}>
@@ -465,6 +466,7 @@ export default function ChatWindow({
         }
         browserActive={browserPanel.open}
         browserOpening={browserOpening}
+        modelPicker={<ModelPicker currentModel={model} onSelect={handleModelChange} />}
       />
     </div>
   );

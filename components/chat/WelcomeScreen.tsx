@@ -71,37 +71,34 @@ export default function WelcomeScreen({
           resizes) it is already at the bottom edge and rides up with the
           keyboard, rather than re-centering. Matches the Claude iOS app. */}
       <div style={styles.inputArea}>
-        <div style={styles.content}>
-          <div style={styles.inputWrapper} className="welcome-input-wrapper">
-            <MessageInput
-              value={inputValue}
-              onChange={onInputChange}
-              onSend={onSend}
-              disabled={disabled}
-              attachedFiles={attachedFiles}
-              onFilesAttach={onFilesAttach}
-              onFileRemove={onFileRemove}
-              containerStyle={styles.inputContainer}
-              moveToProject={moveToProject}
-              modelPicker={
-                <ModelPicker currentModel={model} onSelect={onModelChange} />
-              }
-            />
-            {selectedProject && onClearProject && (
-              <div style={styles.projectPill}>
-                <FolderIcon />
-                <span style={styles.projectPillName}>{selectedProject.name}</span>
-                <button
-                  type="button"
-                  onClick={onClearProject}
-                  style={styles.projectPillClear}
-                  aria-label="Remove from project"
-                >
-                  ×
-                </button>
-              </div>
-            )}
-          </div>
+        <div style={styles.inputWrapper}>
+          <MessageInput
+            value={inputValue}
+            onChange={onInputChange}
+            onSend={onSend}
+            disabled={disabled}
+            attachedFiles={attachedFiles}
+            onFilesAttach={onFilesAttach}
+            onFileRemove={onFileRemove}
+            moveToProject={moveToProject}
+            modelPicker={
+              <ModelPicker currentModel={model} onSelect={onModelChange} />
+            }
+          />
+          {selectedProject && onClearProject && (
+            <div style={styles.projectPill}>
+              <FolderIcon />
+              <span style={styles.projectPillName}>{selectedProject.name}</span>
+              <button
+                type="button"
+                onClick={onClearProject}
+                style={styles.projectPillClear}
+                aria-label="Remove from project"
+              >
+                ×
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -146,20 +143,11 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "24px 16px 16px",
     overflowY: "auto",
   },
-  // Bottom-anchored composer region. No bottom padding on mobile beyond the
-  // composer's own (.msg-input-container → env(safe-area-inset-bottom)), so it
-  // sits snug above the keyboard / home indicator.
+  // Bottom-anchored composer region. The composer (shared MessageInput) owns its
+  // own padding (incl. env(safe-area-inset-bottom)), so it sits snug above the
+  // keyboard / home indicator — identical to the in-conversation composer.
   inputArea: {
     flexShrink: 0,
-    padding: "0 16px 12px",
-  },
-  content: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    width: "100%",
-    maxWidth: "640px",
-    margin: "0 auto",
   },
   greeting: {
     fontSize: "1.875rem",
@@ -171,11 +159,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   inputWrapper: {
     width: "100%",
-  },
-  inputContainer: {
-    borderTop: "none",
-    padding: "0",
-    backgroundColor: "transparent",
+    maxWidth: "780px",
+    margin: "0 auto",
   },
   projectPill: {
     display: "inline-flex",

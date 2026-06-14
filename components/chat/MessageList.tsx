@@ -161,6 +161,23 @@ export default function MessageList({ messages, onRefresh, userColorHex, streami
     return () => vv.removeEventListener("resize", onViewportResize);
   }, []);
 
+  // Native shell (KeyboardResize.None): keyboard.ts shrinks the shell on
+  // keyboardWillShow and dispatches this event. Pin to the latest message so it
+  // sits just above the composer — but only when the user is already near the
+  // bottom (don't yank someone reading history). Scroll once now and again after
+  // the ~250ms height transition settles to the smaller list.
+  useEffect(() => {
+    function onKeyboardShow() {
+      if (userScrolledUp.current) return;
+      requestAnimationFrame(() => scrollToBottom("instant"));
+      window.setTimeout(() => {
+        if (!userScrolledUp.current) scrollToBottom("instant");
+      }, 300);
+    }
+    window.addEventListener("bruce:keyboardshow", onKeyboardShow);
+    return () => window.removeEventListener("bruce:keyboardshow", onKeyboardShow);
+  }, []);
+
   return (
     <div style={styles.wrapper}>
       <PullProgressBar pullProgress={Math.min(pullDistance / 56, 1)} refreshing={isRefreshing} />

@@ -329,35 +329,6 @@ span[class*="typingDots"] > span:nth-child(3),
   }
 }
 
-/* ============================================================
-   MOBILE INPUT BAR — flat, edge-to-edge, no pill
-   ============================================================ */
-
-@media (max-width: 768px) {
-  .msg-input-container {
-    /* Shell shrinks to visual viewport (useVisualViewportLock) — only the
-       home indicator inset is needed, and only while the keyboard is closed. */
-    padding: 0 0 var(--kb-safe-bottom, env(safe-area-inset-bottom, 0px)) 0 !important;
-    border-top: 1px solid var(--border) !important;
-    border-radius: 0 !important;
-  }
-
-  .msg-input-row {
-    border-radius: 0 !important;
-    border: none !important;
-    background-color: var(--bg-primary) !important;
-    max-width: none !important;
-    margin: 0 !important;
-    padding: 10px 14px !important;
-  }
-
-  .msg-input-picker-row {
-    justify-content: center;
-    padding-left: 0 !important;
-    padding-bottom: 8px;
-  }
-}
-
 /* Native shell only: drive the keyboard transition ourselves from
    keyboardWillShow (lib/native/keyboard.ts) so the input leads the keyboard
    instead of waiting for a frame resize. The .kb-animating class is toggled
@@ -372,34 +343,6 @@ span[class*="typingDots"] > span:nth-child(3),
 }
 [data-app-shell].kb-animating .msg-input-container {
   transition: padding-bottom 250ms cubic-bezier(0.38, 0.7, 0.125, 1);
-}
-
-/* ============================================================
-   WELCOME SCREEN — input card reset
-   ============================================================ */
-
-/* Welcome input: centered card layout + vertically-centered row items.
-   The welcome screen is always single-line so align-items:center is correct;
-   regular chats keep the default flex-end so buttons sit at the bottom
-   when the textarea grows multi-line. */
-.welcome-input-wrapper .msg-input-row {
-  align-items: center !important;
-}
-
-@media (max-width: 768px) {
-  .welcome-input-wrapper .msg-input-container {
-    padding: 0 !important;
-    border-top: none !important;
-    border-radius: 0 !important;
-  }
-  .welcome-input-wrapper .msg-input-row {
-    border-radius: var(--radius-lg) !important;
-    border: 1px solid var(--border-strong) !important;
-    background-color: var(--bg-secondary) !important;
-    max-width: 780px !important;
-    margin: 0 auto !important;
-    padding: 10px 10px 10px 14px !important;
-  }
 }
 
 /* ============================================================

@@ -71,6 +71,10 @@ export async function setupKeyboard(): Promise<void> {
       flagAnimating();
       const h = Math.max(0, window.innerHeight - info.keyboardHeight);
       setVars(`${h}px`, "0px");
+      // Under None mode the visualViewport resize doesn't fire reliably, so the
+      // message list can't tell the keyboard covered the latest message. Tell it
+      // to pin to the bottom (MessageList honours it only when already at bottom).
+      window.dispatchEvent(new Event("bruce:keyboardshow"));
     });
 
     Keyboard.addListener("keyboardWillHide", () => {
