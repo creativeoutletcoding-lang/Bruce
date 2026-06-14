@@ -7,6 +7,7 @@ import { useVisualViewportLock } from "@/hooks/useVisualViewportLock";
 import { isNative } from "@/lib/native";
 import { setupKeyboard } from "@/lib/native/keyboard";
 import { setupStatusBar } from "@/lib/native/statusbar";
+import NativeKeyboardDebug from "@/components/native/NativeKeyboardDebug";
 import type { User } from "@/lib/types";
 import Sidebar from "./Sidebar";
 
@@ -179,6 +180,8 @@ export default function ChatShell({ user, children }: ChatShellProps) {
 
   return (
     <ChatContext.Provider value={{ openDrawer, incognito, setIncognito, refreshChats, registerRefresh }}>
+      {/* TEMP DIAGNOSTIC (feat/native-keyboard-display): remove after keyboard diagnosis. */}
+      <NativeKeyboardDebug />
       {isMounted && toast && (
         <div role="alert" onClick={handleToastClick} style={styles.toast} className="bruce-toast">
           <div style={styles.toastContent}>
@@ -194,7 +197,7 @@ export default function ChatShell({ user, children }: ChatShellProps) {
           </button>
         </div>
       )}
-      <div style={styles.shell}>
+      <div data-app-shell style={styles.shell}>
         {/* Desktop sidebar */}
         <div data-sidebar-desktop style={styles.sidebarDesktop}>
           <Sidebar user={user} onNavigate={closeDrawer} />
