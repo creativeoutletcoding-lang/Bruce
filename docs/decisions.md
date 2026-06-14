@@ -6,6 +6,26 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Group PROJECT chats adopt the shared engagement gate (convergence-spec fork #2 resolved) — 2026-06-14
+
+**Goal.** Wire group (multi-member) project chats into the canonical `decideEngagement` module (`lib/chat/engagement.ts`) built for the family route, and give `ProjectChatView` the `X-Bruce-Responded: false` client contract it lacked. This is the "1b" follow-up the family-route decision flagged as next.
+
+**Intentional behavior change.** Group projects were **always-respond** — `runChatStream` ran unconditionally on every message (the audit's "project no-gate" finding). They now route through the same speaker-aware gate as family: Bruce **stays silent during member-to-member chatter** and only responds when addressed (or when answering his own open question within `OPEN_QUESTION_WINDOW`). The outcome set is identical to family (respond / react_thumbs / react_heart / silent); react inserts a Bruce reaction via `executeReactionTool` and short-circuits with `X-Bruce-Responded:false`, silent short-circuits with no stream body and no persisted assistant row.
+
+**Single-member projects are UNCHANGED — always respond, no gate.** The discriminator is `shouldEngagementGate(memberCount)` (`memberCount > 1`), a named, unit-tested predicate the route calls so the single-vs-group boundary can't silently drift. Standalone and NewChat routes are untouched.
+
+**One labeler, not two.** The family route built its speaker-labeled history and `nameForSender` map **inline**. Rather than copy that into the project route, both were factored into `lib/chat/engagementContext.ts` (`buildEngagementHistory`, `buildNameForSender`, `shouldEngagementGate`) and the family route was refactored to call them too — so there is exactly **one** history-labeling/name-resolution implementation. (Verified: no remaining `speakerIds`/`nameMap[` inline labelers in `app/api/`.) Behavior is byte-for-byte equivalent for family (the current user's name resolves identically whether supplied directly or via the old DB-row override).
+
+**Ordering / efficiency.** In the project route the engagement decision is kicked off right after history is built (overlapping the message insert + notifications), then awaited at a gate placed **before** the expensive respond-path work (Drive file-content load, memory assembly, system-prompt build). The member's message is always persisted and thread-participant notifications always fire; only Bruce's reply is gated. This means a silent group message no longer triggers Drive I/O — the expensive work moved below the gate.
+
+**Client.** `ProjectChatView` now mirrors `FamilyChatWindow`: on `X-Bruce-Responded !== "true"` it removes the optimistic `tmp-stream-` placeholder and returns; the `finally` block's `loadMessages()` is authoritative (picks up any Bruce reaction). No conflict with the realtime `tmp-stream-` strip — that fires only when a Bruce DB row arrives, which never happens on a silent decision. The respond path now always sets `X-Bruce-Responded:true`.
+
+**No schema change.** The gate is stateless — derived from the existing `messages` history at decision time, same as family. No migration.
+
+**Tests.** `lib/chat/__tests__/engagementContext.test.ts` (single-vs-group discriminator, history labeling, attachment placeholders, name resolution incl. current-user-excluded lookup) and `lib/chat/__tests__/engagementDecision.test.ts` (direct address → respond without classifier call; member chatter → silent; nameless answer within window → respond with pending question surfaced; classifier failure → silent; react mapping). `npx tsc --noEmit` clean; `npm test` 67/67 green.
+
+---
+
 ### Shared speaker-aware engagement decision + open-question window (family route) — 2026-06-14
 
 **Goal.** Make Bruce's "is this message addressed to me?" judgment in multi-member rooms speaker-aware and context-aware, and move it into one canonical module so the group-project route can adopt the *same* mechanism later (convergence-spec fork #2 / D3). This step is **family route only**; Projects are a separate later prompt.

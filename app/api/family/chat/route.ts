@@ -7,11 +7,11 @@ import {
   HAIKU_MODEL,
 } from "@/lib/anthropic";
 import { SYSTEM_TASK_MODEL } from "@/lib/models";
-import { formatAssistantReplay } from "@/lib/chat/toolTrace";
 import { executeReactionTool } from "@/lib/chat/reactionTools";
 import { parsePastedAttachments } from "@/lib/chat/pastedText";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
 import { decideEngagement } from "@/lib/chat/engagement";
+import { buildEngagementHistory, buildNameForSender } from "@/lib/chat/engagementContext";
 import { getBrowserContextBlock } from "@/lib/browser/browserbase";
 import {
   runChatStream,
@@ -79,47 +79,22 @@ export async function POST(request: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(40);
 
-  const history = ((msgs ?? []).reverse() as Array<{
-    role: string;
-    content: string;
-    sender_id: string | null;
-    metadata: Record<string, unknown> | null;
-  }>).map((m) => {
-    const text = m.content ?? "";
-    if (m.role === "assistant") {
-      // Replay the turn's tool trace so follow-ups keep the grounding.
-      return { role: m.role, content: formatAssistantReplay(text, m.metadata), sender_id: m.sender_id };
-    }
-    const metaAttachments = m.metadata?.attachments as Array<{ type: string; filename?: string }> | undefined;
-    if (metaAttachments && metaAttachments.length > 0 && !text.trim()) {
-      const desc = metaAttachments
-        .map((a) => a.type === "document" ? `[document: ${a.filename ?? "file"}]` : "[image]")
-        .join(", ");
-      return { role: m.role, content: desc, sender_id: m.sender_id };
-    }
-    return { role: m.role, content: text, sender_id: m.sender_id };
-  }).filter((m) => m.content.trim().length > 0);
+  // Speaker-labeled history for the engagement decision and the model replay.
+  const history = buildEngagementHistory(
+    (msgs ?? []).reverse() as Array<{
+      role: string;
+      content: string | null;
+      sender_id: string | null;
+      metadata: Record<string, unknown> | null;
+    }>
+  );
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   // Resolve display names for every speaker in the recent window so the
   // engagement decision sees real "Laurianne:"/"Bruce:" labels, never a
   // flattened "Member" — the speaker-aware history the decision keys on.
-  const speakerIds = Array.from(
-    new Set(history.map((m) => m.sender_id).filter((id): id is string => !!id))
-  );
-  const nameMap: Record<string, string> = { [user.id]: senderName };
-  if (speakerIds.length > 0) {
-    const { data: speakerRows } = await adminSupabase
-      .from("users")
-      .select("id, name")
-      .in("id", speakerIds);
-    for (const r of (speakerRows ?? []) as Array<{ id: string; name: string }>) {
-      nameMap[r.id] = r.name;
-    }
-  }
-  const nameForSender = (id: string | null): string =>
-    id === null ? "Bruce" : nameMap[id] ?? "Member";
+  const nameForSender = await buildNameForSender(adminSupabase, history, user.id, senderName);
 
   // Kick off the engagement decision now; it runs in parallel with the
   // attachment upload + message insert below and is awaited where it's used.

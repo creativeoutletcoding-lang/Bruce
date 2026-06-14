@@ -7,10 +7,14 @@ import {
   buildMemberCombination,
   generateChatTitle,
   generateSmartTitle,
+  HAIKU_MODEL,
 } from "@/lib/anthropic";
 import { formatAssistantReplay } from "@/lib/chat/toolTrace";
 import { parsePastedAttachments } from "@/lib/chat/pastedText";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
+import { decideEngagement } from "@/lib/chat/engagement";
+import { buildEngagementHistory, buildNameForSender, shouldEngagementGate } from "@/lib/chat/engagementContext";
+import { executeReactionTool } from "@/lib/chat/reactionTools";
 import { getBrowserContextBlock } from "@/lib/browser/browserbase";
 import {
   runChatStream,
@@ -89,50 +93,44 @@ export async function POST(request: NextRequest, { params }: Props) {
     .in("id", memberUserIds);
   const memberNames = (memberProfiles ?? []).map((p) => p.name as string);
 
+  // Group projects (>1 member) route through the shared engagement gate; single-
+  // member projects keep the always-respond contract.
+  const isGroup = shouldEngagementGate(memberNames.length);
+
   type FileRow = { id: string; name: string; google_drive_file_id: string; mime_type: string | null };
   const attachedFiles = (project.files as FileRow[]) ?? [];
   const fileNames = attachedFiles.map((f) => f.name);
 
-  const FILE_CHAR_CAP = 25000;
-  let fileContentBlock = "";
-  let totalFileChars = 0;
-  let skippedCount = 0;
+  const { displayMessage, pastedAttachments } = parsePastedAttachments(message);
 
-  for (const file of attachedFiles) {
-    if (totalFileChars >= FILE_CHAR_CAP) { skippedCount++; continue; }
-    try {
-      const content = await getFileContent(user.id, file.google_drive_file_id);
-      if (content) {
-        const remaining = FILE_CHAR_CAP - totalFileChars;
-        const snippet = content.length > remaining ? content.substring(0, remaining) + "... [truncated]" : content;
-        fileContentBlock += `File: ${file.name}\n${snippet}\n---\n`;
-        totalFileChars += snippet.length;
-      }
-    } catch { /* Drive unavailable — skip */ }
-  }
-
-  if (skippedCount > 0) {
-    fileContentBlock += `[${skippedCount} additional file${skippedCount > 1 ? "s" : ""} attached but not loaded — ask to reference them]`;
-  }
-
-  const { block: memoryBlock } = await assembleMemoryBlock(supabase, user.id, {
-    memberCombination,
-    projectId,
-    isolateMemory,
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    defaultHeaders: { "anthropic-beta": "files-api-2025-04-14" },
   });
 
-  type HistoryEntry = { role: string; content: string | Anthropic.Messages.ContentBlockParam[] };
-  let history: HistoryEntry[] = [];
+  // ── History (one query, reused for the engagement decision and the replay) ──
+  type RawRow = {
+    role: string;
+    content: string | null;
+    sender_id: string | null;
+    metadata: Record<string, unknown> | null;
+    file_ids: (string | null)[] | null;
+  };
+  let rawRows: RawRow[] = [];
   if (chatId) {
     // Window the replay: last 40 messages (see /api/chat — same rationale).
     const { data: msgsDesc } = await supabase
       .from("messages")
-      .select("role, content, metadata, file_ids")
+      .select("role, content, sender_id, metadata, file_ids")
       .eq("chat_id", chatId)
       .order("created_at", { ascending: false })
       .limit(40);
-    const msgs = (msgsDesc ?? []).reverse();
-    history = msgs.map((m) => {
+    rawRows = ((msgsDesc ?? []).reverse()) as RawRow[];
+  }
+
+  type HistoryEntry = { role: string; content: string | Anthropic.Messages.ContentBlockParam[] };
+  const history: HistoryEntry[] = rawRows
+    .map((m) => {
       const meta = m.metadata as Record<string, unknown> | null;
       if (meta?.content_type === "image") {
         return { role: m.role as string, content: "[image generated]" };
@@ -166,35 +164,31 @@ export async function POST(request: NextRequest, { params }: Props) {
         return { role: m.role as string, content: desc };
       }
       return { role: m.role as string, content: text };
-    }).filter((m) => {
+    })
+    .filter((m) => {
       const c = m.content;
       return typeof c === "string" ? c.trim().length > 0 : Array.isArray(c) && c.length > 0;
     });
+
+  // ── Engagement decision (group projects only) ───────────────────────────────
+  // Kicked off now so it overlaps the message insert + notifications below; the
+  // outcome is awaited at the gate before any expensive respond-path work. Uses
+  // the SAME shared speaker-labeled history + nameForSender as the family route.
+  let engagementPromise: ReturnType<typeof decideEngagement> | null = null;
+  if (isGroup) {
+    const engHistory = buildEngagementHistory(rawRows);
+    const nameForSender = await buildNameForSender(adminSupabase, engHistory, user.id, userName);
+    engagementPromise = decideEngagement({
+      anthropic,
+      model: HAIKU_MODEL,
+      message: displayMessage,
+      senderName: userName,
+      history: engHistory,
+      nameForSender,
+    });
   }
 
-  const locationContext = currentLocation
-    ? `${userName}'s current location right now is ${currentLocation}.`
-    : `${userName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;
-
-  const browserContext = await getBrowserContextBlock(chatId);
-
-  const systemPrompt = buildSystemPrompt({
-    mode: "project",
-    userName,
-    userTimestamp,
-    memoryBlock,
-    locationContext,
-    browserContext,
-    includeImageGen: true,
-    project: {
-      name: project.name as string,
-      instructions: project.instructions as string,
-      memberNames,
-      fileNames,
-      fileContentBlock: fileContentBlock || undefined,
-    },
-  });
-
+  // ── Chat row (create if first message) ──────────────────────────────────────
   let currentChatId = chatId;
   const isFirstMessage = history.length === 0;
 
@@ -216,8 +210,6 @@ export async function POST(request: NextRequest, { params }: Props) {
     }
     currentChatId = newChat.id;
   }
-
-  const { displayMessage, pastedAttachments } = parsePastedAttachments(message);
 
   let chatTitle: string | undefined;
   if (isFirstMessage) {
@@ -301,6 +293,89 @@ export async function POST(request: NextRequest, { params }: Props) {
     );
   }
 
+  // ── Engagement gate (group projects) ────────────────────────────────────────
+  // The member's message + notifications above always happen. Whether BRUCE
+  // engages is decided here, mirroring /api/family/chat exactly: react → insert a
+  // Bruce reaction and short-circuit; silent → short-circuit. Both return
+  // X-Bruce-Responded:false with no stream body and no persisted assistant row.
+  // Single-member projects skip the gate entirely (always respond).
+  if (isGroup && engagementPromise) {
+    const silentHeaders: Record<string, string> = {
+      "X-Bruce-Responded": "false",
+      "X-Chat-Id": currentChatId!,
+    };
+    if (chatTitle) silentHeaders["X-Chat-Title"] = encodeURIComponent(chatTitle);
+
+    const engagement = await engagementPromise;
+
+    if (engagement === "react_thumbs" || engagement === "react_heart") {
+      if (latestUserMessageId) {
+        await executeReactionTool(
+          latestUserMessageId,
+          currentChatId,
+          engagement === "react_heart" ? "❤️" : "👍"
+        ).catch(() => {});
+      }
+      return new Response(null, { status: 200, headers: silentHeaders });
+    }
+
+    if (engagement === "silent") {
+      return new Response(null, { status: 200, headers: silentHeaders });
+    }
+  }
+
+  // ── Respond path (expensive work happens only when Bruce will reply) ─────────
+  const FILE_CHAR_CAP = 25000;
+  let fileContentBlock = "";
+  let totalFileChars = 0;
+  let skippedCount = 0;
+
+  for (const file of attachedFiles) {
+    if (totalFileChars >= FILE_CHAR_CAP) { skippedCount++; continue; }
+    try {
+      const content = await getFileContent(user.id, file.google_drive_file_id);
+      if (content) {
+        const remaining = FILE_CHAR_CAP - totalFileChars;
+        const snippet = content.length > remaining ? content.substring(0, remaining) + "... [truncated]" : content;
+        fileContentBlock += `File: ${file.name}\n${snippet}\n---\n`;
+        totalFileChars += snippet.length;
+      }
+    } catch { /* Drive unavailable — skip */ }
+  }
+
+  if (skippedCount > 0) {
+    fileContentBlock += `[${skippedCount} additional file${skippedCount > 1 ? "s" : ""} attached but not loaded — ask to reference them]`;
+  }
+
+  const { block: memoryBlock } = await assembleMemoryBlock(supabase, user.id, {
+    memberCombination,
+    projectId,
+    isolateMemory,
+  });
+
+  const locationContext = currentLocation
+    ? `${userName}'s current location right now is ${currentLocation}.`
+    : `${userName}'s home location is ${homeLocation}. Use this as the default for any location-based questions.`;
+
+  const browserContext = await getBrowserContextBlock(currentChatId);
+
+  const systemPrompt = buildSystemPrompt({
+    mode: "project",
+    userName,
+    userTimestamp,
+    memoryBlock,
+    locationContext,
+    browserContext,
+    includeImageGen: true,
+    project: {
+      name: project.name as string,
+      instructions: project.instructions as string,
+      memberNames,
+      fileNames,
+      fileContentBlock: fileContentBlock || undefined,
+    },
+  });
+
   let userContent: Anthropic.Messages.MessageParam["content"];
   if (attachments.length > 0) {
     const blocks: Anthropic.Messages.ContentBlockParam[] = [];
@@ -326,16 +401,12 @@ export async function POST(request: NextRequest, { params }: Props) {
     { role: "user" as const, content: userContent },
   ]);
 
-  const anthropic = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    defaultHeaders: { "anthropic-beta": "files-api-2025-04-14" },
-  });
-
   const responseHeaders: Record<string, string> = {
     "Content-Type": "text/plain; charset=utf-8",
     "Cache-Control": "no-cache",
     "X-Accel-Buffering": "no",
     "X-Chat-Id": currentChatId!,
+    "X-Bruce-Responded": "true",
   };
   if (chatTitle) responseHeaders["X-Chat-Title"] = encodeURIComponent(chatTitle);
 

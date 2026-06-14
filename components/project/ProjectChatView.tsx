@@ -326,6 +326,17 @@ export default function ProjectChatView({
 
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
 
+      // Group projects route through the shared engagement gate: when Bruce isn't
+      // addressed the server returns X-Bruce-Responded:false with no stream body.
+      // Drop the optimistic placeholder and bail — the finally block reloads
+      // messages (picking up any Bruce reaction). Single-member projects always
+      // return "true". Mirrors FamilyChatWindow.
+      const bruceWillRespond = res.headers.get("X-Bruce-Responded") === "true";
+      if (!bruceWillRespond) {
+        setMessages((prev) => prev.filter((m) => m.id !== streamMsgId));
+        return; // finally handles setIsStreaming(false) + loadMessages
+      }
+
       let hasFirstContent = false;
 
       const { accumulated, aborted } = await consumeStream({

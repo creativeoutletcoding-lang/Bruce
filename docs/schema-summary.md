@@ -1,7 +1,7 @@
 # Bruce Database Schema — Live Reference
 _Reflects schema.sql + migrations 001–036_
 
-> **Multi-member engagement is stateless.** Bruce's group respond/silent decision (`lib/chat/engagement.ts`, `OPEN_QUESTION_WINDOW = 3`) is computed **ephemerally from the existing `messages` history** at decision time — there is intentionally **no** `awaiting_reply` / `pending_turn` / `last_speaker` column or table. Do not add one; the open-question window is derived, not stored.
+> **Multi-member engagement is stateless.** Bruce's group respond/silent decision (`lib/chat/engagement.ts`, `OPEN_QUESTION_WINDOW = 3`) is computed **ephemerally from the existing `messages` history** at decision time — there is intentionally **no** `awaiting_reply` / `pending_turn` / `last_speaker` column or table. Do not add one; the open-question window is derived, not stored. Both the family route and group (multi-member) project chats route through this gate (single-member projects stay always-respond); the shared route-side plumbing lives in `lib/chat/engagementContext.ts`. Still no schema dependency.
 
 ---
 

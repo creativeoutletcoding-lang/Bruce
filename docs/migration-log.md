@@ -5,6 +5,8 @@ This file tracks which migrations have been applied to the production Supabase i
 > **Reconciliation pass — 2026-06-13.** Audited stale ⬜ marks against the codebase/prod reality. 031, 032, 033, 035 were marked applied: schema migrations (031/033/035) verified via their live features (which would hard-500 if the tables were missing) plus presence in `schema.sql`; 032 is a data-only migration (no 500 risk) verified by the CPS feature being in active use. No genuinely-unapplied migration was found — every table/column referenced in code corresponds to an applied migration. Verification basis is code + `schema.sql` + feature-liveness (not direct prod DB introspection, which isn't available from the build environment).
 
 > **No migration this session — 2026-06-14.** The shared speaker-aware engagement decision (`lib/chat/engagement.ts`, `OPEN_QUESTION_WINDOW = 3`; family route wired in) added **no DB change**. Open-question detection is computed ephemerally from the existing `messages` history — deliberately no stored conversational state. Nothing to apply.
+>
+> **No migration — 2026-06-14 (group-project engagement gate).** Wiring group (multi-member) project chats into the shared `decideEngagement` gate (`app/api/projects/[id]/chat/route.ts` + `lib/chat/engagementContext.ts`; single-member projects stay always-respond) is **stateless** — the decision derives from the existing `messages` history at request time, identical to the family route. No schema change, nothing to apply.
 
 | Migration | Description | Applied |
 |-----------|-------------|---------|
