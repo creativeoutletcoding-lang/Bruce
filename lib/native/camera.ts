@@ -11,12 +11,20 @@
  * between web and native is how the bytes are acquired — never how they are
  * processed. A photo attaches identically on desktop and iOS.
  *
- * HEIC NORMALIZATION: iPhones shoot HEIC/HEIF by default and `pickImages`
- * returns the original gallery asset (blob type `image/heic`). The shared
+ * BYTE READ: `pickImages` hands back a `path` (a `capacitor://…`/`file://` URL).
+ * WKWebView blocks `fetch()` on those URLs ("Fetch API cannot load … due to
+ * access control checks"), so the bytes are read across the Capacitor bridge
+ * with `Filesystem.readFile({ path })` → base64 instead. `takePhotoNative` uses
+ * `resultType: Base64` and never touches the filesystem/fetch.
+ *
+ * HEIC NORMALIZATION: iPhones shoot HEIC/HEIF by default. The shared
  * `ingestFiles` guard rejects HEIC, and Anthropic vision can't read it either,
  * so every image acquired here is normalized to JPEG via `toJpegFile()` BEFORE
  * it leaves this module. WKWebView decodes HEIC in an `<img>`/canvas natively,
- * so the re-encode needs no extra dependency. The web path is untouched.
+ * so the re-encode needs no extra dependency. (On iOS the picker reports
+ * `format: "jpeg"` for picked photos, so JPEG sails through `toJpegFile`'s
+ * passthrough; the HEIC handling is kept as a belt-and-suspenders guard.) The
+ * web path is untouched.
  */
 
 function base64ToFile(base64: string, format: string, name: string): File {
@@ -24,6 +32,16 @@ function base64ToFile(base64: string, format: string, name: string): File {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return new File([bytes], name, { type: `image/${format}` });
+}
+
+/** Filesystem.readFile returns a Blob on web; strip the data-URL prefix to base64. */
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(((reader.result as string) || "").split(",")[1] ?? "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 /**
@@ -106,21 +124,26 @@ export async function takePhotoNative(): Promise<File[]> {
 /**
  * Pick one OR MORE images from the photo library (multi-select — mirrors the
  * web input's `multiple`). Returns `[]` if cancelled. Each `GalleryPhoto`
- * exposes a `webPath` we fetch into a Blob → File, then normalize to JPEG so
- * the bytes flow through the shared guards just like a dropped/selected file.
+ * exposes a `path` (a `capacitor://`/`file://` URL). We read the bytes across
+ * the Capacitor bridge with `Filesystem.readFile` (NOT `fetch`, which WKWebView
+ * blocks on those URLs) → base64 → File, then normalize to JPEG so the bytes
+ * flow through the shared guards just like a dropped/selected file.
  */
 export async function pickPhotosNative(): Promise<File[]> {
   const { Camera } = await import("@capacitor/camera");
+  const { Filesystem } = await import("@capacitor/filesystem");
   try {
     const { photos } = await Camera.pickImages({ quality: 90, correctOrientation: true });
     const files = await Promise.all(
       photos.map(async (p, i) => {
-        const blob = await (await fetch(p.webPath)).blob();
         const fmt = p.format || "jpeg";
-        const raw = new File([blob], `photo-${Date.now()}-${i}.${fmt}`, {
-          type: blob.type || `image/${fmt}`,
-        });
+        // Prefer the native file URL; webPath is a fallback only.
+        const readPath = p.path ?? p.webPath;
+        const { data } = await Filesystem.readFile({ path: readPath });
+        const base64 = typeof data === "string" ? data : await blobToBase64(data);
+        const raw = base64ToFile(base64, fmt, `photo-${Date.now()}-${i}.${fmt}`);
         // [attach-debug] TEMPORARY — remove once Jake confirms on-device.
+        console.log("[attach-debug] pickPhotosNative byte-read", { chosenPath: readPath, method: "Filesystem.readFile", blobType: raw.type, size: raw.size });
         console.log("[attach-debug] pickPhotosNative selected", { name: raw.name, type: raw.type, size: raw.size, fmt });
         return toJpegFile(raw);
       })

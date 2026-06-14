@@ -6,6 +6,22 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### iOS photo attach — read picked-photo bytes via Filesystem, not fetch — 2026-06-14
+
+**Symptom (on-device, after the HEIC fix shipped).** Picking a photo in the iOS shell still failed. The picker returned a JPEG at `capacitor://localhost/_capacitor_file_/…/tmp/photo-N.jpg`, but `pickPhotosNative` read it with `fetch(p.webPath)`, which WKWebView blocks: *"Fetch API cannot load capacitor://… due to access control checks."* The bytes never reached `ingestFiles`, so the photo never attached.
+
+**Root cause.** `fetch()` against a `capacitor://`/`file://` URL is blocked by WKWebView's access-control policy. The previous build's `pickPhotosNative` depended on exactly that. (`takePhotoNative` was unaffected — it uses `resultType: Base64` and never fetches.)
+
+**Fix (NATIVE — needs Xcode rebuild).** Read the bytes across the Capacitor bridge instead: added **`@capacitor/filesystem`** (`8.1.2`, pinned to the v8 line) and rewrote `pickPhotosNative` to `Filesystem.readFile({ path: p.path ?? p.webPath })` → base64 → `File` via the existing `base64ToFile`. We prefer `GalleryPhoto.path` (documented as the "full, platform-specific file URL that can be read later using the Filesystem API") and fall back to `webPath`. The resulting File feeds the unchanged `toJpegFile()` → `ingestFiles()` flow — one path, no parallel upload logic, desktop untouched. `ReadFileResult.data` is a string on native (Blob only on web); a `blobToBase64` helper covers the web-Blob case for type-safety.
+
+**HEIC finding (kept, not removed — Jake's call).** On iOS the picker reports `format: "jpeg"` for picked photos (`photo-N.jpg`), so HEIC does **not** appear to reach this code in practice — JPEG sails through `toJpegFile`'s non-HEIC passthrough. The HEIC→JPEG re-encode from the prior session is retained as a belt-and-suspenders guard (e.g. future plugin behavior changes); it's a cheap no-op for JPEGs.
+
+**Deploy category — NATIVE.** `@capacitor/filesystem` is a new native plugin. Ran `npx cap sync ios` (registers it in `Package.swift` + `FilesystemPlugin` in `capacitor.config.json` `packageClassList` for auto-registration). **This requires an Xcode rebuild + reinstall to the device — `git push` alone will NOT make it work** (the JS calls a native binary that isn't in the installed shell yet). No Info.plist change needed (filesystem access of a returned path needs no usage string).
+
+**Instrumentation.** Kept all prior `[attach-debug]` logs; added `pickPhotosNative byte-read` logging the chosen path, read method, and resulting blob type + size to confirm bytes cross the bridge.
+
+---
+
 ### iOS photo attach — normalize HEIC to JPEG at the native acquisition layer — 2026-06-14
 
 **Symptom.** Attaching a photo worked on desktop web but silently failed in the iOS Capacitor shell — the file never reached the chat.
