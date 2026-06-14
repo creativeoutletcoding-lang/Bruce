@@ -17,6 +17,7 @@
     "@browserbasehq/sdk": "^2.14.0",
     "@browserbasehq/stagehand": "^3.5.0",
     "@capacitor/app": "^8.1.0",
+    "@capacitor/camera": "^8.2.0",
     "@capacitor/cli": "^8.4.0",
     "@capacitor/core": "^8.4.0",
     "@capacitor/ios": "^8.4.0",
