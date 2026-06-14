@@ -6,6 +6,22 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Global sidebar context-menu (Rename + Delete) across all item types — 2026-06-14
+
+**Goal.** One context-menu (right-click desktop / long-press mobile) with **Rename + Delete** on every sidebar item — standalone chats, family threads, the family group, and projects — replacing the old patchwork (family had a Delete-only menu; projects had no custom menu and leaked the native browser menu + iOS text-selection callout).
+
+**No shared row component — shared *mechanism* instead.** The four item types render as divergent inline `<button>`s in `Sidebar.tsx` (~2600 lines); there is no common row component, and extracting one would be a large, risky refactor. What's already centralized is the menu machinery: one `ContextMenuState`, one set of handlers (`handleItemRightClick` / `handleItemLongPressStart/End/Move`), one portal-rendered menu, one rename flow, one delete flow. "Global" was achieved by widening the `kind` discriminator (`chat | thread | family_group | project`) and attaching the existing shared handlers to the **project** row (the only one not wired in) — one code path, per-type variation via `kind`, no forked menus.
+
+**Rename: reused + extended (not rebuilt).** Rename already existed for standalone chats (modal + `chats.update({title})`, RLS via the user client, optimistic + rollback). Extended to: **family threads** (also `chats.title`) and **projects** (`projects.name` via the existing owner-gated `PATCH /api/projects/[id]` — RLS-safe, no admin bypass). Kept the existing **modal** rather than building inline-edit: the modal already handles Enter/Escape/save/rollback, so reuse beat a riskier inline-edit across four divergent row markups. **The family group stays Delete-only** — it's a singular system chat with a hardcoded "Family Chat" label (no surfaced title); renaming it is semantically odd and wouldn't reflect. (Easy to enable later: surface a title on `FamilyGroupInfo` and render it.)
+
+**Delete.** Reuses the existing single-delete path; projects route through `/api/projects` DELETE (FK cascade removes their chats), every chat-type row through `/api/chats` DELETE — same single-item flow, routes away if the deleted item was active.
+
+**Native-menu / iOS-selector suppression — scoped to rows only.** Right-click is suppressed by `e.preventDefault()` in the shared handler (now also on project rows — that was the leak). The iOS long-press callout is killed via a new `.sidebar-row` class (added to all four row buttons) under `@media (pointer: coarse)` (`user-select/-webkit-touch-callout: none`). Scoped to rows — message bubbles already had their own rule; the composer and the sidebar search inputs stay selectable/editable.
+
+**Bulk-edit coexistence (no conflict).** Bulk multi-select is entered by an explicit **"Edit" button** per section header; long-press/right-click open the single-item context menu. The handlers guard `if (inSelectMode(kind)) return;`, so while a section is in select mode its rows don't open the menu. Long-press never triggers bulk-select. Resolution: **long-press = single-item menu; Edit button = bulk-edit.** Added the `projectsSelectMode` guard so projects follow the same rule.
+
+---
+
 ### Docked draft chip tap-focus fix (`hit-target` containing block) — 2026-06-14
 
 **Bug.** After docking the draft "filed to project" chip inside the composer, tapping the input to type unfiled the draft (fired `onClearProject`) instead of focusing the textarea.

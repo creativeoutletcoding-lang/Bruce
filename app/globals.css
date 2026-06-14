@@ -230,6 +230,14 @@ a {
     -webkit-user-select: none;
     -webkit-touch-callout: none;
   }
+  /* Sidebar item rows: suppress the iOS text-selection callout so long-press
+     opens the custom context menu cleanly. Scoped to ROWS ONLY — message
+     content, the composer, and search inputs stay selectable/editable. */
+  .sidebar-row {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
 }
 
 /* ============================================================
