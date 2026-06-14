@@ -76,7 +76,6 @@ export default async function ProjectPage({ params }: Props) {
     <ProjectHome
       projectId={projectId}
       projectName={project.name as string}
-      projectIcon={project.icon as string}
       projectInstructions={(project.instructions as string) ?? ""}
       projectIsolateMemory={!!(project.isolate_memory as boolean | null)}
       projectOwnerId={project.owner_id as string}

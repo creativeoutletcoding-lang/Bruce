@@ -31,7 +31,6 @@ interface ProjectChatViewProps {
   chatId: string;
   projectId: string;
   projectName: string;
-  projectIcon: string;
   initialMessages: NormalizedMessage[];
   initialInput?: string;
   userColorHex?: string;
@@ -70,7 +69,6 @@ export default function ProjectChatView({
   chatId,
   projectId,
   projectName,
-  projectIcon,
   initialMessages,
   initialInput,
   userColorHex,
@@ -469,7 +467,6 @@ export default function ProjectChatView({
       <ProjectTopBar
         projectId={projectId}
         projectName={projectName}
-        projectIcon={projectIcon}
         members={members}
       />
 

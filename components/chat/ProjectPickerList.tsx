@@ -9,8 +9,8 @@ interface ProjectPickerListProps {
   loading?: boolean;
 }
 
-// Shared list of projects (icon + name + member pips) used by both the desktop
-// flyout and the mobile second-level sheet of the "Move to project" menu.
+// Shared list of projects (name + member pips) used by the welcome-screen
+// "Add to project" selector. No leading project emoji (render-only).
 export default function ProjectPickerList({ projects, onSelect, loading }: ProjectPickerListProps) {
   if (loading) {
     return <div style={styles.message}>Loading projects…</div>;
@@ -28,7 +28,9 @@ export default function ProjectPickerList({ projects, onSelect, loading }: Proje
           style={styles.row}
           onClick={() => onSelect(p.id)}
         >
-          <span style={styles.icon} aria-hidden="true">{p.icon || "📁"}</span>
+          {/* Leading per-project emoji intentionally not rendered (render-only;
+              the icon data is untouched in the DB). Name sits at the row's
+              standard left inset. */}
           <span style={styles.name}>{p.name}</span>
           <ProjectMemberPips members={p.members} />
         </button>
@@ -90,11 +92,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     textAlign: "left",
     color: "var(--text-primary)",
-  },
-  icon: {
-    fontSize: "1rem",
-    lineHeight: 1,
-    flexShrink: 0,
   },
   name: {
     flex: 1,

@@ -8,14 +8,12 @@ import { getProfileColor } from "@/lib/chat/senderProfile";
 interface ProjectTopBarProps {
   projectId: string;
   projectName: string;
-  projectIcon: string;
   members: ProjectMemberDetail[];
 }
 
 export default function ProjectTopBar({
   projectId,
   projectName,
-  projectIcon,
   members,
 }: ProjectTopBarProps) {
   const router = useRouter();
@@ -34,7 +32,6 @@ export default function ProjectTopBar({
           </svg>
         </button>
       }
-      titleIcon={<span style={{ fontSize: "1.125rem", lineHeight: 1, flexShrink: 0 }}>{projectIcon}</span>}
       title={projectName}
       right={
         visibleAvatars.length > 0 ? (

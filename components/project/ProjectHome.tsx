@@ -46,7 +46,6 @@ function processAttachment(file: File): Promise<FileAttachment | null> {
 interface ProjectHomeProps {
   projectId: string;
   projectName: string;
-  projectIcon: string;
   projectInstructions: string;
   projectOwnerId: string;
   projectIsolateMemory: boolean;
@@ -85,7 +84,6 @@ function getMimeIcon(mimeType: string | null): string {
 export default function ProjectHome({
   projectId,
   projectName,
-  projectIcon,
   projectInstructions,
   projectIsolateMemory,
   members,
@@ -535,9 +533,8 @@ export default function ProjectHome({
         {/* Left column */}
         <div className="ph-left">
           <div style={styles.leftInner}>
-            {/* Project header */}
+            {/* Project header (no leading project emoji — render-only) */}
             <div style={styles.header}>
-              <span style={styles.projectIcon}>{projectIcon}</span>
               <h1 style={styles.projectName}>{projectName}</h1>
               <div style={styles.memberAvatars}>
                 {visibleMemberAvatars.map((m, i) => (
@@ -1113,11 +1110,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "14px",
     flexWrap: "wrap" as const,
-  },
-  projectIcon: {
-    fontSize: "2.5rem",
-    lineHeight: 1,
-    flexShrink: 0,
   },
   projectName: {
     fontSize: "1.625rem",
