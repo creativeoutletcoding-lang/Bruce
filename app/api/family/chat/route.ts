@@ -11,6 +11,7 @@ import { formatAssistantReplay } from "@/lib/chat/toolTrace";
 import { executeReactionTool } from "@/lib/chat/reactionTools";
 import { parsePastedAttachments } from "@/lib/chat/pastedText";
 import { buildSystemPrompt } from "@/lib/chat/buildSystemPrompt";
+import { decideEngagement } from "@/lib/chat/engagement";
 import { getBrowserContextBlock } from "@/lib/browser/browserbase";
 import {
   runChatStream,
@@ -23,66 +24,11 @@ import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-// ── Bruce engagement logic (server-side gate) ────────────────────────────────
-// Two stages: cheap regex fast-paths for the unambiguous cases, then a Haiku
-// micro-classifier for everything else so the participation rule in the system
-// prompt (respond / react / stay silent) is actually exercised — the old
-// regex-only gate meant Bruce never even saw a message that didn't name him.
-
-export type EngagementDecision = "respond" | "react_thumbs" | "react_heart" | "silent";
-
-function isDirectlyAddressed(message: string): boolean {
-  return /\bbruce\b/i.test(message);
-}
-
-function bruceAskedQuestion(history: Array<{ role: string; content: string }>): boolean {
-  if (history.length === 0) return false;
-  const last = history[history.length - 1];
-  return last.role === "assistant" && last.content.includes("?");
-}
-
-const GATE_PROMPT = `You are the engagement gate for Bruce, a family group-chat AI assistant. Given recent conversation and the newest message, decide how Bruce should engage. Reply with exactly one word:
-
-RESPOND — a member asks for information, a suggestion, a recommendation, a lookup, or a task is clearly directed at the assistant even without naming it.
-REACT_THUMBS — the message is purely informational (news, an update, a confirmation) where a silent thumbs-up acknowledgment is appropriate and text would add nothing.
-REACT_HEART — the message is warm, personal, or emotionally significant: a kind gesture, a family moment, something lovingly shared.
-SILENT — members are talking to each other, venting, celebrating together, or the assistant's input was not invited.
-
-Lean toward SILENT over reacting — reactions still signal presence and feel intrusive if overused. When in doubt, stay silent.`;
-
-async function classifyEngagement(
-  anthropic: Anthropic,
-  message: string,
-  senderName: string,
-  history: Array<{ role: string; content: string; sender_id: string | null }>
-): Promise<EngagementDecision> {
-  if (isDirectlyAddressed(message)) return "respond";
-  if (bruceAskedQuestion(history)) return "respond";
-  try {
-    const transcript = history
-      .slice(-6)
-      .map((m) => `${m.sender_id === null ? "Bruce" : "Member"}: ${m.content.slice(0, 200)}`)
-      .join("\n");
-    const res = await anthropic.messages.create({
-      model: HAIKU_MODEL,
-      max_tokens: 8,
-      system: GATE_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: `Recent conversation:\n${transcript || "(none)"}\n\nNewest message, from ${senderName}: ${message.slice(0, 500)}\n\nDecision:`,
-        },
-      ],
-    });
-    const word = (res.content[0]?.type === "text" ? res.content[0].text : "").trim().toUpperCase();
-    if (word.startsWith("RESPOND")) return "respond";
-    if (word.startsWith("REACT_THUMBS")) return "react_thumbs";
-    if (word.startsWith("REACT_HEART")) return "react_heart";
-    return "silent";
-  } catch {
-    return "silent"; // classifier failure falls back to the old default: stay out
-  }
-}
+// ── Bruce engagement logic ───────────────────────────────────────────────────
+// The respond/react/silent gate now lives in the shared, speaker-aware module
+// lib/chat/engagement.ts (decideEngagement) so the same awareness mechanism can
+// drive group-project rooms later. This route resolves member names for
+// speaker-labeled history and delegates the decision.
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 
@@ -156,9 +102,35 @@ export async function POST(request: NextRequest) {
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+  // Resolve display names for every speaker in the recent window so the
+  // engagement decision sees real "Laurianne:"/"Bruce:" labels, never a
+  // flattened "Member" — the speaker-aware history the decision keys on.
+  const speakerIds = Array.from(
+    new Set(history.map((m) => m.sender_id).filter((id): id is string => !!id))
+  );
+  const nameMap: Record<string, string> = { [user.id]: senderName };
+  if (speakerIds.length > 0) {
+    const { data: speakerRows } = await adminSupabase
+      .from("users")
+      .select("id, name")
+      .in("id", speakerIds);
+    for (const r of (speakerRows ?? []) as Array<{ id: string; name: string }>) {
+      nameMap[r.id] = r.name;
+    }
+  }
+  const nameForSender = (id: string | null): string =>
+    id === null ? "Bruce" : nameMap[id] ?? "Member";
+
   // Kick off the engagement decision now; it runs in parallel with the
   // attachment upload + message insert below and is awaited where it's used.
-  const engagementPromise = classifyEngagement(anthropic, displayMessage, senderName, history);
+  const engagementPromise = decideEngagement({
+    anthropic,
+    model: HAIKU_MODEL,
+    message: displayMessage,
+    senderName,
+    history,
+    nameForSender,
+  });
 
   const attachmentMeta: Array<{ url: string; type: string; filename?: string }> = [];
   for (let i = 0; i < attachments.length; i++) {
