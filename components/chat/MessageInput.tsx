@@ -133,6 +133,8 @@ interface MessageInputProps {
   modelPicker?: ReactNode;
   /** When set, the "+" menu shows a "Move to project" entry (standalone private chats). */
   moveToProject?: MoveToProjectConfig;
+  /** When set, docks a compact "filed to project" chip inside the composer, above the input row. ✕ calls onClear (unfile draft). */
+  draftProject?: { name: string; onClear: () => void };
   /** Tap handler for the shared-browser globe button. When omitted (incognito), the button is hidden. */
   onBrowserClick?: () => void;
   /** True when a shared browser panel is currently open (highlights the globe). */
@@ -155,6 +157,7 @@ export default function MessageInput({
   containerStyle,
   modelPicker,
   moveToProject,
+  draftProject,
   onBrowserClick,
   browserActive = false,
   browserOpening = false,
@@ -241,7 +244,11 @@ export default function MessageInput({
     if (!input) return;
     if (opts.capture) input.setAttribute("capture", "environment");
     else input.removeAttribute("capture");
-    input.accept = opts.imagesOnly ? "image/*" : ".pdf,.txt,.md,.csv,image/*";
+    // Files tile (no imagesOnly) → documents only, NO image/*. With images
+    // excluded, iOS opens the document picker DIRECTLY instead of the unified
+    // Photo Library/Take Photo/Choose File sheet. Images on iOS go through the
+    // native Photos tile, so dropping image/* here loses nothing.
+    input.accept = opts.imagesOnly ? "image/*" : ".pdf,.txt,.md,.csv";
     input.click();
   }
 
@@ -369,6 +376,23 @@ export default function MessageInput({
             style={{ display: "none" }}
             onChange={handleFileChange}
           />
+        )}
+
+        {/* Row 0 — compact draft "filed to project" chip, docked top-left inside
+            the composer above the input row (no emoji). ✕ unfiles the draft. */}
+        {draftProject && (
+          <div style={styles.draftChipRow}>
+            <div style={styles.draftChip}>
+              <span style={styles.draftChipName}>{draftProject.name}</span>
+              <button
+                type="button"
+                onClick={draftProject.onClear}
+                className="hit-target"
+                style={styles.draftChipClear}
+                aria-label="Remove from project"
+              >×</button>
+            </div>
+          </div>
         )}
 
         {/* Row 1 — the text field, full width, no inline buttons. */}
@@ -615,6 +639,44 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     maxWidth: 780,
     margin: "0 auto",
+  },
+  // Docked draft chip (row 0 inside the box): compact, secondary, top-left.
+  draftChipRow: {
+    display: "flex",
+    justifyContent: "flex-start",
+  },
+  draftChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    maxWidth: "100%",
+    padding: "2px 4px 2px 8px",
+    borderRadius: "var(--radius-full)",
+    backgroundColor: "var(--bg-primary)",
+    border: "1px solid var(--border)",
+  },
+  draftChipName: {
+    fontSize: "0.75rem",
+    fontWeight: 500,
+    color: "var(--text-secondary)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  draftChipClear: {
+    flexShrink: 0,
+    width: "16px",
+    height: "16px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "none",
+    background: "transparent",
+    color: "var(--text-tertiary)",
+    cursor: "pointer",
+    fontSize: "0.875rem",
+    lineHeight: 1,
+    padding: 0,
   },
   controlRow: {
     display: "flex",
