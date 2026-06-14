@@ -6,6 +6,24 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### iOS `+` menu attach tiles → native pickers (Option B) — 2026-06-14
+
+**Problem.** On the physical iPhone (Capacitor shell), the redesigned `+` sheet's attach tiles failed: the **Camera** tile crashed the app to the home screen, and **Photos** + **Files** both opened the same default WKWebView file sheet with no differentiation. Desktop web was fine — iOS-webview-specific.
+
+**Root causes.** (1) `ios/App/App/Info.plist` had **none** of `NSCameraUsageDescription` / `NSPhotoLibraryUsageDescription` / `NSPhotoLibraryAddUsageDescription`; touching the camera without the usage string is a hard iOS TCC abort. (2) A single web `<input type=file>` fundamentally cannot produce three *distinct* native pickers on iOS — WKWebView always shows its own unified sheet and ignores fine `accept`/`capture` differentiation on a reused element.
+
+**Stopgap rejected.** A pure git-push stopgap (remove `capture`, hide the Camera tile) cannot be crash-*proof*: WKWebView's own file sheet still offers "Take Photo" whenever images are acceptable, which crashes identically without the plist strings. Since the plist strings are mandatory either way — and that already forces an Xcode rebuild — we implemented real native pickers rather than downgrading the crash to latent.
+
+**Option B (chosen).**
+- **Info.plist:** added all three usage strings (this alone makes even the WKWebView "Take Photo" path crash-safe). Verified present in the compiled `.app` bundle.
+- **Plugin:** added `@capacitor/camera@^8` (SPM, no Podfile); `npx cap sync ios` registered `CAPCameraPlugin` in `capacitor.config.json`'s `packageClassList` (auto-registered — no `MainViewController` change; that hook is only for the custom app-target `OAuthPlugin`).
+- **`isNative()` branch** (`MessageInput.tsx`): Camera → `Camera.getPhoto({ source: Camera, resultType: Base64 })` (single); **Photos → `Camera.pickImages()` (multi-select**, mirroring the web input's `multiple`); **Files stays on the web `<input>` everywhere** (WKWebView handles documents fine). Web/desktop (`isNative()` false) keeps the exact `openFilePicker` accept/capture mutation path — `openFilePicker` and the web `<input>` are unchanged.
+- **Convergence at `processFile`** (the critical rule): native acquisition (`lib/native/camera.ts`) returns browser `File` objects (base64→File for camera; `webPath`→Blob→File for the gallery), and both the web and native paths funnel through one extracted `ingestFiles(files)` → the **same** HEIC/size guards + `processFile` resize before `onFilesAttach`. Branch only on how bytes are acquired, never on how they're processed — a photo attaches identically on desktop and iOS. (HEIC: the guard rejects it just as on desktop; in practice the plugin usually hands back JPEG, so no raw HEIC ever reaches a message either way.)
+
+**Rebuild note.** Native deps changed (plugin + Info.plist + SPM), so this required **one Xcode rebuild + device reinstall** and must be **device-verified** (camera/photos/files + HEIC + large-image guards on glass) before merge. Subsequent web tweaks still ship via `git push` — only native-capability changes need a rebuild.
+
+---
+
 ### "+" ("Add to chat") menu → Claude-iOS-style bottom sheet — 2026-06-13
 
 **What changed.** The composer's `+` menu (`components/chat/InputPlusMenu.tsx`) was restyled from a two-item popover/sheet (Attach file · Move to project) into a single Claude-iOS-style bottom sheet: grab handle, top-left `X` (or `‹` back on the sub-page), centered title, a 3-tile attach row (Camera · Photos · Files), a grouped `›`-row card ("Add to project"), and an in-place "Add to project" sub-page (back chevron, search field, scrollable project list).
