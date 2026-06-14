@@ -6,6 +6,18 @@ Format: entries are in reverse-chronological order by phase. Dates are from git 
 
 ---
 
+### Remote-URL shell: verifying native-picker web code → merge-to-main, not preview — 2026-06-14
+
+**The gotcha.** The iOS shell is a **remote-URL WKWebView** (`server.url = https://heybruce.app`), so it always runs the **deployed `main`** web bundle — never a branch. The native-picker fix had two halves shipping by different channels: the **native binary** half (Info.plist strings + `@capacitor/camera`) reached the device via the Xcode rebuild, but the **web** half (`isNative()` tile routing + `lib/native/camera.ts`, which actually *calls* the native pickers) ships only via `git push` → Vercel. While that web half sat on the branch, the device kept running `main`'s plain web `<input>` path. So the first device test was a **false positive**: "Camera works" was the new `NSCameraUsageDescription` letting the *web* `capture` input reach the camera without crashing — not native `getPhoto` firing. Photos/Files showing the WKWebView unified sheet was just `main`'s web inputs.
+
+**Preview-URL path (P2) attempted, then abandoned.** The intended fix was to point `server.url` at the branch's Vercel **preview** deployment to device-verify before merge. Blocked: the preview sits behind **Vercel deployment protection**, so the phone's WKWebView hit a login wall it can't clear. (The preview URL must never be committed regardless.)
+
+**Resolution: merge to `main` and verify on production.** Deliberate, given the change is **additive and low-risk** — the web/desktop `openFilePicker` + `handleFileChange` path is byte-for-byte unchanged (verified by diff vs `main`), the native path is purely additive behind `isNative()`, and the TCC crash fix already shipped in the binary. Any residual issue is **fix-forward** with no rollback risk to the existing web experience. No new Xcode rebuild was needed to verify — the binary already carries the plugin; reopening the production shell pulls the new web bundle.
+
+**Scope of this shortcut.** Merging-then-verifying-on-prod is acceptable **only** for shell-only, additive, behind-`isNative()` changes like this. It is **NOT** the pattern for RLS/auth/payments/core-data changes — those must be verified before they touch `main`. For a remote-URL shell, the clean way to device-test branch web code remains a preview URL **with deployment protection disabled (or a bypass token)**, or a local/dev `server.url`.
+
+---
+
 ### iOS `+` menu attach tiles → native pickers (Option B) — 2026-06-14
 
 **Problem.** On the physical iPhone (Capacitor shell), the redesigned `+` sheet's attach tiles failed: the **Camera** tile crashed the app to the home screen, and **Photos** + **Files** both opened the same default WKWebView file sheet with no differentiation. Desktop web was fine — iOS-webview-specific.
